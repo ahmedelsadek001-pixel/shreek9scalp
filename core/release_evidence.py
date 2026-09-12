@@ -1,6 +1,6 @@
-"""Provenance-bound release evidence for SHREEK V5.1.
+"""Provenance-bound release evidence for SHREEK V5.1/V6.0.
 
-Evidence is accepted only when every required release control has exactly one
+Evidence is accepted only when every release control has exactly one
 provenance record. This layer remains advisory and has no broker authority.
 """
 from __future__ import annotations
@@ -10,15 +10,12 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Mapping
 
+from core.live_authorization import REQUIRED_EVIDENCE
 from core.release_gate import ReleaseDecision, ReleaseEvidence, evaluate_release
 from core.robustness import RobustnessReport
 
 
-_REQUIRED_NAMES = (
-    "ci_green", "tests_green", "data_integrity_validated", "walk_forward_passed",
-    "robustness_passed", "paper_trading_validated", "security_reviewed",
-    "execution_reconciled", "shadow_validated", "recovery_validated",
-)
+_REQUIRED_NAMES = REQUIRED_EVIDENCE
 
 
 @dataclass(frozen=True)
@@ -89,11 +86,11 @@ def evaluate_evidence_bundle(bundle: ReleaseEvidenceBundle, required: ReleaseEvi
     missing = tuple(name for name in _REQUIRED_NAMES if name not in values)
     if missing:
         return ReleaseDecision(False, tuple(f"missing evidence provenance: {name}" for name in missing))
-    evidence = ReleaseEvidence(**{name: values[name] for name in _REQUIRED_NAMES})
-    required_values = {name: getattr(required, name) for name in _REQUIRED_NAMES}
-    for name, expected in required_values.items():
+    evidence = ReleaseEvidence(**{name: values[name] for name in ReleaseEvidence.__dataclass_fields__})
+    for name in _REQUIRED_NAMES:
+        expected = getattr(required, name, False)
         if type(expected) is not bool:
             return ReleaseDecision(False, (f"required policy contains non-boolean value: {name}",))
-        if expected and not evidence.__getattribute__(name):
+        if expected and not values[name]:
             return ReleaseDecision(False, (f"required evidence failed: {name}",))
     return evaluate_release(evidence)
