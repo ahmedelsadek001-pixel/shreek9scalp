@@ -54,4 +54,4 @@ def test_failed_paper_submission_keeps_existing_position_intact():
         engine.submit(_order())
 
     assert engine.open_order is not None
-    assert len(shadow.submissions) == 1
+    assert len(shadow.submissions()) == 1
