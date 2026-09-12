@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field, fields
 from typing import Optional
 from config import constants as C
-import MetaTrader5 as mt5
+from utils.mt5_compat import mt5
 
 @dataclass
 class TimeframeSpec:
@@ -33,8 +33,8 @@ class Settings:
     m3_fvg_failure_required: bool = False
     trail_stop_atr_mult: float = C.DEFAULT_TRAIL_STOP_ATR_MULT
     breakeven_at_rr: float = C.DEFAULT_BREAKEVEN_AT_RR
-    partial_close_at_tp1: float = C.DEFAULT_PARTIAL_CLOSE_TP1
-    partial_close_at_tp2: float = C.DEFAULT_PARTIAL_CLOSE_TP2
+    partial_close_at_tp1: float = C.DEFAULT_PARTIAL_CLOSE_AT_TP1
+    partial_close_at_tp2: float = C.DEFAULT_PARTIAL_CLOSE_AT_TP2
     full_close_at_tp3: bool = True
     bos_break_threshold_atr: float = 0.1
     ranging_atr_factor: float = 0.5
