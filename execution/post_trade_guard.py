@@ -27,6 +27,12 @@ def evaluate_post_trade(
 
     if not isinstance(reconciliation, ReconciliationResult):
         reasons.append("reconciliation result malformed")
+    elif type(reconciliation.matched) is not bool:
+        reasons.append("reconciliation result malformed")
+    elif not isinstance(reconciliation.reasons, tuple) or any(
+        not isinstance(reason, str) for reason in reconciliation.reasons
+    ):
+        reasons.append("reconciliation reasons malformed")
     elif not reconciliation.matched:
         reasons.extend("reconciliation: " + reason for reason in reconciliation.reasons)
         if not reconciliation.reasons:
@@ -34,6 +40,12 @@ def evaluate_post_trade(
 
     if not isinstance(quality, ExecutionQualityDecision):
         reasons.append("execution quality result malformed")
+    elif type(quality.allowed) is not bool:
+        reasons.append("execution quality result malformed")
+    elif not isinstance(quality.reasons, tuple) or any(
+        not isinstance(reason, str) for reason in quality.reasons
+    ):
+        reasons.append("execution quality reasons malformed")
     elif not quality.allowed:
         reasons.extend("quality: " + reason for reason in quality.reasons)
         if not quality.reasons:
