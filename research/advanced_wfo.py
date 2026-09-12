@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from statistics import median
-from typing import Any, Mapping, Sequence
 
 from core.walk_forward import WalkForwardSummary
 
@@ -32,7 +31,8 @@ def analyze_wfo_stability(
         raise ValueError("WFO summary must contain windows")
     scores = [float(result.test_score) for result in summary.windows]
     switches = sum(
-        1 for previous, current in zip(summary.windows, summary.windows[1:])
+        1
+        for previous, current in zip(summary.windows, summary.windows[1:])
         if dict(previous.parameters) != dict(current.parameters)
     )
     positive_pct = sum(score > 0 for score in scores) / len(scores) * 100.0
