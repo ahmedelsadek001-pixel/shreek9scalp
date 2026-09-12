@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from core.live_authorization import LiveAuthorization, evaluate_live_authorization
+from core.live_authorization import REQUIRED_EVIDENCE, LiveAuthorization, evaluate_live_authorization
 from core.release_evidence import ReleaseEvidenceBundle
 
 
@@ -30,7 +30,15 @@ def _validated_evidence(bundle: ReleaseEvidenceBundle) -> Mapping[str, bool]:
 
 def evaluate_v6_release(bundle: ReleaseEvidenceBundle) -> V6ReleaseDecision:
     """Return a fail-closed V6 decision from provenance-bound evidence only."""
-    evidence = _validated_evidence(bundle)
+    try:
+        evidence = _validated_evidence(bundle)
+    except (TypeError, ValueError, OverflowError):
+        live = LiveAuthorization(False, REQUIRED_EVIDENCE)
+        return V6ReleaseDecision(
+            False,
+            live,
+            ("evidence bundle integrity validation failed",),
+        )
     live = evaluate_live_authorization(evidence)
     failures = tuple(f"missing/failed evidence: {item}" for item in live.missing)
     return V6ReleaseDecision(live.authorized, live, failures)
