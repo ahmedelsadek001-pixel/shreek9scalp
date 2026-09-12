@@ -21,9 +21,11 @@ class RecoveryDecision:
 
 
 class ShadowRecovery:
-    """Connection state machine that blocks submissions while disconnected."""
+    """Connection state machine that blocks submissions until recovery is safe."""
 
     def __init__(self, shadow: ShadowExecution) -> None:
+        if not isinstance(shadow, ShadowExecution):
+            raise TypeError("shadow must be ShadowExecution")
         self.shadow = shadow
         self.state = RecoveryState.CONNECTED
 
@@ -47,6 +49,9 @@ class ShadowRecovery:
         return RecoveryDecision(self.state, True, "execution channel recovered")
 
     def admission(self) -> RecoveryDecision:
-        if self.state is RecoveryState.CONNECTED:
-            return RecoveryDecision(self.state, True, "execution channel available")
-        return RecoveryDecision(self.state, False, "execution channel is not ready")
+        if self.state is not RecoveryState.CONNECTED:
+            return RecoveryDecision(self.state, False, "execution channel is not ready")
+        pending = self.shadow.pending_order_ids()
+        if pending:
+            return RecoveryDecision(self.state, False, "pending shadow orders require reconciliation")
+        return RecoveryDecision(self.state, True, "execution channel available")
