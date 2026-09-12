@@ -14,6 +14,7 @@ class RobustnessPolicy:
     min_wfo_stability_pct: float = 60.0
     max_ruin_rate_pct: float = 0.0
     max_monte_carlo_drawdown: float = float("inf")
+    monte_carlo_block_size: int = 1
 
     def validate(self) -> None:
         if not isfinite(self.min_wfo_stability_pct) or not 0 <= self.min_wfo_stability_pct <= 100:
@@ -24,6 +25,12 @@ class RobustnessPolicy:
             isfinite(self.max_monte_carlo_drawdown) or self.max_monte_carlo_drawdown == float("inf")
         ):
             raise ValueError("max_monte_carlo_drawdown must be non-negative")
+        if (
+            not isinstance(self.monte_carlo_block_size, int)
+            or isinstance(self.monte_carlo_block_size, bool)
+            or self.monte_carlo_block_size <= 0
+        ):
+            raise ValueError("monte_carlo_block_size must be a positive integer")
 
 
 @dataclass(frozen=True)
@@ -65,7 +72,15 @@ def build_robustness_report(
     """Evaluate WFO stability and Monte Carlo tail-risk gates without execution."""
     policy.validate()
     _validate_pnl(pnl)
-    mc = monte_carlo(pnl, starting_equity, simulations, seed)
+    if policy.monte_carlo_block_size > len(pnl):
+        raise ValueError("monte_carlo_block_size cannot exceed pnl length")
+    mc = monte_carlo(
+        pnl,
+        starting_equity,
+        simulations,
+        seed,
+        block_size=policy.monte_carlo_block_size,
+    )
     failures = []
     wfo_failure = _wfo_failure(wfo, policy)
     if wfo_failure:
