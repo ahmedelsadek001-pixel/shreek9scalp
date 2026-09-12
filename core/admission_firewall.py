@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Iterable, Sequence
 
 from core.setup_quality import SetupQualityInput, score_setup
-from market.data_integrity import OHLCBar, validate_bars
+from market.data_integrity import validate_bars
 from risk.news_firewall import NewsEvent, NewsFirewallPolicy
 
 
@@ -18,7 +18,7 @@ class AdmissionFirewallResult:
 
 
 def validate_trade_admission(
-    bars: Sequence[OHLCBar],
+    bars: Sequence[object],
     setup: SetupQualityInput,
     timestamp: datetime,
     news_events: Iterable[NewsEvent] = (),
@@ -30,7 +30,9 @@ def validate_trade_admission(
     if isinstance(min_setup_score, bool) or not 0 <= min_setup_score <= 100:
         return AdmissionFirewallResult(False, "invalid minimum setup score")
     try:
-        validate_bars(bars)
+        data_result = validate_bars(bars)
+        if not data_result.valid:
+            return AdmissionFirewallResult(False, "market-data integrity failure: " + data_result.reason)
         quality = score_setup(setup)
         if quality.score < min_setup_score:
             return AdmissionFirewallResult(False, "setup quality below admission threshold", quality.score)
