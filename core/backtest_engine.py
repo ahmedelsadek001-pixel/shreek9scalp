@@ -1,11 +1,15 @@
 """Causal backtest engine with deterministic partial-exit lifecycle support."""
 from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite, sqrt
 from typing import Iterable, Optional, Sequence
+
 from core.enums import Direction
 from core.models import ExecutionLevels
+from core.position_lifecycle import LifecyclePolicy, initial_state
+
 
 @dataclass(frozen=True)
 class BacktestBar:
@@ -15,17 +19,20 @@ class BacktestBar:
     low: float
     close: float
     spread: float = 0.0
-    def valid(self)->bool:
-        v=(self.open,self.high,self.low,self.close,self.spread)
-        return all(isfinite(float(x)) for x in v) and self.low<=self.high and self.spread>=0
+
+    def valid(self) -> bool:
+        values = (self.open, self.high, self.low, self.close, self.spread)
+        return all(isfinite(float(x)) for x in values) and self.low <= self.high and self.spread >= 0
+
 
 @dataclass(frozen=True)
 class BacktestOrder:
     signal_time: datetime
     direction: Direction
     levels: ExecutionLevels
-    volume: float=1.0
-    tag: str=""
+    volume: float = 1.0
+    tag: str = ""
+
 
 @dataclass(frozen=True)
 class BacktestTrade:
@@ -40,7 +47,9 @@ class BacktestTrade:
     costs: float
     net_pnl: float
     exit_reason: str
-    tag: str=""
+    tag: str = ""
+    lifecycle_events: tuple[str, ...] = ()
+
 
 @dataclass(frozen=True)
 class BacktestStats:
@@ -58,80 +67,275 @@ class BacktestStats:
     max_drawdown_pct: float
     sharpe: float
 
+
 @dataclass(frozen=True)
 class BacktestResult:
-    trades: tuple[BacktestTrade,...]
-    equity_curve: tuple[float,...]
+    trades: tuple[BacktestTrade, ...]
+    equity_curve: tuple[float, ...]
     stats: BacktestStats
+
 
 @dataclass(frozen=True)
 class CostModel:
-    slippage: float=0.0
-    point_value: float=1.0
-    commission_per_volume: float=0.0
-    def valid(self)->bool:
-        v=(self.slippage,self.point_value,self.commission_per_volume)
-        return all(isfinite(float(x)) for x in v) and self.slippage>=0 and self.point_value>0 and self.commission_per_volume>=0
+    slippage: float = 0.0
+    point_value: float = 1.0
+    commission_per_volume: float = 0.0
 
-def _validate_levels(direction:Direction,levels:ExecutionLevels)->None:
-    values=(levels.entry,levels.sl,levels.tp1,levels.tp2,levels.tp3,levels.risk)
-    if not all(isfinite(float(x)) and float(x)>0 for x in values): raise ValueError("execution levels must be finite and positive")
-    if direction==Direction.BUY: valid=levels.sl<levels.entry<levels.tp1<=levels.tp2<=levels.tp3
-    elif direction==Direction.SELL: valid=levels.sl>levels.entry>levels.tp1>=levels.tp2>=levels.tp3
-    else: valid=False
-    if not valid or abs(abs(levels.entry-levels.sl)-levels.risk)>max(1e-9,levels.risk*1e-6): raise ValueError("execution levels are inconsistent with order direction")
+    def valid(self) -> bool:
+        values = (self.slippage, self.point_value, self.commission_per_volume)
+        return (
+            all(isfinite(float(x)) for x in values)
+            and self.slippage >= 0
+            and self.point_value > 0
+            and self.commission_per_volume >= 0
+        )
 
-def _fill_price(bar:BacktestBar,direction:Direction,slippage:float)->float:
-    half=bar.spread/2
-    return bar.open+half+slippage if direction==Direction.BUY else bar.open-half-slippage
 
-def _exit_hit(bar:BacktestBar,direction:Direction,sl:float,tp:float)->tuple[Optional[float],str]:
-    stop,target=(bar.low<=sl,bar.high>=tp) if direction==Direction.BUY else (bar.high>=sl,bar.low<=tp)
-    if stop:return sl,"SL"
-    if target:return tp,"TP3"
-    return None,""
+def _validate_levels(direction: Direction, levels: ExecutionLevels) -> None:
+    values = (levels.entry, levels.sl, levels.tp1, levels.tp2, levels.tp3, levels.risk)
+    if not all(isfinite(float(x)) and float(x) > 0 for x in values):
+        raise ValueError("execution levels must be finite and positive")
+    if direction == Direction.BUY:
+        valid = levels.sl < levels.entry < levels.tp1 <= levels.tp2 <= levels.tp3
+    elif direction == Direction.SELL:
+        valid = levels.sl > levels.entry > levels.tp1 >= levels.tp2 >= levels.tp3
+    else:
+        valid = False
+    if not valid or abs(abs(levels.entry - levels.sl) - levels.risk) > max(1e-9, levels.risk * 1e-6):
+        raise ValueError("execution levels are inconsistent with order direction")
 
-def _stats(start:float,equity:Sequence[float],trades:Sequence[BacktestTrade])->BacktestStats:
-    end=equity[-1] if equity else start; net=end-start; wins=sum(t.net_pnl>0 for t in trades); losses=sum(t.net_pnl<0 for t in trades)
-    gp=sum(max(t.net_pnl,0) for t in trades); gl=sum(-min(t.net_pnl,0) for t in trades); pf=gp/gl if gl else (float("inf") if gp else 0)
-    peak=start; dd=0
-    for x in equity: peak=max(peak,x); dd=max(dd,peak-x)
-    rs=[]; prev=start
-    for x in equity:
-        if prev: rs.append((x-prev)/prev)
-        prev=x
-    mean=sum(rs)/len(rs) if rs else 0; var=sum((r-mean)**2 for r in rs)/(len(rs)-1) if len(rs)>1 else 0
-    sharpe=mean/sqrt(var)*sqrt(252) if var>0 else 0
-    return BacktestStats(start,end,net,net/start*100,len(trades),wins,losses,wins/len(trades)*100 if trades else 0,pf,net/len(trades) if trades else 0,dd,dd/start*100,sharpe)
 
-def run_backtest(bars:Iterable[BacktestBar],orders:Iterable[BacktestOrder],starting_equity:float=10000.0,costs:CostModel=CostModel(),force_close_at_end:bool=True)->BacktestResult:
-    if not isfinite(starting_equity) or starting_equity<=0 or not costs.valid(): raise ValueError("invalid backtest configuration")
-    series=list(bars)
-    if not series or any(not b.valid() for b in series): raise ValueError("invalid or empty bar series")
-    if any(series[i].timestamp>=series[i+1].timestamp for i in range(len(series)-1)): raise ValueError("bars must be strictly chronological")
-    by_time={b.timestamp:i for i,b in enumerate(series)}; pending=sorted(orders,key=lambda o:o.signal_time)
-    for o in pending:
-        if o.signal_time not in by_time: raise ValueError("every order must reference an existing signal bar")
-        if o.direction not in (Direction.BUY,Direction.SELL): raise ValueError("backtest orders must be BUY or SELL")
-        if not isfinite(o.volume) or o.volume<=0: raise ValueError("order volume must be positive and finite")
-        _validate_levels(o.direction,o.levels)
-    trades=[]; equity=[starting_equity]; occupied=-1
-    for o in pending:
-        si=by_time[o.signal_time]; ei=si+1
-        if ei>=len(series) or ei<=occupied: continue
-        eb=series[ei]; entry=_fill_price(eb,o.direction,costs.slippage)
-        if (o.direction==Direction.BUY and entry<=o.levels.sl) or (o.direction==Direction.SELL and entry>=o.levels.sl): continue
-        exit_price=None; reason=""; xi=None
-        for i in range(ei,len(series)):
-            hit,why=_exit_hit(series[i],o.direction,o.levels.sl,o.levels.tp3)
-            if hit is not None: exit_price,reason,xi=hit,why,i; break
-        if exit_price is None:
-            if not force_close_at_end: continue
-            xi=len(series)-1; exit_price,reason=series[-1].close,"EOD"
-        half=series[xi].spread/2
-        adverse=exit_price-costs.slippage-half if o.direction==Direction.BUY else exit_price+costs.slippage+half
-        gross=((adverse-entry) if o.direction==Direction.BUY else (entry-adverse))*o.volume*costs.point_value
-        commission=costs.commission_per_volume*o.volume; net=gross-commission
-        trades.append(BacktestTrade(o.signal_time,eb.timestamp,series[xi].timestamp,o.direction,entry,adverse,o.volume,gross,commission,net,reason,o.tag))
-        equity.append(equity[-1]+net); occupied=xi
-    return BacktestResult(tuple(trades),tuple(equity),_stats(starting_equity,equity,trades))
+def _fill_price(bar: BacktestBar, direction: Direction, slippage: float) -> float:
+    half = bar.spread / 2
+    return bar.open + half + slippage if direction == Direction.BUY else bar.open - half - slippage
+
+
+def _exit_price(bar: BacktestBar, direction: Direction, price: float, slippage: float) -> float:
+    half = bar.spread / 2
+    return price - slippage - half if direction == Direction.BUY else price + slippage + half
+
+
+def _hit(bar: BacktestBar, direction: Direction, stop: float, target: float) -> Optional[tuple[float, str]]:
+    stop_hit = bar.low <= stop if direction == Direction.BUY else bar.high >= stop
+    target_hit = bar.high >= target if direction == Direction.BUY else bar.low <= target
+    # Conservative OHLC rule: if both are touched in one bar, stop wins.
+    if stop_hit:
+        return stop, "SL"
+    if target_hit:
+        return target, "TP"
+    return None
+
+
+def _stats(start: float, equity: Sequence[float], trades: Sequence[BacktestTrade]) -> BacktestStats:
+    end = equity[-1] if equity else start
+    net = end - start
+    wins = sum(t.net_pnl > 0 for t in trades)
+    losses = sum(t.net_pnl < 0 for t in trades)
+    gross_profit = sum(max(t.net_pnl, 0) for t in trades)
+    gross_loss = sum(-min(t.net_pnl, 0) for t in trades)
+    profit_factor = gross_profit / gross_loss if gross_loss else (float("inf") if gross_profit else 0)
+    peak = start
+    drawdown = 0.0
+    for value in equity:
+        peak = max(peak, value)
+        drawdown = max(drawdown, peak - value)
+    returns = []
+    previous = start
+    for value in equity:
+        if previous:
+            returns.append((value - previous) / previous)
+        previous = value
+    mean = sum(returns) / len(returns) if returns else 0
+    variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1) if len(returns) > 1 else 0
+    sharpe = mean / sqrt(variance) * sqrt(252) if variance > 0 else 0
+    return BacktestStats(
+        start,
+        end,
+        net,
+        net / start * 100,
+        len(trades),
+        wins,
+        losses,
+        wins / len(trades) * 100 if trades else 0,
+        profit_factor,
+        net / len(trades) if trades else 0,
+        drawdown,
+        drawdown / start * 100,
+        sharpe,
+    )
+
+
+def _run_lifecycle(
+    series: Sequence[BacktestBar],
+    order: BacktestOrder,
+    entry_index: int,
+    entry: float,
+    costs: CostModel,
+    policy: LifecyclePolicy,
+) -> tuple[Optional[int], Optional[float], str, float, float, float, tuple[str, ...]]:
+    """Run partial exits causally; state changes become active on the next bar."""
+    policy.validate()
+    state = initial_state(order.volume, order.levels, policy)
+    remaining = order.volume
+    gross_total = 0.0
+    cost_total = costs.commission_per_volume * order.volume
+    events: list[str] = []
+    last_index = entry_index
+    last_price = entry
+    last_reason = ""
+
+    # Each bar can trigger at most one lifecycle transition. This avoids assuming
+    # an intrabar sequence that OHLC data cannot prove.
+    stages = (("TP1", order.levels.tp1), ("TP2", order.levels.tp2), ("TP3", order.levels.tp3))
+    stage_index = 0
+    while last_index < len(series) - 1 and remaining > 0:
+        bar = series[last_index]
+        stop = state.stop_price if state.stop_price is not None else order.levels.sl
+        target = stages[stage_index][1]
+        hit = _hit(bar, order.direction, stop, target)
+        if hit is None:
+            last_index += 1
+            continue
+        raw_price, reason = hit
+        exit_price = _exit_price(bar, order.direction, raw_price, costs.slippage)
+        if reason == "SL":
+            gross_total += ((exit_price - entry) if order.direction == Direction.BUY else (entry - exit_price)) * remaining * costs.point_value
+            cost_total += 0.0
+            last_price, last_reason = exit_price, "SL"
+            return last_index, last_price, last_reason, gross_total, cost_total, remaining, tuple(events)
+
+        fraction = (policy.tp1_fraction, policy.tp2_fraction, policy.tp3_fraction)[stage_index]
+        close_volume = min(remaining, order.volume * fraction)
+        gross_total += ((exit_price - entry) if order.direction == Direction.BUY else (entry - exit_price)) * close_volume * costs.point_value
+        cost_total += costs.commission_per_volume * close_volume
+        remaining -= close_volume
+        events.append(reason)
+        last_index, last_price, last_reason = last_index, exit_price, reason
+        if stage_index == 0:
+            # BE/trailing state is only active from the following bar.
+            from core.position_lifecycle import after_tp1
+            state = after_tp1(state, order.levels, policy, order.volume)
+        elif stage_index == 1:
+            from core.position_lifecycle import after_tp2
+            state = after_tp2(state, order.volume, order.levels, policy)
+        else:
+            return last_index, last_price, "TP3", gross_total, cost_total, 0.0, tuple(events)
+        stage_index += 1
+        if stage_index >= 3:
+            break
+        # Move to next bar before evaluating the new stop/target state.
+        last_index += 1
+
+    if remaining > 0 and last_index < len(series):
+        if not events:
+            return None, None, "", 0.0, 0.0, remaining, tuple(events)
+        if last_index >= len(series):
+            last_index = len(series) - 1
+        if last_index == len(series) - 1:
+            raw_price = series[last_index].close
+            exit_price = _exit_price(series[last_index], order.direction, raw_price, costs.slippage)
+            gross_total += ((exit_price - entry) if order.direction == Direction.BUY else (entry - exit_price)) * remaining * costs.point_value
+            cost_total += costs.commission_per_volume * remaining
+            last_price, last_reason = exit_price, "EOD"
+            return last_index, last_price, last_reason, gross_total, cost_total, remaining, tuple(events)
+    return None, None, "", 0.0, 0.0, remaining, tuple(events)
+
+
+def run_backtest(
+    bars: Iterable[BacktestBar],
+    orders: Iterable[BacktestOrder],
+    starting_equity: float = 10000.0,
+    costs: CostModel = CostModel(),
+    force_close_at_end: bool = True,
+    lifecycle_policy: Optional[LifecyclePolicy] = None,
+) -> BacktestResult:
+    if not isfinite(starting_equity) or starting_equity <= 0 or not costs.valid():
+        raise ValueError("invalid backtest configuration")
+    series = list(bars)
+    if not series or any(not b.valid() for b in series):
+        raise ValueError("invalid or empty bar series")
+    if any(series[i].timestamp >= series[i + 1].timestamp for i in range(len(series) - 1)):
+        raise ValueError("bars must be strictly chronological")
+    by_time = {b.timestamp: i for i, b in enumerate(series)}
+    pending = sorted(orders, key=lambda o: o.signal_time)
+    for order in pending:
+        if order.signal_time not in by_time:
+            raise ValueError("every order must reference an existing signal bar")
+        if order.direction not in (Direction.BUY, Direction.SELL):
+            raise ValueError("backtest orders must be BUY or SELL")
+        if not isfinite(order.volume) or order.volume <= 0:
+            raise ValueError("order volume must be positive and finite")
+        _validate_levels(order.direction, order.levels)
+
+    trades = []
+    equity = [starting_equity]
+    occupied = -1
+    policy = lifecycle_policy
+    for order in pending:
+        signal_index = by_time[order.signal_time]
+        entry_index = signal_index + 1
+        if entry_index >= len(series) or entry_index <= occupied:
+            continue
+        entry_bar = series[entry_index]
+        entry = _fill_price(entry_bar, order.direction, costs.slippage)
+        if (order.direction == Direction.BUY and entry <= order.levels.sl) or (
+            order.direction == Direction.SELL and entry >= order.levels.sl
+        ):
+            continue
+
+        if policy is not None:
+            exit_index, exit_price, reason, gross, cost, _remaining, events = _run_lifecycle(
+                series, order, entry_index, entry, costs, policy
+            )
+            if exit_index is None:
+                if not force_close_at_end:
+                    continue
+                exit_index = len(series) - 1
+                raw = series[exit_index].close
+                exit_price = _exit_price(series[exit_index], order.direction, raw, costs.slippage)
+                gross = ((exit_price - entry) if order.direction == Direction.BUY else (entry - exit_price)) * order.volume * costs.point_value
+                cost = costs.commission_per_volume * order.volume
+                reason = "EOD"
+                events = tuple(events) + ("EOD",)
+        else:
+            exit_index = None
+            raw_exit = None
+            reason = ""
+            for i in range(entry_index, len(series)):
+                hit = _hit(series[i], order.direction, order.levels.sl, order.levels.tp3)
+                if hit is not None:
+                    raw_exit, reason = hit
+                    exit_index = i
+                    break
+            if exit_index is None:
+                if not force_close_at_end:
+                    continue
+                exit_index = len(series) - 1
+                raw_exit = series[-1].close
+                reason = "EOD"
+            exit_price = _exit_price(series[exit_index], order.direction, raw_exit, costs.slippage)
+            gross = ((exit_price - entry) if order.direction == Direction.BUY else (entry - exit_price)) * order.volume * costs.point_value
+            cost = costs.commission_per_volume * order.volume
+            events = ()
+
+        net = gross - cost
+        trades.append(
+            BacktestTrade(
+                order.signal_time,
+                entry_bar.timestamp,
+                series[exit_index].timestamp,
+                order.direction,
+                entry,
+                exit_price,
+                order.volume,
+                gross,
+                cost,
+                net,
+                reason,
+                order.tag,
+                events,
+            )
+        )
+        equity.append(equity[-1] + net)
+        occupied = exit_index
+    return BacktestResult(tuple(trades), tuple(equity), _stats(starting_equity, equity, trades))
