@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from core.enums import Direction
 from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult
 from execution.shadow import ShadowExecution
 from paper_trading.engine import PaperFill, PaperOrder
