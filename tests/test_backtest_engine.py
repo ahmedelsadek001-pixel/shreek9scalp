@@ -95,8 +95,6 @@ def test_lifecycle_stop_after_tp1_uses_breakeven_on_following_bar():
 
 
 def test_lifecycle_trailing_activates_after_tp2_and_exits_on_next_bar():
-    # TP2 closes on bar 2. The trailing stop is calculated from bar 2's
-    # close and becomes active on bar 3. Bar 3 then touches that stop.
     series = bars([
         (100, 100, 100, 100, 0),
         (100, 101.1, 100, 101, 0),
@@ -109,6 +107,24 @@ def test_lifecycle_trailing_activates_after_tp2_and_exits_on_next_bar():
     assert trade.exit_reason == "SL"
     assert trade.lifecycle_events == ("TP1", "TP2")
     assert trade.net_pnl > 0
+
+
+def test_lifecycle_partial_exit_commission_is_charged_per_side():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 101.1, 100, 101, 0),
+        (101, 102.1, 100.9, 102, 0),
+        (102, 103.1, 101.9, 103, 0),
+    ])
+    result = run_backtest(
+        series,
+        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
+        costs=CostModel(commission_per_volume=1.0),
+        lifecycle_policy=LifecyclePolicy(),
+    )
+    trade = result.trades[0]
+    # Entry: 1.0 + TP1: 0.5 + TP2: 0.25 + TP3: 0.25 = 2.0 total commission.
+    assert trade.costs == pytest.approx(2.0)
 
 
 def test_session_window_blocks_entry_outside_allowed_period():
