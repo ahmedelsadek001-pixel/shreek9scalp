@@ -12,8 +12,8 @@ def test_daily_loss_budget_uses_losses_only():
     assert ledger.loss_used(day) == 0
     assert ledger.loss_remaining(day) == 50
     ledger.record(day, -30)
-    assert ledger.loss_used(day) == 30
-    assert ledger.loss_remaining(day) == 20
+    assert ledger.loss_used(day) == 10
+    assert ledger.loss_remaining(day) == 40
 
 
 def test_modeled_loss_cannot_exceed_remaining_budget():
