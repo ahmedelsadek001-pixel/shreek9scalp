@@ -1,54 +1,50 @@
-# SHREEK V5.1 → V6.0
+# SHREEK V5.2 → V6.0
 
-نظام تداول آلي موجه أساسًا لـ XAUUSD، مبني على تحليل متعدد الأطر الزمنية، ICT/Price Action، وإدارة مخاطر fail-closed.
+نظام تداول آلي موجه أساسًا لـ XAUUSD، مبني على ICT/Price Action، تحليل متعدد الأطر الزمنية، وإدارة مخاطر fail-closed.
 
 ## Architecture
 
-`MARKET DATA → DATA INTEGRITY → ICT SIGNAL ENGINE → SETUP QUALITY → ADMISSION FIREWALL → RISK BUDGET → DAILY RISK STATE → PAPER/BACKTEST → SHADOW RECONCILIATION → RECOVERY → RESEARCH ATTRIBUTION → EXECUTION QUALITY → BROKER SAFETY → RELEASE GATE`
+`MARKET DATA → DATA INTEGRITY → SIGNAL ENGINE → SETUP QUALITY → REGIME → ADMISSION FIREWALL → RISK BUDGET → DAILY RISK STATE → BACKTEST/WFO → ROBUSTNESS → PAPER → SHADOW → RECONCILIATION → RECOVERY → RELEASE GATE`
 
-## Implemented
+## Implemented layers
 
-### V5.1 Hardening
-- Closed-bar, chronological market-data validation.
+- Closed-bar chronological market-data validation.
 - HTF structure, liquidity, FVG, order-block and PD-array analysis.
 - Deterministic M15/M5/M3 execution signals and execution levels.
-- Setup-quality score with explicit admission threshold.
-- High-impact news firewall with timezone-aware windows.
-- Session/trading-window controls.
-- Position lifecycle: TP1/TP2/TP3, breakeven and trailing behavior.
-- Causal backtesting with next-bar entry and deterministic costs.
-- Walk-forward parameter selection with out-of-sample evaluation.
-- Monte Carlo robustness and drawdown/ruin gates.
-- Daily realized-risk ledger and explicit risk state machine.
-- Deterministic risk budget and stop-distance position sizing; no execution authority.
-- Deterministic paper-trading engine; no broker routing.
-- Shadow execution intents and fail-closed reconciliation.
-- Disconnect/recovery state machine that blocks submission until pending shadow orders reconcile.
-- Duplicate-signal protection, release evidence and security gates.
-
-### V5.2 Research
-- MAE/MFE excursion analytics.
-- Strategy/setup attribution.
-- Deterministic TREND/RANGE/UNKNOWN regime classifier.
-- Regime attribution.
-- Setup × regime Edge Matrix with sparse-cell filtering.
-- Advanced walk-forward stability analytics and parameter-churn measurement.
-
-### V5.3 Execution Safety
+- Setup-quality scoring and admission threshold.
+- High-impact news and session/trading-window controls.
+- Position lifecycle with TP1/TP2/TP3, breakeven and trailing behavior.
+- Causal backtesting with deterministic costs and next-bar entry.
+- Walk-forward and advanced WFO stability analysis.
+- Monte Carlo robustness, drawdown and ruin gates.
+- Daily risk ledger, risk state machine and deterministic position sizing.
+- MAE/MFE research analytics.
+- Strategy and regime attribution.
+- Setup × regime edge matrix.
+- Deterministic paper-trading engine.
+- Shadow intents, execution reconciliation and disconnect recovery.
 - Execution-quality analytics for slippage and spread.
-- Broker environment safety policy covering connection, symbol, spread, volume and slippage limits.
-- Execution layers remain transport-free and cannot submit broker orders.
+- Release manifest, release evidence and security/release gates.
+- AI advisor remains advisory-only; it cannot authorize, size, or execute trades.
 
-### V6.0 Release Boundary
-- Final fail-closed live-authorization gate.
-- Every mandatory evidence flag must be explicitly boolean `True`.
-- Required evidence: CI, historical validation, WFO, robustness, paper trading, security review, shadow validation, recovery validation, broker validation and operator approval.
-- Missing or synthetic evidence cannot produce a live-ready result.
+## Version path
+
+### V5.1 — Hardening and safety
+Core risk, data-integrity, admission, paper, shadow, reconciliation and recovery layers.
+
+### V5.2 — Research and edge validation
+MAE/MFE, regime classification, attribution, edge matrix, WFO stability and robustness analysis.
+
+### V5.3 — Execution engineering
+Execution-quality measurement, broker safety boundaries, shadow validation and recovery controls.
+
+### V6.0 — Controlled release
+Final release certification, security review, empirical evidence package and live-authorization gate.
 
 ## Safety boundary
 
-Passing software tests does not establish profitability, broker compatibility, or live safety by itself. Historical datasets, out-of-sample evidence, shadow observations, recovery exercises and broker validation must be produced and reviewed before any live activation.
+Live MT5 execution remains disabled until all mandatory software and empirical gates pass. Passing unit tests or CI does not establish profitability, statistical significance, broker compatibility, or live readiness.
 
 ## Development rule
 
-`main` is kept stable while development and validation continue on `v5.1-development`. The project optimizes for controlled execution, measurable edge and minimized risk of ruin rather than maximum trade count.
+`main` remains stable while development and validation continue on `v5.1-development`. The objective is not maximum trade count; it is measurable edge, controlled execution, and minimized risk of ruin.
