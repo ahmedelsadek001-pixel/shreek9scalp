@@ -8,7 +8,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Optional
 
-from core.enums import Direction, SetupType, Timeframe
+from core.enums import Direction
 from core.models import ExecutionLevels, TradeSignal
 
 
@@ -20,9 +20,10 @@ def build_execution_levels(
 ) -> Optional[ExecutionLevels]:
     """Build TP1/TP2/TP3 from a validated signal.
 
-    TP1 is 1R. TP2 uses the supplied draw target only when it provides at
-    least ``min_rr``; otherwise it falls back to 2R. TP3 is 1.5x the TP2
-    distance. Invalid or non-finite inputs return None.
+    TP1 is 1R. TP2 uses the supplied draw target when it provides at least
+    ``min_rr``. Otherwise TP2 is the minimum acceptable reward target,
+    ``min_rr * R``. TP3 is 1.5x the TP2 distance. Invalid or non-finite
+    inputs return None.
     """
     if signal is None or signal.direction not in (Direction.BUY, Direction.SELL):
         return None
@@ -48,8 +49,9 @@ def build_execution_levels(
     if risk <= 0 or not isfinite(risk):
         return None
 
-    tp1 = entry + risk if signal.direction == Direction.BUY else entry - risk
-    fallback_tp2 = entry + 2.0 * risk if signal.direction == Direction.BUY else entry - 2.0 * risk
+    direction_sign = 1.0 if signal.direction == Direction.BUY else -1.0
+    tp1 = entry + direction_sign * risk
+    fallback_tp2 = entry + direction_sign * min_rr * risk
     tp2 = fallback_tp2
 
     if draw_target is not None and isfinite(float(draw_target)):
@@ -60,7 +62,7 @@ def build_execution_levels(
             tp2 = target
 
     tp3_distance = abs(tp2 - entry) * 1.5
-    tp3 = entry + tp3_distance if signal.direction == Direction.BUY else entry - tp3_distance
+    tp3 = entry + direction_sign * tp3_distance
     rr1 = abs(tp1 - entry) / risk
 
     return ExecutionLevels(
