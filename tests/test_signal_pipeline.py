@@ -4,7 +4,7 @@ from core.signal_pipeline import admit_signal
 from risk.trade_gates import GateResult
 
 
-def valid_signal(direction=Direction.BUY):
+def valid_signal(direction=Direction.BUY, aligned=True):
     return TradeSignal(
         status=SignalStatus.VALID,
         setup_type=SetupType.COMBINED,
@@ -12,6 +12,7 @@ def valid_signal(direction=Direction.BUY):
         direction=direction,
         entry_price=100.0,
         sl_price=99.0 if direction == Direction.BUY else 101.0,
+        aligned=aligned,
     )
 
 
@@ -26,10 +27,24 @@ def test_admission_rejects_non_executable_direction():
     assert not admit_signal(s, []).allowed
 
 
+def test_admission_rejects_misaligned_signal():
+    result = admit_signal(valid_signal(aligned=False), [])
+    assert not result.allowed
+    assert "aligned" in result.reason
+
+
 def test_admission_rejects_invalid_stop_side():
     s = valid_signal(Direction.BUY)
     s.sl_price = 101.0
     assert not admit_signal(s, []).allowed
+
+
+def test_admission_rejects_non_finite_price():
+    s = valid_signal()
+    s.entry_price = float("nan")
+    result = admit_signal(s, [])
+    assert not result.allowed
+    assert "finite" in result.reason
 
 
 def test_admission_stops_on_first_failed_gate():
