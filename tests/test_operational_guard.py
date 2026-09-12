@@ -27,7 +27,9 @@ def test_fresh_environment_is_ready():
 
 
 def test_stale_quote_blocks():
-    allowed, reasons = evaluate_operational_readiness(OperationalPolicy(max_quote_age_seconds=2.0), snapshot(age=3.0))
+    allowed, reasons = evaluate_operational_readiness(
+        OperationalPolicy(max_quote_age_seconds=2.0), snapshot(age=3.0)
+    )
     assert allowed is False
     assert "quote is stale" in reasons
 
@@ -42,6 +44,14 @@ def test_disconnected_environment_blocks():
     allowed, reasons = evaluate_operational_readiness(OperationalPolicy(), snapshot(connected=False))
     assert allowed is False
     assert "environment disconnected" in reasons
+
+
+def test_non_boolean_operational_state_blocks():
+    allowed, reasons = evaluate_operational_readiness(
+        OperationalPolicy(), snapshot(connected=1)
+    )
+    assert allowed is False
+    assert "connected and trading_enabled must be boolean" in reasons
 
 
 def test_invalid_policy_rejected():
