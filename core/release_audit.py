@@ -1,8 +1,8 @@
-"""Mechanical release-tree audit for SHREEK V5.1.
+"""Mechanical release-tree audit for SHREEK V5.2/V5.3/V6.0.
 
-This audit checks that the release candidate contains the required safety and
-validation layers. It does not claim that empirical evidence exists and it has
-no broker/execution authority.
+This audit checks that the candidate contains the required safety, research,
+and release-control layers. It does not claim that empirical evidence exists
+and it has no broker/execution authority.
 """
 from __future__ import annotations
 
@@ -20,10 +20,13 @@ REQUIRED_PATHS = (
     "core/release_evidence.py",
     "core/release_gate.py",
     "core/release_manifest.py",
+    "core/live_authorization.py",
+    "core/research_evidence.py",
     "core/scanner.py",
     "core/setup_quality.py",
     "core/trade_orchestrator.py",
     "core/walk_forward.py",
+    "execution/broker_safety.py",
     "execution/reconciliation.py",
     "execution/recovery.py",
     "execution/shadow.py",
@@ -35,6 +38,18 @@ REQUIRED_PATHS = (
     "risk/risk_state.py",
     "core/robustness.py",
     "core/risk_simulation.py",
+    "research/advanced_wfo.py",
+    "research/edge_matrix.py",
+    "research/edge_selection.py",
+    "research/excursion_stats.py",
+    "research/execution_quality.py",
+    "research/mae_mfe.py",
+    "research/performance_metrics.py",
+    "research/regime.py",
+    "research/regime_attribution.py",
+    "research/research_release_gate.py",
+    "research/selection_score.py",
+    "research/strategy_attribution.py",
     "docs/V5_1_RELEASE_CHECKLIST.md",
     ".github/workflows/python-package.yml",
 )
@@ -57,9 +72,8 @@ def audit_tree(paths: Iterable[str], *, production_sources: Iterable[tuple[str, 
     """Audit a release tree from paths and production source text.
 
     ``production_sources`` is an iterable of ``(path, source)`` pairs. The
-    audit intentionally uses simple lexical detection as a second line of
-    defense; the dedicated security gate remains authoritative for AST-level
-    checks.
+    lexical check is deliberately a second line of defense; the dedicated
+    AST-level security gate remains authoritative.
     """
     normalized = {str(PurePosixPath(path)) for path in paths}
     missing = tuple(path for path in REQUIRED_PATHS if path not in normalized)
