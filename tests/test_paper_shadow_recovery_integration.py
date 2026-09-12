@@ -5,6 +5,7 @@ from core.models import TradeSignal
 from core.release_gate import ReleaseEvidence, evaluate_release
 from core.setup_quality import SetupQualityInput
 from core.trade_orchestrator import TradeOrchestrator
+from execution.reconciliation import OrderIntent
 from execution.recovery import RecoveryState, ShadowRecovery
 from execution.shadow import ShadowExecution
 from execution.shadow_pipeline import PaperShadowBridge
@@ -106,11 +107,7 @@ def test_full_paper_shadow_recovery_release_chain():
 def test_recovery_blocks_release_when_shadow_order_remains_pending():
     shadow = ShadowExecution()
     recovery = ShadowRecovery(shadow)
-    shadow.submit_intent(
-        __import__("execution.reconciliation", fromlist=["OrderIntent"]).OrderIntent(
-            "pending-001", "XAUUSD", Direction.BUY, 0.03, 2500.0
-        )
-    )
+    shadow.submit_intent(OrderIntent("pending-001", "XAUUSD", Direction.BUY, 0.03, 2500.0))
     recovery.disconnect()
     recovery.begin_recovery()
     blocked = recovery.complete_recovery()
