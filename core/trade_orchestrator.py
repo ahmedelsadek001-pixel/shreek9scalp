@@ -9,9 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Optional, Sequence
+from typing import Optional
 
-from core.execution_levels import ExecutionLevels
 from core.signal_pipeline import AdmissionDecision
 from core.robustness import RobustnessReport
 from journal.decision_journal import DecisionJournal, DecisionRecord
@@ -50,8 +49,7 @@ class TradeOrchestrator:
 
     @staticmethod
     def _validate_levels(symbol: str, direction: str, entry: float, stop_loss: float, take_profit: float) -> None:
-        order = PaperOrder(symbol, direction, entry, stop_loss, take_profit, 1.0)
-        order.validate()
+        PaperOrder(symbol, direction, entry, stop_loss, take_profit, 1.0).validate()
 
     def plan(
         self,
@@ -63,7 +61,6 @@ class TradeOrchestrator:
         risk_budget: float,
         admission: AdmissionDecision,
         robustness: RobustnessReport,
-        pnl: Sequence[float],
     ) -> Optional[TradePlan]:
         """Build a trade plan only after all non-execution gates pass."""
         if not isinstance(admission, AdmissionDecision) or not admission.allowed:
@@ -71,9 +68,6 @@ class TradeOrchestrator:
             return None
         if not isinstance(robustness, RobustnessReport) or not robustness.passed:
             self._journal_reject(symbol, direction, "robustness validation failed")
-            return None
-        if not pnl:
-            self._journal_reject(symbol, direction, "empty PnL validation sequence")
             return None
         if not isfinite(risk_budget) or risk_budget <= 0:
             raise ValueError("risk_budget must be positive and finite")
