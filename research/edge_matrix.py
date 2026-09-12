@@ -18,19 +18,25 @@ class EdgeCell:
     net_pnl: float
     expectancy: float
     win_rate: float
+    min_trades: int
 
     @property
     def viable(self) -> bool:
-        return self.trades > 0 and self.expectancy > 0
+        """Mark a cell viable only when its sample floor and EV are both satisfied."""
+        return self.trades >= self.min_trades and self.expectancy > 0
 
 
 def build_edge_matrix(
     trades: Iterable[BacktestTrade],
     regimes: Iterable[Regime | str],
     *,
-    min_trades: int = 1,
+    min_trades: int = 10,
 ) -> tuple[EdgeCell, ...]:
-    """Aggregate recorded outcomes by setup tag and aligned regime labels."""
+    """Aggregate recorded outcomes by setup tag and aligned regime labels.
+
+    Cells below ``min_trades`` are omitted so sparse observations cannot be
+    mistaken for validated edge.
+    """
     if min_trades < 1:
         raise ValueError("min_trades must be at least 1")
     trade_list = list(trades)
@@ -52,6 +58,16 @@ def build_edge_matrix(
         losses = sum(t.net_pnl < 0 for t in group)
         net = sum(t.net_pnl for t in group)
         rows.append(
-            EdgeCell(setup, regime_name, len(group), wins, losses, net, net / len(group), wins / len(group) * 100)
+            EdgeCell(
+                setup,
+                regime_name,
+                len(group),
+                wins,
+                losses,
+                net,
+                net / len(group),
+                wins / len(group) * 100,
+                min_trades,
+            )
         )
     return tuple(sorted(rows, key=lambda row: (row.setup, row.regime)))
