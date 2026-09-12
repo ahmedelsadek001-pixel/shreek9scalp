@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from core.duplicate_guard import DuplicateSignalGuard, signal_fingerprint
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
 from core.models import TradeSignal
@@ -43,3 +45,17 @@ def test_discard_allows_retry_after_rejected_submission():
     guard.reserve(fingerprint)
     guard.discard(fingerprint)
     assert guard.reserve(fingerprint).allowed
+
+
+def test_concurrent_reservation_is_atomic():
+    guard = DuplicateSignalGuard()
+    fingerprint = signal_fingerprint("XAUUSD", _signal())
+
+    def reserve():
+        return guard.reserve(fingerprint).allowed
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(lambda _: reserve(), range(64)))
+
+    assert sum(results) == 1
+    assert guard.size() == 1
