@@ -1,3 +1,5 @@
+import pytest
+
 from core.walk_forward import WalkForwardResult, WalkForwardSummary, WalkForwardWindow
 from research.advanced_wfo import analyze_wfo_stability
 
@@ -16,6 +18,6 @@ def test_wfo_stability_report():
     )
     report = analyze_wfo_stability(summary)
     assert report.windows == 3
-    assert report.positive_windows_pct == 66.66666666666666
+    assert report.positive_windows_pct == pytest.approx(66.66666666666667)
     assert report.parameter_switches == 1
     assert report.stable is True
