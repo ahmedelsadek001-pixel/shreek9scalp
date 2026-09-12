@@ -5,11 +5,11 @@ The gate composes existing fail-closed controls without granting execution autho
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Sequence
 
 from core.admission_firewall import validate_trade_admission
-from core.setup_quality import SetupQuality
-from market.data_integrity import validate_bars
+from core.setup_quality import SetupQualityInput
 from risk.news_firewall import NewsEvent, NewsFirewallPolicy
 
 
@@ -21,24 +21,24 @@ class IntegrationDecision:
 
 def evaluate_pre_trade(
     bars: Sequence[object],
-    setup: SetupQuality,
+    setup: SetupQualityInput,
     *,
+    timestamp: datetime,
     setup_min_score: int,
-    news_events: Sequence[NewsEvent],
-    news_policy: NewsFirewallPolicy,
+    news_events: Sequence[NewsEvent] = (),
+    currencies: Sequence[str] = (),
+    news_policy: NewsFirewallPolicy = NewsFirewallPolicy(),
 ) -> IntegrationDecision:
     """Run the deterministic admission chain; any failed prerequisite blocks."""
-    data = validate_bars(bars)
-    if not data.valid:
-        return IntegrationDecision(False, (f"data integrity: {data.reason}",))
-
     admission = validate_trade_admission(
         bars,
         setup,
-        setup_min_score=setup_min_score,
+        timestamp,
         news_events=news_events,
+        currencies=currencies,
         news_policy=news_policy,
+        min_setup_score=setup_min_score,
     )
     if not admission.allowed:
-        return IntegrationDecision(False, admission.reasons)
+        return IntegrationDecision(False, (admission.reason,))
     return IntegrationDecision(True, ())
