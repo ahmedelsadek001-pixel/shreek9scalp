@@ -31,7 +31,7 @@ def test_disconnect_is_fail_closed_for_admission():
 def test_recovery_cannot_complete_with_pending_shadow_order():
     shadow = ShadowExecution()
     bridge = PaperShadowBridge(shadow)
-    bridge.register_paper_order(_order())
+    bridge.register_paper_order("paper-1", _order())
     recovery = ShadowRecovery(shadow)
 
     recovery.disconnect()
@@ -43,12 +43,12 @@ def test_recovery_cannot_complete_with_pending_shadow_order():
     assert "reconciliation" in decision.reason
 
 
-def test_failed_paper_submission_does_not_leave_duplicate_reservation():
+def test_failed_paper_submission_keeps_existing_position_intact():
     engine = PaperTradingEngine()
     engine.submit(_order())
     shadow = ShadowExecution()
     bridge = PaperShadowBridge(shadow)
-    bridge.register_paper_order(_order())
+    bridge.register_paper_order("paper-1", _order())
 
     # The shadow layer is observational only; a second paper submission must fail.
     with pytest.raises(RuntimeError):
