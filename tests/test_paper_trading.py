@@ -1,10 +1,13 @@
+import json
+
 import pytest
 
+from journal.decision_journal import DecisionJournal
 from paper_trading.engine import PaperOrder, PaperTradingEngine
 
 
-def order():
-    return PaperOrder("XAUUSD", "LONG", 100.0, 99.0, 102.0, 0.5)
+def order(volume=0.5):
+    return PaperOrder("XAUUSD", "LONG", 100.0, 99.0, 102.0, volume)
 
 
 class Decision:
@@ -29,6 +32,17 @@ def test_robustness_failure_never_opens():
     assert engine.submit(order(), admitted=True, robustness_passed=False) is False
     assert engine.open_order is None
     assert engine.equity == 1000
+
+
+def test_risk_budget_blocks_oversized_paper_order():
+    engine = PaperTradingEngine(1000)
+    assert engine.submit(order(volume=2.0), admitted=True, robustness_passed=True, max_risk_usd=1.0) is False
+    assert engine.open_order is None
+
+
+def test_risk_budget_allows_order_within_limit():
+    engine = PaperTradingEngine(1000)
+    assert engine.submit(order(volume=0.5), admitted=True, robustness_passed=True, max_risk_usd=1.0) is True
 
 
 def test_admitted_and_robust_order_closes_and_updates_equity():
@@ -59,3 +73,13 @@ def test_invalid_order_geometry_fails_closed():
         PaperOrder("XAUUSD", "LONG", 100, 101, 102, 1).validate()
     with pytest.raises(ValueError):
         PaperOrder("XAUUSD", "SHORT", 100, 99, 98, 1).validate()
+
+
+def test_journal_records_open_and_close(tmp_path):
+    path = tmp_path / "paper.jsonl"
+    engine = PaperTradingEngine(1000, journal=DecisionJournal(path))
+    assert engine.submit(order(), admitted=True, robustness_passed=True)
+    engine.close(101.0, "manual")
+    records = DecisionJournal(path).read()
+    assert [record.decision for record in records] == ["PAPER_OPEN", "PAPER_CLOSE"]
+    assert json.loads(path.read_text(encoding="utf-8"))["decision"] == "PAPER_OPEN"
