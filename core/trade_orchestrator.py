@@ -1,8 +1,9 @@
 """Unified fail-closed trade orchestration for SHREEK V5.1.
 
 This module is the single deterministic coordination point between signal
-admission, strategy/data admission, risk sizing, and paper execution. It has
-no broker transport authority and never performs network I/O.
+admission, strategy/data admission, risk sizing, duplicate-signal protection,
+and paper execution. It has no broker transport authority and never performs
+network I/O.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from datetime import datetime
 from math import isfinite
 from typing import Callable, Sequence
 
+from core.duplicate_guard import DuplicateSignalGuard, signal_fingerprint
 from core.enums import Direction
 from core.integration_gate import evaluate_pre_trade
 from core.models import TradeSignal
@@ -28,6 +30,7 @@ class OrchestrationDecision:
     stage: str
     reason: str
     volume: float = 0.0
+    fingerprint: str = ""
 
 
 class TradeOrchestrator:
@@ -40,6 +43,7 @@ class TradeOrchestrator:
             raise TypeError("risk_budget must be RiskBudget")
         self.engine = engine
         self.risk_budget = risk_budget
+        self.duplicate_guard = DuplicateSignalGuard()
 
     def evaluate_and_submit(
         self,
@@ -57,7 +61,7 @@ class TradeOrchestrator:
         currencies: Sequence[str] = (),
         news_policy: NewsFirewallPolicy = NewsFirewallPolicy(),
     ) -> OrchestrationDecision:
-        """Run signal, strategy, and risk admission before paper submission."""
+        """Run signal, strategy, risk, and idempotency admission before paper submission."""
         if not isinstance(timestamp, datetime) or timestamp.tzinfo is None or timestamp.utcoffset() is None:
             return OrchestrationDecision(False, "input", "timestamp must be timezone-aware")
         if not symbol:
@@ -96,7 +100,20 @@ class TradeOrchestrator:
             return OrchestrationDecision(False, "risk", "risk budget exceeded", volume)
 
         try:
+            fingerprint = signal_fingerprint(symbol, signal)
+            duplicate = self.duplicate_guard.reserve(fingerprint)
+        except (TypeError, ValueError) as exc:
+            return OrchestrationDecision(False, "duplicate", str(exc), volume)
+        if not duplicate.allowed:
+            return OrchestrationDecision(False, "duplicate", duplicate.reason, volume, fingerprint)
+
+        try:
             self.engine.submit(PaperOrder(symbol, signal.direction, entry, stop, volume, timestamp))
         except (RuntimeError, ValueError) as exc:
-            return OrchestrationDecision(False, "paper_execution", str(exc), volume)
-        return OrchestrationDecision(True, "paper_execution", "paper order accepted", volume)
+            self.duplicate_guard.discard(fingerprint)
+            return OrchestrationDecision(False, "paper_execution", str(exc), volume, fingerprint)
+        return OrchestrationDecision(True, "paper_execution", "paper order accepted", volume, fingerprint)
+
+    def release_signal(self, fingerprint: str) -> None:
+        """Release an active signal identity after its lifecycle is complete."""
+        self.duplicate_guard.discard(fingerprint)
