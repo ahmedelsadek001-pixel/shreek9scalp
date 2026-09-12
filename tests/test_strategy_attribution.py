@@ -1,11 +1,9 @@
 from core.backtest_engine import BacktestTrade
 from core.enums import Direction
-from core.models import ExecutionLevels
 from research.strategy_attribution import attribute_by_tag
 
 
 def trade(tag, pnl):
-    levels = ExecutionLevels(100.0, 99.0, 101.0, 102.0, 103.0, 1.0)
     return BacktestTrade(None, None, None, Direction.BUY, 100.0, 101.0, 1.0, pnl, 0.0, pnl, "TP", tag)
 
 
