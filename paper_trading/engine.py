@@ -1,6 +1,6 @@
 """Deterministic paper-trading state machine.
 
-This module deliberately does not connect to MT5 or any broker.  It accepts
+This module deliberately does not connect to MT5 or any broker. It accepts
 already-admitted execution levels and records simulated orders only after the
 risk and robustness gates have passed.
 """
@@ -46,7 +46,7 @@ class PaperFill:
 
 
 class PaperTradingEngine:
-    """One-position-at-a-time paper engine with explicit admission boundary."""
+    """One-position-at-a-time paper engine with explicit admission boundaries."""
 
     def __init__(self, starting_equity: float = 10000.0) -> None:
         if not isfinite(starting_equity) or starting_equity <= 0:
@@ -55,10 +55,10 @@ class PaperTradingEngine:
         self.open_order: Optional[PaperOrder] = None
         self.fills: list[PaperFill] = []
 
-    def submit(self, order: PaperOrder, admitted: bool) -> bool:
-        """Open a paper position only when the upstream gate explicitly allows it."""
+    def submit(self, order: PaperOrder, admitted: bool, robustness_passed: bool = False) -> bool:
+        """Open only when both signal admission and robustness validation pass."""
         order.validate()
-        if not admitted:
+        if not admitted or not robustness_passed:
             return False
         if self.open_order is not None:
             raise RuntimeError("a paper position is already open")
