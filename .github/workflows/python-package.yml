@@ -4,7 +4,7 @@ name: Python package
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "v5.1-development" ]
   pull_request:
     branches: [ "main" ]
 
@@ -31,7 +31,7 @@ jobs:
         PYTHONPATH: ${{ github.workspace }}
       run: |
         python -m compileall -q .
-        python -c "import config.settings, core.models, market.structure, risk.trade_gates"
+        python -c "import config.settings, core.models, core.scanner, journal.decision_journal, market.structure, risk.trade_gates"
     - name: Lint with flake8
       env:
         PYTHONPATH: ${{ github.workspace }}
