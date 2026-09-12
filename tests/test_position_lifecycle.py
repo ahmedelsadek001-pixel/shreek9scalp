@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import pytest
 
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
@@ -79,10 +77,15 @@ def test_policy_fractions_must_sum_to_one():
 
 def test_trailing_stop_is_monotonic_for_buy():
     levels = make_levels(Direction.BUY)
-    policy = LifecyclePolicy(tp1_fraction=0.5, tp2_fraction=0.25, tp3_fraction=0.25, trailing_after_tp2=True)
-    state = after_tp2(after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0), 1.0, levels, policy)
+    policy = LifecyclePolicy(trailing_after_tp2=True)
+    state = after_tp2(
+        after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0),
+        1.0,
+        levels,
+        policy,
+    )
     first = trailing_stop_price(state, levels, 103.0, policy)
-    second = trailing_stop_price(state, levels, 102.0, policy)
+    second = trailing_stop_price(state, levels, 102.0, policy, previous_stop=first)
     assert first >= levels.entry
     assert second >= first
 
@@ -90,8 +93,13 @@ def test_trailing_stop_is_monotonic_for_buy():
 def test_trailing_stop_is_monotonic_for_sell():
     levels = make_levels(Direction.SELL)
     policy = LifecyclePolicy(trailing_after_tp2=True)
-    state = after_tp2(after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0), 1.0, levels, policy)
+    state = after_tp2(
+        after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0),
+        1.0,
+        levels,
+        policy,
+    )
     first = trailing_stop_price(state, levels, 97.0, policy)
-    second = trailing_stop_price(state, levels, 98.0, policy)
+    second = trailing_stop_price(state, levels, 98.0, policy, previous_stop=first)
     assert first <= levels.entry
     assert second <= first
