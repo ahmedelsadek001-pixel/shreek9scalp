@@ -4,14 +4,16 @@ from execution.recovery import RecoveryState, ShadowRecovery
 from execution.shadow import ShadowExecution
 
 
-def test_disconnect_blocks_and_recovery_requires_clean_shadow():
+def test_disconnect_blocks_and_clean_recovery_reenables_submission():
     shadow = ShadowExecution()
     recovery = ShadowRecovery(shadow)
     assert recovery.admission().can_submit
     assert recovery.disconnect().state is RecoveryState.DISCONNECTED
     assert not recovery.admission().can_submit
     assert recovery.begin_recovery().state is RecoveryState.RECOVERING
-    assert not recovery.complete_recovery().can_submit
+    recovered = recovery.complete_recovery()
+    assert recovered.state is RecoveryState.CONNECTED
+    assert recovered.can_submit
 
 
 def test_recovery_completes_only_after_pending_orders_reconcile():
