@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import pandas as pd
-import MetaTrader5 as mt5
+from utils.mt5_compat import mt5
 
 from config.settings import TIMEFRAMES
 from utils.logger import get_logger
