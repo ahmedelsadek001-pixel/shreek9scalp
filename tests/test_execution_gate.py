@@ -54,6 +54,17 @@ def test_malformed_layer_fails_closed():
     assert "broker decision malformed" in decision.reasons
 
 
+def test_malformed_recovery_admission_fails_closed():
+    decision = evaluate_execution_gate(
+        operational=(True, ()),
+        broker=(True, ()),
+        recovery=RecoveryDecision(RecoveryState.CONNECTED, 1, "execution channel available"),
+        kill_switch_active=False,
+    )
+    assert decision.allowed is False
+    assert "recovery decision malformed" in decision.reasons
+
+
 def test_environment_gate_rejects_stale_quote():
     observed = datetime.now(timezone.utc)
     snapshot = OperationalSnapshot(
