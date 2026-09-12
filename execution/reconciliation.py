@@ -35,6 +35,16 @@ class ReconciliationResult:
     reasons: tuple[str, ...]
 
 
+def _within_tolerance(observed: float, expected: float, tolerance: float) -> bool:
+    """Compare decimal-like execution values without rejecting a boundary due to float noise."""
+    return isclose(
+        observed,
+        expected,
+        rel_tol=0.0,
+        abs_tol=tolerance + 1e-12,
+    )
+
+
 def reconcile_execution(
     intent: OrderIntent,
     report: ExecutionReport,
@@ -59,11 +69,11 @@ def reconcile_execution(
         reasons.append("direction mismatch")
     if not isfinite(intent.volume) or intent.volume <= 0 or not isfinite(report.volume) or report.volume <= 0:
         reasons.append("invalid volume")
-    elif not isclose(report.volume, intent.volume, rel_tol=0.0, abs_tol=volume_tolerance):
+    elif not _within_tolerance(report.volume, intent.volume, volume_tolerance):
         reasons.append("volume mismatch")
     if not isfinite(intent.expected_price) or intent.expected_price <= 0 or not isfinite(report.fill_price) or report.fill_price <= 0:
         reasons.append("invalid execution price")
-    elif not isclose(report.fill_price, intent.expected_price, rel_tol=0.0, abs_tol=price_tolerance):
+    elif not _within_tolerance(report.fill_price, intent.expected_price, price_tolerance):
         reasons.append("fill price outside tolerance")
 
     return ReconciliationResult(not reasons, tuple(reasons))
