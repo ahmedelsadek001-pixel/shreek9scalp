@@ -10,7 +10,8 @@ def test_performance_metrics():
     assert report.expectancy == pytest.approx(0.5)
     assert report.win_rate == pytest.approx(50.0)
     assert report.profit_factor == pytest.approx(5.0 / 3.0)
-    assert report.payoff_ratio == pytest.approx(2.5)
+    # Payoff ratio is mean winner divided by mean loser: 2.5 / 1.5 = 5/3.
+    assert report.payoff_ratio == pytest.approx(5.0 / 3.0)
     assert report.max_consecutive_losses == 1
 
 
