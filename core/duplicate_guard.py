@@ -1,13 +1,14 @@
-"""Deterministic duplicate-signal guard for SHREEK V5.1.
+"""Thread-safe deterministic duplicate-signal guard for SHREEK V5.1.
 
-The guard provides stable signal identity and idempotent admission. It has no
-execution authority and stores only in-memory identities for the process.
+The guard provides stable signal identity and atomic idempotent reservation.
+It has no execution authority and stores only in-memory identities.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
 from math import isfinite
+from threading import Lock
 
 from core.models import TradeSignal
 
@@ -35,34 +36,45 @@ def signal_fingerprint(symbol: str, signal: TradeSignal) -> str:
         repr(float(signal.entry_price)),
         repr(float(signal.sl_price)),
     )
-    payload = "|".join(values).encode("utf-8")
-    return sha256(payload).hexdigest()
+    return sha256("|".join(values).encode("utf-8")).hexdigest()
 
 
 class DuplicateSignalGuard:
-    """Process-local idempotency boundary that fails closed on duplicate identities."""
+    """Atomic process-local idempotency boundary that fails closed on duplicates."""
 
     def __init__(self) -> None:
         self._seen: set[str] = set()
+        self._lock = Lock()
 
     def check(self, fingerprint: str) -> DuplicateDecision:
         if not isinstance(fingerprint, str) or not fingerprint:
             raise ValueError("fingerprint is required")
-        if fingerprint in self._seen:
-            return DuplicateDecision(False, fingerprint, "duplicate signal identity")
-        return DuplicateDecision(True, fingerprint, "signal identity is new")
+        with self._lock:
+            if fingerprint in self._seen:
+                return DuplicateDecision(False, fingerprint, "duplicate signal identity")
+            return DuplicateDecision(True, fingerprint, "signal identity is new")
 
     def reserve(self, fingerprint: str) -> DuplicateDecision:
-        decision = self.check(fingerprint)
-        if decision.allowed:
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fingerprint is required")
+        with self._lock:
+            if fingerprint in self._seen:
+                return DuplicateDecision(False, fingerprint, "duplicate signal identity")
             self._seen.add(fingerprint)
-        return decision
+            return DuplicateDecision(True, fingerprint, "signal identity reserved")
 
     def discard(self, fingerprint: str) -> None:
-        self._seen.discard(fingerprint)
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fingerprint is required")
+        with self._lock:
+            self._seen.discard(fingerprint)
 
     def contains(self, fingerprint: str) -> bool:
-        return fingerprint in self._seen
+        if not isinstance(fingerprint, str) or not fingerprint:
+            raise ValueError("fingerprint is required")
+        with self._lock:
+            return fingerprint in self._seen
 
     def size(self) -> int:
-        return len(self._seen)
+        with self._lock:
+            return len(self._seen)
