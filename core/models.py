@@ -1,7 +1,6 @@
 """
-Typed data models replacing ad-hoc dictionaries used by the V5.1 engine.
-These models are deliberately stable because market, risk, execution and
-journal layers exchange them directly.
+Typed data models replacing every ad-hoc dict returned by the V5.1 engine.
+Models are intentionally compatible with the V5.1 market/execution layers.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
@@ -31,7 +30,8 @@ class OrderBlock:
     dist_to_price: Optional[float] = None
     proximity_to_swing: Optional[float] = None
     @property
-    def mid(self) -> float: return (self.high + self.low) / 2.0
+    def mid(self) -> float:
+        return (self.high + self.low) / 2.0
 
 @dataclass(frozen=True)
 class FairValueGap:
@@ -40,7 +40,8 @@ class FairValueGap:
     bottom: float
     formed_at: int
     @property
-    def midpoint(self) -> float: return (self.top + self.bottom) / 2.0
+    def midpoint(self) -> float:
+        return (self.top + self.bottom) / 2.0
     def overlaps(self, ob: OrderBlock) -> bool:
         return not (self.top < ob.low or self.bottom > ob.high)
 
@@ -82,7 +83,8 @@ class TradeSignal:
     fvg: Optional[FairValueGap] = None
     structure: Optional[MarketStructure] = None
     @property
-    def is_valid(self) -> bool: return self.status == SignalStatus.VALID
+    def is_valid(self) -> bool:
+        return self.status == SignalStatus.VALID
 
 @dataclass
 class ExecutionLevels:
@@ -148,7 +150,8 @@ class ConfluenceResult:
     criteria: list[ConfluenceCriterion] = field(default_factory=list)
     direction: Direction = Direction.UNKNOWN
     @property
-    def max_score(self) -> int: return sum(c.max_points for c in self.criteria)
+    def max_score(self) -> int:
+        return sum(c.max_points for c in self.criteria)
     @property
     def score_ratio(self) -> float:
         m = self.max_score
