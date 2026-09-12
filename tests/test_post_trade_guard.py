@@ -46,3 +46,23 @@ def test_post_trade_fails_closed_on_malformed_decision_fields():
     assert decision.accepted is False
     assert "reconciliation result malformed" in decision.reasons
     assert "execution quality reasons malformed" in decision.reasons
+
+
+def test_post_trade_blocks_internally_inconsistent_reconciliation():
+    decision = evaluate_post_trade(
+        reconciliation=ReconciliationResult(True, ("unexpected reason",)),
+        quality=ExecutionQualityDecision(True, ()),
+    )
+
+    assert decision.accepted is False
+    assert "reconciliation decision internally inconsistent" in decision.reasons
+
+
+def test_post_trade_blocks_internally_inconsistent_quality():
+    decision = evaluate_post_trade(
+        reconciliation=ReconciliationResult(True, ()),
+        quality=ExecutionQualityDecision(True, ("unexpected reason",)),
+    )
+
+    assert decision.accepted is False
+    assert "execution quality decision internally inconsistent" in decision.reasons
