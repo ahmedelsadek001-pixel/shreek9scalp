@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from typing import Optional
 
 
 @dataclass(frozen=True)
 class RiskBudget:
     equity: float
     risk_pct: float = 0.01
-    max_risk_amount: float | None = None
+    max_risk_amount: Optional[float] = None
 
     def __post_init__(self) -> None:
         if not isfinite(self.equity) or self.equity <= 0:
