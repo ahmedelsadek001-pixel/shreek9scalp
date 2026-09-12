@@ -1,21 +1,18 @@
-"""End-to-end, fail-closed orchestration for SHREEK V5.1 paper trades.
-
-The orchestrator composes existing components without moving their authority
-boundaries: admission decides eligibility, robustness decides validation,
-risk sizing determines volume, and the paper engine is the final execution
-boundary. No broker or live execution is performed here.
-"""
+"""End-to-end, fail-closed orchestration for SHREEK V5.1 paper trades."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Optional
+from typing import Callable, Optional
 
 from core.signal_pipeline import AdmissionDecision
 from core.robustness import RobustnessReport
 from journal.decision_journal import DecisionJournal, DecisionRecord
 from paper_trading.engine import PaperOrder, PaperTradingEngine
 from risk.position_sizing import compute_lot_size
+from risk.risk_budget import RiskBudget
+
+SizingFunction = Callable[[str, float, float], float]
 
 
 @dataclass(frozen=True)
@@ -30,11 +27,17 @@ class TradePlan:
 
 
 class TradeOrchestrator:
-    """Compose gates and paper execution into one deterministic decision path."""
+    """Enforce the only supported path from validated signal to paper order."""
 
-    def __init__(self, paper_engine: PaperTradingEngine, journal: Optional[DecisionJournal] = None) -> None:
+    def __init__(
+        self,
+        paper_engine: PaperTradingEngine,
+        journal: Optional[DecisionJournal] = None,
+        sizing: SizingFunction = compute_lot_size,
+    ) -> None:
         self.paper_engine = paper_engine
         self.journal = journal
+        self.sizing = sizing
 
     def _journal_reject(self, symbol: str, direction: str, reason: str) -> None:
         if self.journal is None:
@@ -62,7 +65,7 @@ class TradeOrchestrator:
         admission: AdmissionDecision,
         robustness: RobustnessReport,
     ) -> Optional[TradePlan]:
-        """Build a trade plan only after all non-execution gates pass."""
+        """Build a plan only after admission, robustness and risk checks pass."""
         if not isinstance(admission, AdmissionDecision) or not admission.allowed:
             self._journal_reject(symbol, direction, "signal admission failed")
             return None
@@ -72,21 +75,40 @@ class TradeOrchestrator:
         if not isfinite(risk_budget) or risk_budget <= 0:
             raise ValueError("risk_budget must be positive and finite")
         self._validate_levels(symbol, direction, entry, stop_loss, take_profit)
-        volume = compute_lot_size(symbol, risk_budget, abs(entry - stop_loss))
-        if not isfinite(volume) or volume <= 0:
+        volume = self.sizing(symbol, risk_budget, abs(entry - stop_loss))
+        if not isfinite(float(volume)) or volume <= 0:
             self._journal_reject(symbol, direction, "position sizing failed")
             return None
-        return TradePlan(symbol, direction, entry, stop_loss, take_profit, volume, risk_budget)
+        return TradePlan(symbol, direction, entry, stop_loss, take_profit, float(volume), risk_budget)
+
+    def plan_from_account(
+        self,
+        symbol: str,
+        direction: str,
+        entry: float,
+        stop_loss: float,
+        take_profit: float,
+        budget: RiskBudget,
+        admission: AdmissionDecision,
+        robustness: RobustnessReport,
+    ) -> Optional[TradePlan]:
+        """Derive per-trade risk from account state, then build the plan."""
+        risk_budget = budget.amount
+        if risk_budget <= 0:
+            self._journal_reject(symbol, direction, "daily risk budget exhausted")
+            return None
+        return self.plan(
+            symbol, direction, entry, stop_loss, take_profit,
+            risk_budget, admission, robustness,
+        )
 
     def submit_plan(self, plan: TradePlan, reason: str = "") -> bool:
-        """Submit a previously gated plan to paper execution."""
+        """Submit a previously gated plan to the deterministic paper engine."""
         order = PaperOrder(
             plan.symbol, plan.direction, plan.entry, plan.stop_loss,
             plan.take_profit, plan.volume, reason,
         )
         return self.paper_engine.submit(
-            order,
-            admitted=True,
-            robustness_passed=True,
+            order, admitted=True, robustness_passed=True,
             max_risk_usd=plan.risk_budget,
         )
