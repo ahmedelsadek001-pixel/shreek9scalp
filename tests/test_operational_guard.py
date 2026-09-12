@@ -40,6 +40,28 @@ def test_missing_heartbeat_blocks():
     assert "heartbeat missing" in reasons
 
 
+def test_stale_heartbeat_blocks():
+    allowed, reasons = evaluate_operational_readiness(
+        OperationalPolicy(max_quote_age_seconds=5.0), snapshot(heartbeat_age=6.0)
+    )
+    assert allowed is False
+    assert "heartbeat is stale" in reasons
+
+
+def test_future_heartbeat_blocks():
+    now = datetime.now(timezone.utc)
+    environment = OperationalSnapshot(
+        observed_at=now,
+        quote_time=now - timedelta(seconds=1),
+        heartbeat_at=now + timedelta(seconds=3),
+        connected=True,
+        trading_enabled=True,
+    )
+    allowed, reasons = evaluate_operational_readiness(OperationalPolicy(), environment)
+    assert allowed is False
+    assert "heartbeat timestamp is ahead of observation" in reasons
+
+
 def test_disconnected_environment_blocks():
     allowed, reasons = evaluate_operational_readiness(OperationalPolicy(), snapshot(connected=False))
     assert allowed is False
@@ -57,3 +79,8 @@ def test_non_boolean_operational_state_blocks():
 def test_invalid_policy_rejected():
     with pytest.raises(ValueError):
         evaluate_operational_readiness(OperationalPolicy(max_quote_age_seconds=-1), snapshot())
+
+
+def test_malformed_snapshot_fails_closed():
+    with pytest.raises(TypeError, match="snapshot must be OperationalSnapshot"):
+        evaluate_operational_readiness(OperationalPolicy(), object())
