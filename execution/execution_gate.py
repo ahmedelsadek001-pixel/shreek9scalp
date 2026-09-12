@@ -45,6 +45,9 @@ def evaluate_execution_gate(
         if not isinstance(decision_reasons, tuple) or any(not isinstance(item, str) for item in decision_reasons):
             reasons.append(f"{name} decision reasons malformed")
             continue
+        if allowed and decision_reasons:
+            reasons.append(f"{name} decision internally inconsistent")
+            continue
         if not allowed:
             reasons.extend(f"{name}: {item}" for item in decision_reasons)
             if not decision_reasons:
