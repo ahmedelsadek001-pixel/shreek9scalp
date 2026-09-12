@@ -20,6 +20,11 @@ class ResearchEvidence:
     metrics: Mapping[str, float]
     evidence_hash: str
 
+    @property
+    def sample_size(self) -> int:
+        """Compatibility alias for the canonical ``samples`` field."""
+        return self.samples
+
     @classmethod
     def create(
         cls,
