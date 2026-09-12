@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from math import isfinite
 from typing import Optional
 
 
@@ -24,7 +23,6 @@ class SessionWindow:
         current = timestamp.timetz().replace(tzinfo=None)
         if self.start <= self.end:
             return self.start <= current <= self.end
-        # Overnight window: e.g. 22:00 -> 02:00.
         return current >= self.start or current <= self.end
 
 
