@@ -16,6 +16,7 @@ from core.robustness import RobustnessReport
 
 
 _REQUIRED_NAMES = REQUIRED_EVIDENCE
+_V51_RELEASE_NAMES = tuple(ReleaseEvidence.__dataclass_fields__)
 
 
 @dataclass(frozen=True)
@@ -86,7 +87,8 @@ def evaluate_evidence_bundle(bundle: ReleaseEvidenceBundle, required: ReleaseEvi
     missing = tuple(name for name in _REQUIRED_NAMES if name not in values)
     if missing:
         return ReleaseDecision(False, tuple(f"missing evidence provenance: {name}" for name in missing))
-    evidence = ReleaseEvidence(**{name: values[name] for name in ReleaseEvidence.__dataclass_fields__})
+    v51_values = {name: values[name] for name in _V51_RELEASE_NAMES}
+    evidence = ReleaseEvidence(**v51_values)
     for name in _REQUIRED_NAMES:
         expected = getattr(required, name, False)
         if type(expected) is not bool:
