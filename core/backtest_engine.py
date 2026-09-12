@@ -169,9 +169,7 @@ def _close_at_bar(
     raw_price: float,
 ) -> tuple[float, float, float]:
     exit_price = _exit_price(bar, direction, raw_price, costs.slippage)
-    gross = _pnl(entry, exit_price, direction, volume, costs.point_value)
-    commission = costs.commission_per_volume * volume
-    return exit_price, gross, commission
+    return exit_price, _pnl(entry, exit_price, direction, volume, costs.point_value), costs.commission_per_volume * volume
 
 
 def _run_lifecycle(
@@ -182,6 +180,7 @@ def _run_lifecycle(
     costs: CostModel,
     policy: LifecyclePolicy,
     trading_window: Optional[TradingWindowPolicy] = None,
+    force_close_at_end: bool = True,
 ) -> tuple[Optional[int], Optional[float], str, float, float, float, tuple[str, ...]]:
     policy.validate()
     if trading_window is not None:
@@ -199,30 +198,22 @@ def _run_lifecycle(
     while index < len(series) and remaining > 0:
         bar = series[index]
         if trading_window is not None and trading_window.holding_expired(entry_time, bar.timestamp):
-            exit_price, gross, commission = _close_at_bar(
-                bar, order.direction, entry, remaining, costs, bar.open
-            )
+            exit_price, gross, commission = _close_at_bar(bar, order.direction, entry, remaining, costs, bar.open)
             return index, exit_price, "TIME_EXIT", gross_total + gross, cost_total + commission, remaining, tuple(events)
 
         stop = state.stop_price if state.stop_price is not None else order.levels.sl
         if state.trailing_active and index > entry_index:
-            previous_close = series[index - 1].close
-            trail = trailing_stop_price(state, order.levels, previous_close, policy)
-            if order.direction == Direction.BUY:
-                stop = max(stop, trail)
-            else:
-                stop = min(stop, trail)
+            trail = trailing_stop_price(state, order.levels, series[index - 1].close, policy)
+            stop = max(stop, trail) if order.direction == Direction.BUY else min(stop, trail)
             state = LifecycleState(
                 state.remaining_volume, state.closed_tp1, state.closed_tp2, state.closed_tp3,
                 state.breakeven_active, stop, state.trailing_active
             )
 
-        target = stages[stage_index][1]
-        hit = _hit(bar, order.direction, stop, target)
+        hit = _hit(bar, order.direction, stop, stages[stage_index][1])
         if hit is None:
             index += 1
             continue
-
         raw_price, reason = hit
         exit_price = _exit_price(bar, order.direction, raw_price, costs.slippage)
         if reason == "SL":
@@ -237,7 +228,6 @@ def _run_lifecycle(
         cost_total += costs.commission_per_volume * close_volume
         remaining -= close_volume
         events.append(reason)
-
         if stage_index == 0:
             from core.position_lifecycle import after_tp1
             state = after_tp1(state, order.levels, policy, order.volume)
@@ -246,15 +236,12 @@ def _run_lifecycle(
             state = after_tp2(state, order.volume, order.levels, policy)
         else:
             return index, exit_price, "TP3", gross_total, cost_total, 0.0, tuple(events)
-
         stage_index += 1
         index += 1
 
-    if remaining > 0 and series and force_close_at_end:
+    if remaining > 0 and force_close_at_end and series:
         bar = series[-1]
-        exit_price, gross, commission = _close_at_bar(
-            bar, order.direction, entry, remaining, costs, bar.close
-        )
+        exit_price, gross, commission = _close_at_bar(bar, order.direction, entry, remaining, costs, bar.close)
         return len(series) - 1, exit_price, "EOD", gross_total + gross, cost_total + commission, remaining, tuple(events)
     return None, None, "", 0.0, 0.0, remaining, tuple(events)
 
@@ -307,18 +294,10 @@ def run_backtest(
 
         if lifecycle_policy is not None:
             exit_index, exit_price, reason, gross, cost, _remaining, events = _run_lifecycle(
-                series, order, entry_index, entry, costs, lifecycle_policy, trading_window
+                series, order, entry_index, entry, costs, lifecycle_policy, trading_window, force_close_at_end
             )
             if exit_index is None:
-                if not force_close_at_end:
-                    continue
-                exit_index = len(series) - 1
-                exit_price, gross, commission = _close_at_bar(
-                    series[exit_index], order.direction, entry, order.volume, costs, series[exit_index].close
-                )
-                cost = commission
-                reason = "EOD"
-                events = tuple(events) + ("EOD",)
+                continue
         else:
             exit_index = None
             raw_exit = None
@@ -335,10 +314,9 @@ def run_backtest(
                 exit_index = len(series) - 1
                 raw_exit = series[-1].close
                 reason = "EOD"
-            exit_price, gross, commission = _close_at_bar(
+            exit_price, gross, cost = _close_at_bar(
                 series[exit_index], order.direction, entry, order.volume, costs, raw_exit
             )
-            cost = commission
             events = ()
 
         net = gross - cost
