@@ -1,7 +1,4 @@
-"""Pure position-lifecycle logic for SHREEK V5.1.
-
-Calculates execution actions after a fill. No broker I/O or order authority.
-"""
+"""Pure position-lifecycle logic for SHREEK V5.1."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -89,7 +86,15 @@ def after_tp1(state: LifecycleState, levels: ExecutionLevels, policy: LifecycleP
         else:
             raise ValueError("invalid execution levels: stop equals entry")
         be = True
-    return LifecycleState(state.remaining_volume - action.volume, True, state.closed_tp2, state.closed_tp3, be, stop, state.trailing_active)
+    return LifecycleState(
+        state.remaining_volume - action.volume,
+        True,
+        state.closed_tp2,
+        state.closed_tp3,
+        be,
+        stop,
+        state.trailing_active,
+    )
 
 
 def tp2_action(state: LifecycleState, original_volume: float, levels: ExecutionLevels, policy: LifecyclePolicy) -> LifecycleAction:
@@ -104,19 +109,35 @@ def tp2_action(state: LifecycleState, original_volume: float, levels: ExecutionL
 
 def after_tp2(state: LifecycleState, original_volume: float, levels: ExecutionLevels, policy: LifecyclePolicy) -> LifecycleState:
     action = tp2_action(state, original_volume, levels, policy)
-    return LifecycleState(state.remaining_volume - action.volume, True, True, state.closed_tp3, state.breakeven_active, state.stop_price, policy.trailing_after_tp2)
+    return LifecycleState(
+        state.remaining_volume - action.volume,
+        True,
+        True,
+        state.closed_tp3,
+        state.breakeven_active,
+        state.stop_price,
+        policy.trailing_after_tp2,
+    )
 
 
-def trailing_stop_price(state: LifecycleState, levels: ExecutionLevels, price: float, policy: LifecyclePolicy) -> float:
-    """Return a monotonic R-based trailing stop once TP2 has been reached."""
+def trailing_stop_price(
+    state: LifecycleState,
+    levels: ExecutionLevels,
+    price: float,
+    policy: LifecyclePolicy,
+    previous_stop: Optional[float] = None,
+) -> float:
+    """Calculate a monotonic R-based trailing stop from explicit prior state."""
     policy.validate()
     if not state.trailing_active:
         raise ValueError("trailing is not active")
     if not isfinite(price):
         raise ValueError("price must be finite")
+    if previous_stop is not None and (not isfinite(previous_stop)):
+        raise ValueError("previous_stop must be finite")
     distance = levels.risk * policy.trailing_distance_r
     candidate = price - distance if levels.entry > levels.sl else price + distance
-    current = state.stop_price
+    current = state.stop_price if previous_stop is None else previous_stop
     if current is None:
         return candidate
     return max(current, candidate) if levels.entry > levels.sl else min(current, candidate)
