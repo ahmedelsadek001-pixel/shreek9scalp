@@ -19,6 +19,7 @@ class ReleaseEvidence:
     security_reviewed: bool
     execution_reconciled: bool
     shadow_validated: bool = False
+    recovery_validated: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ def evaluate_release(evidence: ReleaseEvidence) -> ReleaseDecision:
         "security review has not passed": evidence.security_reviewed,
         "execution reconciliation has not passed": evidence.execution_reconciled,
         "shadow execution has not been validated": evidence.shadow_validated,
+        "disconnect recovery has not been validated": evidence.recovery_validated,
     }
     failures = tuple(reason for reason, passed in checks.items() if type(passed) is not bool or not passed)
     return ReleaseDecision(ready=not failures, failures=failures)
