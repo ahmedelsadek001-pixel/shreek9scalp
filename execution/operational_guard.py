@@ -6,7 +6,7 @@ connects to a broker, sends orders, or changes positions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from math import isfinite
 
 
@@ -41,6 +41,9 @@ def evaluate_operational_readiness(
     policy.validate()
     if not isinstance(snapshot, OperationalSnapshot):
         raise TypeError("snapshot must be OperationalSnapshot")
+    if type(snapshot.connected) is not bool or type(snapshot.trading_enabled) is not bool:
+        return False, ("connected and trading_enabled must be boolean",)
+
     reasons: list[str] = []
     timestamps = (snapshot.observed_at, snapshot.quote_time)
     if any(not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None for value in timestamps):
