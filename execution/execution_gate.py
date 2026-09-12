@@ -7,17 +7,31 @@ can be admitted.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from execution.broker_safety import BrokerSafetyPolicy, authorize_environment
 from execution.operational_guard import OperationalPolicy, OperationalSnapshot, evaluate_operational_readiness
 from execution.recovery import RecoveryDecision, RecoveryState
 
 
+_EXECUTION_ADMISSION_CAPABILITY = object()
+
+
 @dataclass(frozen=True)
 class ExecutionGateDecision:
     allowed: bool
     reasons: tuple[str, ...]
+    _capability: object | None = field(default=None, repr=False, compare=False)
+
+
+def _issue_decision(allowed: bool, reasons: tuple[str, ...]) -> ExecutionGateDecision:
+    """Issue an admission decision with an internal capability for execution."""
+    return ExecutionGateDecision(allowed, reasons, _EXECUTION_ADMISSION_CAPABILITY)
+
+
+def is_gate_issued(decision: ExecutionGateDecision) -> bool:
+    """Return whether the decision originated from this gate implementation."""
+    return isinstance(decision, ExecutionGateDecision) and decision._capability is _EXECUTION_ADMISSION_CAPABILITY
 
 
 def evaluate_execution_gate(
@@ -62,7 +76,7 @@ def evaluate_execution_gate(
         reasons.append("kill switch state malformed")
     elif kill_switch_active:
         reasons.append("kill switch active")
-    return ExecutionGateDecision(not reasons, tuple(reasons))
+    return _issue_decision(not reasons, tuple(reasons))
 
 
 def evaluate_environment_gate(
@@ -90,7 +104,7 @@ def evaluate_environment_gate(
             trading_enabled=operational_snapshot.trading_enabled,
         )
     except (TypeError, ValueError, OverflowError) as exc:
-        return ExecutionGateDecision(False, (f"safety evaluation error: {exc}",))
+        return _issue_decision(False, (f"safety evaluation error: {exc}",))
     return evaluate_execution_gate(
         operational=operational,
         broker=broker,
