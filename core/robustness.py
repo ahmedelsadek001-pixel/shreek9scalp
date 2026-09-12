@@ -72,3 +72,39 @@ def build_robustness_report(
         failures.append(wfo_failure)
     failures.extend(_mc_failures(mc, policy))
     return RobustnessReport(wfo, mc, not failures, tuple(failures))
+
+
+def _extract_backtest_pnl(backtest_result) -> tuple[float, ...]:
+    trades = getattr(backtest_result, "trades", None)
+    if trades is None:
+        raise ValueError("backtest result must expose trades")
+    pnl = []
+    for trade in trades:
+        value = getattr(trade, "net_pnl", None)
+        if value is None:
+            raise ValueError("backtest trades must expose net_pnl")
+        pnl.append(float(value))
+    return tuple(pnl)
+
+
+def build_backtest_robustness_report(
+    wfo: WalkForwardSummary,
+    backtest_result,
+    starting_equity: float = 10000.0,
+    simulations: int = 1000,
+    seed: int = 42,
+    policy: RobustnessPolicy = RobustnessPolicy(),
+) -> RobustnessReport:
+    """Build the robustness report directly from a backtest result.
+
+    The adapter consumes only the public ``trades[*].net_pnl`` contract and
+    keeps execution entirely outside the robustness layer.
+    """
+    return build_robustness_report(
+        wfo,
+        _extract_backtest_pnl(backtest_result),
+        starting_equity,
+        simulations,
+        seed,
+        policy,
+    )
