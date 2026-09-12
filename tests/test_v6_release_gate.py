@@ -8,6 +8,9 @@ from core.release_evidence import EvidenceRecord, ReleaseEvidenceBundle
 from core.v6_release_gate import evaluate_v6_release, require_v6_release
 
 
+_COMMIT = "a" * 40
+
+
 def full_bundle(passed=True):
     now = datetime.now(timezone.utc)
     records = tuple(
@@ -17,6 +20,7 @@ def full_bundle(passed=True):
             source="tests.test_v6_release_gate",
             run_id="v6-test-run-001",
             recorded_at=now,
+            commit_sha=_COMMIT,
         )
         for name in REQUIRED_EVIDENCE
     )
@@ -33,7 +37,7 @@ def test_v6_release_fails_closed_on_failed_evidence():
     bundle = full_bundle()
     records = tuple(
         EvidenceRecord(r.name, False if r.name == "robustness_passed" else r.passed,
-                       r.source, r.run_id, r.recorded_at)
+                       r.source, r.run_id, r.recorded_at, r.commit_sha)
         for r in bundle.records
     )
     decision = evaluate_v6_release(ReleaseEvidenceBundle.from_records(records))
@@ -67,3 +71,13 @@ def test_v6_release_evaluation_blocks_tampered_bundle_without_raising():
     assert decision.failures == ("evidence bundle integrity validation failed",)
     with pytest.raises(RuntimeError):
         require_v6_release(tampered)
+
+
+def test_v6_release_blocks_mixed_commit_provenance():
+    bundle = full_bundle()
+    changed = replace(bundle.records[0], commit_sha="b" * 40)
+    tampered = replace(bundle, records=(changed,) + bundle.records[1:])
+    decision = evaluate_v6_release(tampered)
+    assert decision.release_ready is False
+    assert decision.live.authorized is False
+    assert decision.failures == ("evidence bundle integrity validation failed",)
