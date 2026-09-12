@@ -27,21 +27,21 @@ def admit_signal(
     signal: TradeSignal | None,
     gates: Iterable[tuple[str, Callable[[], GateResult]]],
 ) -> AdmissionDecision:
-    """Admit only a fully aligned, valid BUY/SELL signal that passes every gate.
+    """Admit only a fully valid, aligned BUY/SELL signal that passes every gate.
 
     Gate evaluation is ordered and short-circuits on the first failure.
-    Missing signals, invalid status, RANGE/UNKNOWN directions, misalignment,
-    and non-finite or invalid prices fail closed.
+    Missing signals, invalid status, unaligned signals, RANGE/UNKNOWN
+    directions, non-finite prices, and invalid stop placement fail closed.
     """
     if signal is None:
         return AdmissionDecision(False, "signal unavailable")
     if signal.status != SignalStatus.VALID:
         return AdmissionDecision(False, "signal status is not VALID")
+    if not signal.aligned:
+        return AdmissionDecision(False, "signal is not aligned with higher-timeframe bias", signal, "alignment")
     if signal.direction not in (Direction.BUY, Direction.SELL):
         return AdmissionDecision(False, "direction is not executable")
-    if not signal.aligned:
-        return AdmissionDecision(False, "signal is not aligned with higher-timeframe direction")
-    if not all(isfinite(float(value)) for value in (signal.entry_price, signal.sl_price)):
+    if not all(isfinite(float(x)) for x in (signal.entry_price, signal.sl_price)):
         return AdmissionDecision(False, "entry/stop price is not finite")
     if signal.entry_price <= 0 or signal.sl_price <= 0:
         return AdmissionDecision(False, "invalid entry/stop price")
