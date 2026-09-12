@@ -7,6 +7,7 @@ network I/O.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Callable, Iterable
 
 from core.enums import Direction, SignalStatus
@@ -26,10 +27,11 @@ def admit_signal(
     signal: TradeSignal | None,
     gates: Iterable[tuple[str, Callable[[], GateResult]]],
 ) -> AdmissionDecision:
-    """Admit only a fully valid BUY/SELL signal that passes every gate.
+    """Admit only a fully aligned, valid BUY/SELL signal that passes every gate.
 
     Gate evaluation is ordered and short-circuits on the first failure.
-    Missing signals, invalid status, RANGE and UNKNOWN directions fail closed.
+    Missing signals, invalid status, RANGE/UNKNOWN directions, misalignment,
+    and non-finite or invalid prices fail closed.
     """
     if signal is None:
         return AdmissionDecision(False, "signal unavailable")
@@ -37,6 +39,10 @@ def admit_signal(
         return AdmissionDecision(False, "signal status is not VALID")
     if signal.direction not in (Direction.BUY, Direction.SELL):
         return AdmissionDecision(False, "direction is not executable")
+    if not signal.aligned:
+        return AdmissionDecision(False, "signal is not aligned with higher-timeframe direction")
+    if not all(isfinite(float(value)) for value in (signal.entry_price, signal.sl_price)):
+        return AdmissionDecision(False, "entry/stop price is not finite")
     if signal.entry_price <= 0 or signal.sl_price <= 0:
         return AdmissionDecision(False, "invalid entry/stop price")
     if signal.direction == Direction.BUY and signal.sl_price >= signal.entry_price:
