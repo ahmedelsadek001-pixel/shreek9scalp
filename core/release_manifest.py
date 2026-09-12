@@ -24,18 +24,21 @@ class ReleaseManifest:
         commit_sha: str,
         result: CertificationResult,
     ) -> "ReleaseManifest":
-        if not version.strip():
+        if not isinstance(version, str) or not version.strip():
             raise ValueError("version is required")
-        if not commit_sha or len(commit_sha) != 40:
+        if not isinstance(commit_sha, str) or len(commit_sha) != 40:
             raise ValueError("commit_sha must be a 40-character SHA")
+        normalized_sha = commit_sha.lower()
+        if any(char not in "0123456789abcdef" for char in normalized_sha):
+            raise ValueError("commit_sha must contain only hexadecimal characters")
         if not isinstance(result, CertificationResult):
             raise TypeError("result must be CertificationResult")
         canonical = "|".join(
-            (version, commit_sha.lower(), result.bundle_id, str(result.ready), *result.failures)
+            (version, normalized_sha, result.bundle_id, str(result.ready), *result.failures)
         )
         return cls(
             version=version,
-            commit_sha=commit_sha.lower(),
+            commit_sha=normalized_sha,
             bundle_id=result.bundle_id,
             ready=result.ready,
             failures=result.failures,
