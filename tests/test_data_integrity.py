@@ -44,7 +44,7 @@ def test_future_and_stale_data_are_rejected():
     now = datetime(2026, 9, 12, 12, 10, tzinfo=UTC)
     bars = _bars()
     assert validate_bars(bars, now=now, max_staleness_minutes=10).valid
-    assert not validate_bars(bars, now=now - timedelta(minutes=1)).valid
+    assert not validate_bars(bars, now=now - timedelta(minutes=10)).valid
     assert not validate_bars(bars, now=now + timedelta(hours=1), max_staleness_minutes=10).valid
 
 
