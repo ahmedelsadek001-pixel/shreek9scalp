@@ -1,5 +1,3 @@
-from datetime import datetime
-
 import pytest
 
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
@@ -47,16 +45,14 @@ def test_default_lifecycle_closes_50_25_25():
 
 def test_buy_breakeven_moves_stop_to_entry():
     levels = make_levels(Direction.BUY)
-    state = initial_state(1.0, levels)
-    state = after_tp1(state, levels, LifecyclePolicy(), 1.0)
+    state = after_tp1(initial_state(1.0, levels), levels, LifecyclePolicy(), 1.0)
     assert state.breakeven_active is True
     assert state.stop_price == pytest.approx(levels.entry)
 
 
 def test_sell_breakeven_moves_stop_to_entry():
     levels = make_levels(Direction.SELL)
-    state = initial_state(1.0, levels)
-    state = after_tp1(state, levels, LifecyclePolicy(), 1.0)
+    state = after_tp1(initial_state(1.0, levels), levels, LifecyclePolicy(), 1.0)
     assert state.breakeven_active is True
     assert state.stop_price == pytest.approx(levels.entry)
 
@@ -77,12 +73,19 @@ def test_policy_fractions_must_sum_to_one():
         initial_state(1.0, levels, policy)
 
 
+def test_policy_rejects_zero_tp_fraction():
+    levels = make_levels(Direction.BUY)
+    policy = LifecyclePolicy(tp1_fraction=0.0, tp2_fraction=0.5, tp3_fraction=0.5)
+    with pytest.raises(ValueError, match="positive"):
+        initial_state(1.0, levels, policy)
+
+
 def test_trailing_stop_is_monotonic_for_buy():
     levels = make_levels(Direction.BUY)
-    policy = LifecyclePolicy(tp1_fraction=0.5, tp2_fraction=0.25, tp3_fraction=0.25, trailing_after_tp2=True)
+    policy = LifecyclePolicy(trailing_after_tp2=True)
     state = after_tp2(after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0), 1.0, levels, policy)
     first = trailing_stop_price(state, levels, 103.0, policy)
-    second = trailing_stop_price(state, levels, 102.0, policy)
+    second = trailing_stop_price(state, levels, 102.0, policy, previous_stop=first)
     assert first >= levels.entry
     assert second >= first
 
@@ -92,6 +95,6 @@ def test_trailing_stop_is_monotonic_for_sell():
     policy = LifecyclePolicy(trailing_after_tp2=True)
     state = after_tp2(after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0), 1.0, levels, policy)
     first = trailing_stop_price(state, levels, 97.0, policy)
-    second = trailing_stop_price(state, levels, 98.0, policy)
+    second = trailing_stop_price(state, levels, 98.0, policy, previous_stop=first)
     assert first <= levels.entry
     assert second <= first
