@@ -30,6 +30,7 @@ def test_admission_rejects_non_executable_direction():
 def test_admission_rejects_misaligned_signal():
     result = admit_signal(valid_signal(aligned=False), [])
     assert not result.allowed
+    assert result.failed_gate == "alignment"
     assert "aligned" in result.reason
 
 
