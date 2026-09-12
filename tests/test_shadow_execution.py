@@ -47,3 +47,21 @@ def test_shadow_keeps_mismatched_report_pending():
     result = shadow.observe(ExecutionReport("sig-001", "XAUUSD", Direction.SELL, 0.03, 2500.0))
     assert not result.matched
     assert shadow.pending_order_ids() == ("sig-001",)
+
+
+def test_shadow_blocks_partial_fill_and_keeps_order_pending():
+    shadow = ShadowExecution()
+    shadow.submit_intent(_intent())
+    result = shadow.observe(ExecutionReport("sig-001", "XAUUSD", Direction.BUY, 0.02, 2500.0))
+    assert not result.matched
+    assert "volume mismatch" in result.reasons
+    assert shadow.pending_order_ids() == ("sig-001",)
+
+
+def test_shadow_blocks_incorrect_fill_price_and_keeps_order_pending():
+    shadow = ShadowExecution()
+    shadow.submit_intent(_intent())
+    result = shadow.observe(ExecutionReport("sig-001", "XAUUSD", Direction.BUY, 0.03, 2501.0))
+    assert not result.matched
+    assert "fill price outside tolerance" in result.reasons
+    assert shadow.pending_order_ids() == ("sig-001",)
