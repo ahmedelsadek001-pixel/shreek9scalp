@@ -15,15 +15,16 @@ from core.models import ExecutionLevels, TradeSignal
 def build_execution_levels(
     signal: TradeSignal,
     draw_target: Optional[float] = None,
-    min_rr: float = 1.5,
+    min_rr: Optional[float] = None,
     atr_sl_buffer: float = 0.0,
 ) -> Optional[ExecutionLevels]:
     """Build TP1/TP2/TP3 from a validated signal.
 
-    TP1 is 1R. TP2 uses the supplied draw target when it provides at least
-    ``min_rr``. Otherwise TP2 is the minimum acceptable reward target,
-    ``min_rr * R``. TP3 is 1.5x the TP2 distance. Invalid or non-finite
-    inputs return None.
+    TP1 is 1R. A valid draw target is used when it provides at least the
+    configured reward/risk. If no ``min_rr`` is supplied, the legacy 2R
+    fallback is retained. Explicit ``min_rr`` values control the fallback,
+    which lets the scanner use its configured minimum without changing the
+    standalone API default. TP3 is 1.5x the TP2 distance.
     """
     if signal is None or signal.direction not in (Direction.BUY, Direction.SELL):
         return None
@@ -31,7 +32,9 @@ def build_execution_levels(
     sl = float(signal.sl_price)
     if not all(isfinite(x) and x > 0 for x in (entry, sl)):
         return None
-    if min_rr <= 0 or not isfinite(min_rr) or atr_sl_buffer < 0 or not isfinite(atr_sl_buffer):
+    if min_rr is not None and (min_rr <= 0 or not isfinite(min_rr)):
+        return None
+    if atr_sl_buffer < 0 or not isfinite(atr_sl_buffer):
         return None
 
     if signal.direction == Direction.BUY and sl >= entry:
@@ -41,7 +44,6 @@ def build_execution_levels(
 
     risk = abs(entry - sl)
     if atr_sl_buffer:
-        # Buffer is applied away from entry, never toward it.
         sl = sl - atr_sl_buffer if signal.direction == Direction.BUY else sl + atr_sl_buffer
         if sl <= 0 or (signal.direction == Direction.BUY and sl >= entry) or (signal.direction == Direction.SELL and sl <= entry):
             return None
@@ -51,14 +53,15 @@ def build_execution_levels(
 
     direction_sign = 1.0 if signal.direction == Direction.BUY else -1.0
     tp1 = entry + direction_sign * risk
-    fallback_tp2 = entry + direction_sign * min_rr * risk
+    required_rr = 2.0 if min_rr is None else min_rr
+    fallback_tp2 = entry + direction_sign * required_rr * risk
     tp2 = fallback_tp2
 
     if draw_target is not None and isfinite(float(draw_target)):
         target = float(draw_target)
         target_rr = abs(target - entry) / risk
         direction_ok = target > entry if signal.direction == Direction.BUY else target < entry
-        if direction_ok and target_rr >= min_rr:
+        if direction_ok and target_rr >= required_rr:
             tp2 = target
 
     tp3_distance = abs(tp2 - entry) * 1.5
