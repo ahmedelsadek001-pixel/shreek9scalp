@@ -9,15 +9,19 @@ from dataclasses import dataclass
 from typing import Mapping
 
 
+# V5.1 release prerequisites plus the V6.0 broker/operator controls.
+# Keep this list explicit: missing evidence must never become an implicit pass.
 REQUIRED_EVIDENCE = (
     "ci_green",
-    "historical_validation",
-    "walk_forward",
-    "robustness",
-    "paper_trading",
-    "security_review",
-    "shadow_validation",
-    "recovery_validation",
+    "tests_green",
+    "data_integrity_validated",
+    "walk_forward_passed",
+    "robustness_passed",
+    "paper_trading_validated",
+    "security_reviewed",
+    "execution_reconciled",
+    "shadow_validated",
+    "recovery_validated",
     "broker_validation",
     "operator_approval",
 )
@@ -31,6 +35,9 @@ class LiveAuthorization:
 
 def evaluate_live_authorization(evidence: Mapping[str, bool]) -> LiveAuthorization:
     """Authorize only when every mandatory evidence item is explicitly True."""
+    if not isinstance(evidence, Mapping):
+        raise TypeError("evidence must be a mapping")
+
     missing = []
     for key in REQUIRED_EVIDENCE:
         value = evidence.get(key, False)
