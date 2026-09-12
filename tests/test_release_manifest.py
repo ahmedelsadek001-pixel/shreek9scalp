@@ -1,0 +1,30 @@
+from datetime import datetime, timezone
+
+from core.release_certification import CertificationResult
+from core.release_manifest import ReleaseManifest
+
+
+def test_manifest_binds_certification_to_commit_and_bundle():
+    result = CertificationResult(True, "b" * 64, ())
+    manifest = ReleaseManifest.from_certification("V5.1-RC1", "a" * 40, result)
+    assert manifest.ready
+    assert manifest.commit_sha == "a" * 40
+    assert manifest.bundle_id == "b" * 64
+    assert len(manifest.manifest_id) == 64
+
+
+def test_manifest_is_deterministic():
+    result = CertificationResult(False, "b" * 64, ("security",))
+    first = ReleaseManifest.from_certification("V5.1-RC1", "a" * 40, result)
+    second = ReleaseManifest.from_certification("V5.1-RC1", "a" * 40, result)
+    assert first.manifest_id == second.manifest_id
+
+
+def test_manifest_rejects_invalid_commit_sha():
+    result = CertificationResult(True, "b" * 64, ())
+    try:
+        ReleaseManifest.from_certification("V5.1-RC1", "short", result)
+    except ValueError as exc:
+        assert "commit_sha" in str(exc)
+    else:
+        raise AssertionError("invalid commit SHA was accepted")
