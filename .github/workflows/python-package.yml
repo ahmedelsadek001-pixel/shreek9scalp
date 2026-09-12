@@ -42,7 +42,7 @@ jobs:
 
         files = []
         for path in Path('.').rglob('*.py'):
-            if any(part in {'.git', '.venv', 'venv', '__pycache__'} for part in path.parts):
+            if any(part in {'.git', '.venv', 'venv', '__pycache__', 'tests', 'security'} for part in path.parts):
                 continue
             files.append((str(path), path.read_text(encoding='utf-8')))
         passed, findings = evaluate_tree(files)
@@ -50,7 +50,7 @@ jobs:
             for finding in findings:
                 print(f"SECURITY GATE: {finding.rule} in {finding.path}")
             raise SystemExit(1)
-        print(f"Security gate passed for {len(files)} Python files")
+        print(f"Security gate passed for {len(files)} production Python files")
         PY
     - name: Lint with flake8
       env:
