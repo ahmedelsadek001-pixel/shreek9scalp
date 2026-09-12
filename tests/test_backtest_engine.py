@@ -113,3 +113,18 @@ def test_session_window_blocks_entry_outside_allowed_period():
     series = bars([(100, 100, 100, 100, 0), (100, 101, 99, 100, 0), (100, 101, 99, 100, 0)])
     policy = TradingWindowPolicy((SessionWindow("NY", time(13), time(14)),))
     result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], trading_window=policy)
+    assert result.trades == ()
+
+
+def test_max_holding_exits_at_bar_open_without_lookahead():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 100, 100, 100, 0),
+        (105, 110, 104, 109, 0),
+    ])
+    policy = TradingWindowPolicy(max_holding_minutes=1)
+    result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], trading_window=policy)
+    trade = result.trades[0]
+    assert trade.exit_reason == "TIME"
+    assert trade.exit_time == series[2].timestamp
+    assert trade.exit == 105.0
