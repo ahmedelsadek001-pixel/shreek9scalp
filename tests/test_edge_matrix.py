@@ -12,6 +12,7 @@ def test_matrix_combines_setup_and_regime():
     rows = build_edge_matrix(
         [trade("FVG", 2.0), trade("FVG", -1.0), trade("OB", 4.0)],
         [Regime.TREND, Regime.TREND, Regime.RANGE],
+        min_trades=1,
     )
     assert [(r.setup, r.regime) for r in rows] == [("FVG", "TREND"), ("OB", "RANGE")]
     assert rows[0].expectancy == 0.5
