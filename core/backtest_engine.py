@@ -198,8 +198,10 @@ def _run_lifecycle(
     while index < len(series) and remaining > 0:
         bar = series[index]
         if trading_window is not None and trading_window.holding_expired(entry_time, bar.timestamp):
-            exit_price, gross, commission = _close_at_bar(bar, order.direction, entry, remaining, costs, bar.open)
-            return index, exit_price, "TIME_EXIT", gross_total + gross, cost_total + commission, remaining, tuple(events)
+            exit_price, gross, commission = _close_at_bar(
+                bar, order.direction, entry, remaining, costs, bar.open
+            )
+            return index, exit_price, "TIME", gross_total + gross, cost_total + commission, remaining, tuple(events)
 
         stop = state.stop_price if state.stop_price is not None else order.levels.sl
         if state.trailing_active and index > entry_index:
@@ -227,7 +229,7 @@ def _run_lifecycle(
         gross_total += _pnl(entry, exit_price, order.direction, close_volume, costs.point_value)
         cost_total += costs.commission_per_volume * close_volume
         remaining -= close_volume
-        events.append(reason)
+        events.append(stages[stage_index][0])
         if stage_index == 0:
             from core.position_lifecycle import after_tp1
             state = after_tp1(state, order.levels, policy, order.volume)
@@ -303,6 +305,11 @@ def run_backtest(
             raw_exit = None
             reason = ""
             for i in range(entry_index, len(series)):
+                if trading_window is not None and trading_window.holding_expired(entry_bar.timestamp, series[i].timestamp):
+                    exit_index = i
+                    raw_exit = series[i].open
+                    reason = "TIME"
+                    break
                 hit = _hit(series[i], order.direction, order.levels.sl, order.levels.tp3)
                 if hit is not None:
                     raw_exit, reason = hit
