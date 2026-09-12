@@ -41,7 +41,7 @@ def _setup():
 def _signal(entry=100.0, stop=99.0):
     return TradeSignal(
         status=SignalStatus.VALID,
-        setup_type=SetupType.BREAKOUT,
+        setup_type=SetupType.COMBINED,
         frame=Timeframe.M15,
         direction=Direction.BUY,
         entry_price=entry,
@@ -69,7 +69,7 @@ def test_orchestrator_blocks_invalid_signal_before_market_admission():
     engine = PaperTradingEngine(1000, 0.05)
     orchestrator = TradeOrchestrator(engine, RiskBudget(1000))
     invalid = _signal()
-    invalid.status = SignalStatus.INVALID
+    invalid.status = SignalStatus.WAIT
 
     result = orchestrator.evaluate_and_submit(
         invalid, _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD", setup_min_score=70
