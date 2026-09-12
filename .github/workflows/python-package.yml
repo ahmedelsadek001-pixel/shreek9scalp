@@ -1,5 +1,6 @@
 # CI validates the strategy engine on Linux; MT5 runtime dependencies remain
 # in requirements.txt for the broker/terminal environment.
+# Hardening branch CI is intentionally enabled before any main migration.
 name: Python package
 
 on:
