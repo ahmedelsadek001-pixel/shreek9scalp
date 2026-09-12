@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-import MetaTrader5 as mt5
+from utils.mt5_compat import mt5
 from market.data_manager import MT5Manager, _MT5_CALL_LOCK
 from utils.logger import get_logger
 
