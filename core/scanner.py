@@ -13,7 +13,7 @@ from config.settings import Settings
 from core.confluence import ConfluenceDecision, evaluate_confluence
 from core.enums import Direction, Timeframe
 from core.execution_levels import build_execution_levels
-from core.models import MarketStructure, TradeSignal
+from core.models import ExecutionLevels, MarketStructure, TradeSignal
 from core.signal_identity import signal_fingerprint
 from core.signal_pipeline import AdmissionDecision, admit_signal
 from market.entry_signals import analyze_execution_frame, analyze_m15_entry_signal, select_best_execution_frame
@@ -29,7 +29,7 @@ class ScanDecision:
     confluence: Optional[ConfluenceDecision]
     admission: AdmissionDecision
     fingerprint: Optional[str]
-    execution_levels: object | None = None
+    execution_levels: Optional[ExecutionLevels] = None
 
 
 def _closed(data: dict[str, object]) -> dict[str, object]:
@@ -41,10 +41,13 @@ def _structure(data: dict[str, object], name: str, settings: Settings) -> Option
     df = data.get(name)
     if df is None or getattr(df, "empty", True):
         return None
-    atr = float(df.iloc[-1]["atr"]) if "atr" in df.columns else 0.0
+    try:
+        atr = float(df.iloc[-1]["atr"])
+    except (KeyError, TypeError, ValueError):
+        return None
     if atr <= 0:
         return None
-    frame = Timeframe[name]
+    frame = Timeframe(name)
     return determine_structure(
         df,
         frame,
@@ -71,9 +74,8 @@ def scan_symbol(
     """
     settings = settings or Settings()
     closed = _closed(data)
-    empty_admission = admit_signal(None, ())
     if direction not in (Direction.BUY, Direction.SELL):
-        return ScanDecision(symbol.upper(), direction, None, None, empty_admission, None)
+        return ScanDecision(symbol.upper(), direction, None, None, AdmissionDecision(False, "direction is not executable"), None)
     required = {"D1", "H4", "H1", "M15"}
     if not required.issubset(closed):
         return ScanDecision(symbol.upper(), direction, None, None, AdmissionDecision(False, "required timeframe data missing"), None)
@@ -92,16 +94,30 @@ def scan_symbol(
             execution_signals.append(analyze_execution_frame(closed[name], direction, frame, settings))
     best = select_best_execution_frame(execution_signals) or signal
 
-    confluence = evaluate_confluence(direction, d1, h4, h1, m15, best, in_pd_zone, killzone_active, draw_on_liquidity, settings)
+    confluence = evaluate_confluence(
+        direction, d1, h4, h1, m15, best,
+        in_pd_zone, killzone_active, draw_on_liquidity, settings,
+    )
     if not confluence.tradable:
         return ScanDecision(symbol.upper(), direction, best, confluence, AdmissionDecision(False, confluence.reason, best), None)
 
-    identity = signal_fingerprint(symbol, str(closed["M15"].iloc[-1]["time"]), direction.value, best.setup_type.value, best.frame.value)
+    identity = signal_fingerprint(
+        symbol, str(closed["M15"].iloc[-1]["time"]),
+        direction.value, best.setup_type.value, best.frame.value,
+    )
     admission = admit_signal(best, gates)
     if not admission.allowed:
         return ScanDecision(symbol.upper(), direction, best, confluence, admission, identity)
 
-    levels = build_execution_levels(best, draw_target=None, settings=settings)
+    levels = build_execution_levels(
+        best,
+        draw_target=None,
+        min_rr=settings.min_rr_to_draw,
+        atr_sl_buffer=settings.atr_sl_buffer,
+    )
     if levels is None:
-        return ScanDecision(symbol.upper(), direction, best, confluence, AdmissionDecision(False, "execution levels unavailable", best), identity)
+        return ScanDecision(
+            symbol.upper(), direction, best, confluence,
+            AdmissionDecision(False, "execution levels unavailable", best), identity,
+        )
     return ScanDecision(symbol.upper(), direction, best, confluence, admission, identity, levels)
