@@ -62,7 +62,42 @@ def test_orchestrator_admits_sizes_and_submits():
     assert result.allowed
     assert result.stage == "paper_execution"
     assert result.volume == 10.0
+    assert result.fingerprint
     assert engine.open_order is not None
+
+
+def test_orchestrator_blocks_duplicate_signal_identity():
+    engine = PaperTradingEngine(1000, 0.05)
+    orchestrator = TradeOrchestrator(engine, RiskBudget(1000, risk_pct=0.01))
+    signal = _signal()
+
+    first = orchestrator.evaluate_and_submit(
+        signal, _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD", setup_min_score=70
+    )
+    second = orchestrator.evaluate_and_submit(
+        signal, _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD", setup_min_score=70
+    )
+
+    assert first.allowed
+    assert not second.allowed
+    assert second.stage == "duplicate"
+    assert second.fingerprint == first.fingerprint
+
+
+def test_orchestrator_allows_identity_release_after_lifecycle():
+    engine = PaperTradingEngine(1000, 0.05)
+    orchestrator = TradeOrchestrator(engine, RiskBudget(1000, risk_pct=0.01))
+    result = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD", setup_min_score=70
+    )
+    engine.close(101.0, datetime(2026, 9, 12, 10, 5, tzinfo=timezone.utc), "TP")
+    orchestrator.release_signal(result.fingerprint)
+
+    retry = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=datetime(2026, 9, 12, 10, 6, tzinfo=timezone.utc),
+        symbol="XAUUSD", setup_min_score=70,
+    )
+    assert retry.allowed
 
 
 def test_orchestrator_blocks_invalid_signal_before_market_admission():
