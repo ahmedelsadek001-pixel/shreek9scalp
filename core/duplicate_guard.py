@@ -8,7 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from math import isfinite
-from typing import Optional
 
 from core.models import TradeSignal
 
@@ -26,6 +25,8 @@ def signal_fingerprint(symbol: str, signal: TradeSignal) -> str:
         raise ValueError("symbol is required")
     if not isinstance(signal, TradeSignal):
         raise TypeError("signal must be TradeSignal")
+    if not all(isfinite(float(value)) for value in (signal.entry_price, signal.sl_price)):
+        raise ValueError("signal prices must be finite")
     values = (
         symbol.strip().upper(),
         signal.setup_type.value,
@@ -34,8 +35,6 @@ def signal_fingerprint(symbol: str, signal: TradeSignal) -> str:
         repr(float(signal.entry_price)),
         repr(float(signal.sl_price)),
     )
-    if not all(isfinite(float(value)) for value in (signal.entry_price, signal.sl_price)):
-        raise ValueError("signal prices must be finite")
     payload = "|".join(values).encode("utf-8")
     return sha256(payload).hexdigest()
 
