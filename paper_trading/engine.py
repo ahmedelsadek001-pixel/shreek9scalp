@@ -65,6 +65,12 @@ class PaperTradingEngine:
         self.open_order = order
         return True
 
+    def submit_decision(self, order: PaperOrder, admission, robustness_report) -> bool:
+        """Consume typed gate results without allowing the engine to bypass them."""
+        allowed = getattr(admission, "allowed", False)
+        robust = getattr(robustness_report, "passed", False)
+        return self.submit(order, admitted=bool(allowed), robustness_passed=bool(robust))
+
     def close(self, price: float, reason: str) -> PaperFill:
         """Close the current paper position and update equity deterministically."""
         if self.open_order is None:
