@@ -15,8 +15,9 @@ from core.release_gate import ReleaseDecision, ReleaseEvidence, evaluate_release
 from core.robustness import RobustnessReport
 
 
-_REQUIRED_NAMES = REQUIRED_EVIDENCE
 _V51_RELEASE_NAMES = tuple(ReleaseEvidence.__dataclass_fields__)
+_SUPPORTED_NAMES = REQUIRED_EVIDENCE
+_REQUIRED_NAMES = _V51_RELEASE_NAMES
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class EvidenceRecord:
     def validate(self) -> None:
         if not self.name.strip() or not self.source.strip() or not self.run_id.strip():
             raise ValueError("evidence identity fields are required")
-        if self.name not in _REQUIRED_NAMES:
+        if self.name not in _SUPPORTED_NAMES:
             raise ValueError(f"unsupported evidence name: {self.name}")
         if type(self.passed) is not bool:
             raise TypeError("evidence passed must be bool")
@@ -78,7 +79,7 @@ def build_robustness_evidence(report: RobustnessReport, run_id: str) -> Evidence
 
 
 def evaluate_evidence_bundle(bundle: ReleaseEvidenceBundle, required: ReleaseEvidence) -> ReleaseDecision:
-    """Evaluate only provenance-backed values and enforce the required policy."""
+    """Evaluate only provenance-backed V5.1 values and enforce its policy."""
     if not isinstance(bundle, ReleaseEvidenceBundle):
         raise TypeError("bundle must be ReleaseEvidenceBundle")
     if not isinstance(required, ReleaseEvidence):
@@ -87,8 +88,7 @@ def evaluate_evidence_bundle(bundle: ReleaseEvidenceBundle, required: ReleaseEvi
     missing = tuple(name for name in _REQUIRED_NAMES if name not in values)
     if missing:
         return ReleaseDecision(False, tuple(f"missing evidence provenance: {name}" for name in missing))
-    v51_values = {name: values[name] for name in _V51_RELEASE_NAMES}
-    evidence = ReleaseEvidence(**v51_values)
+    evidence = ReleaseEvidence(**{name: values[name] for name in _V51_RELEASE_NAMES})
     for name in _REQUIRED_NAMES:
         expected = getattr(required, name, False)
         if type(expected) is not bool:
