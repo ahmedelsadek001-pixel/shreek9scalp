@@ -99,7 +99,7 @@ def test_lifecycle_trailing_activates_after_tp2_and_exits_on_next_bar():
         (100, 100, 100, 100, 0),
         (100, 101.1, 100, 101, 0),
         (101, 102.1, 100.9, 102, 0),
-        (102, 103.5, 102.5, 103, 0),
+        (102, 102.5, 100.9, 101.5, 0),
     ])
     policy = LifecyclePolicy(trailing_after_tp2=True, trailing_distance_r=1.0)
     result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], lifecycle_policy=policy)
