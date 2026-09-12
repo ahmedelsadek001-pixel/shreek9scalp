@@ -95,11 +95,13 @@ def test_lifecycle_stop_after_tp1_uses_breakeven_on_following_bar():
 
 
 def test_lifecycle_trailing_activates_after_tp2_and_exits_on_next_bar():
+    # TP2 closes on bar 2. The trailing stop is calculated from bar 2's
+    # close and becomes active on bar 3. Bar 3 then touches that stop.
     series = bars([
         (100, 100, 100, 100, 0),
         (100, 101.1, 100, 101, 0),
         (101, 102.1, 100.9, 102, 0),
-        (102, 104.5, 102.5, 104, 0),
+        (102, 104.5, 100.5, 104, 0),
     ])
     policy = LifecyclePolicy(trailing_after_tp2=True, trailing_distance_r=1.0)
     result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], lifecycle_policy=policy)
