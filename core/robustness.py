@@ -40,6 +40,11 @@ class RobustnessReport:
     passed: bool
     failures: tuple[str, ...]
 
+    def require_pass(self) -> None:
+        """Raise if robustness has not explicitly passed all configured gates."""
+        if not self.passed:
+            raise RuntimeError("robustness gate failed: " + "; ".join(self.failures))
+
 
 def _validate_pnl(pnl: Sequence[float]) -> None:
     if not pnl or any(not isfinite(float(value)) for value in pnl):
