@@ -16,6 +16,15 @@ _SUPPORTED_NAMES = REQUIRED_EVIDENCE
 _REQUIRED_NAMES = _V51_RELEASE_NAMES
 
 
+def _validate_commit_sha(commit_sha: str) -> str:
+    if not isinstance(commit_sha, str) or len(commit_sha) != 40:
+        raise ValueError("commit_sha must be a 40-character SHA")
+    normalized = commit_sha.lower()
+    if any(char not in "0123456789abcdef" for char in normalized):
+        raise ValueError("commit_sha must contain only hexadecimal characters")
+    return normalized
+
+
 @dataclass(frozen=True)
 class EvidenceRecord:
     name: str
@@ -23,6 +32,7 @@ class EvidenceRecord:
     source: str
     run_id: str
     recorded_at: datetime
+    commit_sha: str
 
     def validate(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -37,6 +47,7 @@ class EvidenceRecord:
             raise TypeError("evidence passed must be bool")
         if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
             raise ValueError("recorded_at must be timezone-aware")
+        _validate_commit_sha(self.commit_sha)
 
 
 @dataclass(frozen=True)
@@ -47,7 +58,7 @@ class ReleaseEvidenceBundle:
     @staticmethod
     def _canonical(records: tuple[EvidenceRecord, ...]) -> str:
         return "\n".join(
-            f"{r.name}|{r.passed}|{r.source}|{r.run_id}|{r.recorded_at.astimezone(timezone.utc).isoformat()}"
+            f"{r.name}|{r.passed}|{r.source}|{r.run_id}|{r.recorded_at.astimezone(timezone.utc).isoformat()}|{r.commit_sha.lower()}"
             for r in sorted(records, key=lambda item: item.name)
         )
 
@@ -62,10 +73,21 @@ class ReleaseEvidenceBundle:
         names = [record.name for record in records]
         if len(names) != len(set(names)):
             raise ValueError("duplicate evidence names are not allowed")
+        commit_shas = {record.commit_sha.lower() for record in records}
+        if len(commit_shas) != 1:
+            raise ValueError("all evidence records must bind to the same commit SHA")
         canonical = cls._canonical(records)
         return cls(records, sha256(canonical.encode("utf-8")).hexdigest())
 
+    @property
+    def commit_sha(self) -> str:
+        """Return the single commit SHA shared by every evidence record."""
+        self.validate()
+        return self.records[0].commit_sha.lower()
+
     def validate(self) -> None:
+        for record in self.records:
+            record.validate()
         expected = sha256(self._canonical(self.records).encode("utf-8")).hexdigest()
         if self.bundle_id != expected:
             raise ValueError("bundle_id does not match evidence records")
@@ -78,18 +100,20 @@ class ReleaseEvidenceBundle:
         return {record.name: record.passed for record in self.records}
 
 
-def build_robustness_evidence(report: RobustnessReport, run_id: str) -> EvidenceRecord:
+def build_robustness_evidence(report: RobustnessReport, run_id: str, commit_sha: str) -> EvidenceRecord:
     """Convert an actual robustness report into immutable release evidence."""
     if not isinstance(report, RobustnessReport):
         raise TypeError("report must be RobustnessReport")
     if not isinstance(run_id, str) or not run_id.strip():
         raise ValueError("run_id is required")
+    normalized_sha = _validate_commit_sha(commit_sha)
     return EvidenceRecord(
         name="robustness_passed",
         passed=report.passed,
         source="core.robustness.build_robustness_report",
         run_id=run_id,
         recorded_at=datetime.now(timezone.utc),
+        commit_sha=normalized_sha,
     )
 
 
