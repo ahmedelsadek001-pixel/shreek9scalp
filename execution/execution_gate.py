@@ -51,6 +51,8 @@ def evaluate_execution_gate(
                 reasons.append(f"{name}: rejected without reason")
     if not isinstance(recovery, RecoveryDecision):
         reasons.append("recovery decision malformed")
+    elif type(recovery.can_submit) is not bool or not isinstance(recovery.reason, str):
+        reasons.append("recovery decision malformed")
     elif not recovery.can_submit or recovery.state is not RecoveryState.CONNECTED:
         reasons.append("recovery: execution channel is not ready")
     if type(kill_switch_active) is not bool:
