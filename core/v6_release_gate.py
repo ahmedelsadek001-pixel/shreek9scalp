@@ -1,6 +1,8 @@
-"""V6.0 release gate combining safety evidence and live authorization.
+"""V6.0 provenance-bound release gate.
 
 This module is a policy boundary only. It does not perform live execution.
+Raw boolean evidence is intentionally rejected: V6 authorization must be
+backed by a validated ReleaseEvidenceBundle with provenance records.
 """
 from __future__ import annotations
 
@@ -8,6 +10,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from core.live_authorization import LiveAuthorization, evaluate_live_authorization
+from core.release_evidence import ReleaseEvidenceBundle
 
 
 @dataclass(frozen=True)
@@ -17,15 +20,24 @@ class V6ReleaseDecision:
     failures: tuple[str, ...]
 
 
-def evaluate_v6_release(evidence: Mapping[str, bool]) -> V6ReleaseDecision:
-    """Return a fail-closed V6 decision from explicit evidence only."""
+def _validated_evidence(bundle: ReleaseEvidenceBundle) -> Mapping[str, bool]:
+    if not isinstance(bundle, ReleaseEvidenceBundle):
+        raise TypeError("V6 release requires ReleaseEvidenceBundle")
+    for record in bundle.records:
+        record.validate()
+    return bundle.as_map()
+
+
+def evaluate_v6_release(bundle: ReleaseEvidenceBundle) -> V6ReleaseDecision:
+    """Return a fail-closed V6 decision from provenance-bound evidence only."""
+    evidence = _validated_evidence(bundle)
     live = evaluate_live_authorization(evidence)
-    failures = tuple(f"missing evidence: {item}" for item in live.missing)
+    failures = tuple(f"missing/failed evidence: {item}" for item in live.missing)
     return V6ReleaseDecision(live.authorized, live, failures)
 
 
-def require_v6_release(evidence: Mapping[str, bool]) -> None:
+def require_v6_release(bundle: ReleaseEvidenceBundle) -> None:
     """Raise when any V6 live-release prerequisite is absent or false."""
-    decision = evaluate_v6_release(evidence)
+    decision = evaluate_v6_release(bundle)
     if not decision.release_ready:
         raise RuntimeError("V6 release blocked; " + "; ".join(decision.failures))
