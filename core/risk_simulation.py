@@ -26,13 +26,17 @@ class RobustnessSummary:
     worst_max_drawdown: float
 
 
-def _validate(pnl: Sequence[float], starting_equity: float, simulations: int) -> None:
+def _validate(pnl: Sequence[float], starting_equity: float, simulations: int, block_size: int) -> None:
     if not isfinite(starting_equity) or starting_equity <= 0:
         raise ValueError("starting equity must be positive and finite")
     if not pnl or any(not isfinite(float(x)) for x in pnl):
         raise ValueError("pnl must be non-empty and finite")
     if simulations <= 0:
         raise ValueError("simulations must be positive")
+    if not isinstance(block_size, int) or isinstance(block_size, bool) or block_size <= 0:
+        raise ValueError("block_size must be a positive integer")
+    if block_size > len(pnl):
+        raise ValueError("block_size cannot exceed pnl length")
 
 
 def _validate_multipliers(slippage_multiplier: float, spread_multiplier: float) -> None:
@@ -51,18 +55,38 @@ def _stress_pnl(value: float, slippage_multiplier: float, spread_multiplier: flo
     return value / cost_factor if value >= 0 else value * cost_factor
 
 
+def _sample_blocks(pnl: Sequence[float], rng: random.Random, block_size: int) -> tuple[float, ...]:
+    """Bootstrap contiguous trade blocks to preserve short-range clustering."""
+    if block_size == 1:
+        return tuple(rng.choice(tuple(pnl)) for _ in pnl)
+    source = tuple(float(x) for x in pnl)
+    sampled = []
+    target = len(source)
+    max_start = target - block_size
+    while len(sampled) < target:
+        start = rng.randint(0, max_start)
+        sampled.extend(source[start : start + block_size])
+    return tuple(sampled[:target])
+
+
 def simulate_sequence(
     pnl: Sequence[float],
     starting_equity: float = 10000.0,
     seed: Optional[int] = None,
     slippage_multiplier: float = 1.0,
     spread_multiplier: float = 1.0,
+    block_size: int = 1,
 ) -> SimulationResult:
-    """Bootstrap trade outcomes and apply conservative cost stress."""
-    _validate(pnl, starting_equity, 1)
+    """Bootstrap trade outcomes and apply conservative cost stress.
+
+    ``block_size=1`` preserves the original independent bootstrap. Larger
+    blocks resample contiguous outcomes, retaining short-range win/loss
+    clustering that an iid bootstrap would destroy.
+    """
+    _validate(pnl, starting_equity, 1, block_size)
     _validate_multipliers(slippage_multiplier, spread_multiplier)
     rng = random.Random(seed)
-    sampled = [rng.choice(list(pnl)) for _ in pnl]
+    sampled = _sample_blocks(pnl, rng, block_size)
     adjusted = tuple(_stress_pnl(x, slippage_multiplier, spread_multiplier) for x in sampled)
     equity = starting_equity
     peak = equity
@@ -81,9 +105,10 @@ def monte_carlo(
     seed: Optional[int] = 42,
     slippage_multiplier: float = 1.0,
     spread_multiplier: float = 1.0,
+    block_size: int = 1,
 ) -> RobustnessSummary:
     """Run reproducible bootstrap stress tests and summarize tail risk."""
-    _validate(pnl, starting_equity, simulations)
+    _validate(pnl, starting_equity, simulations, block_size)
     _validate_multipliers(slippage_multiplier, spread_multiplier)
     rng = random.Random(seed)
     results = [
@@ -93,6 +118,7 @@ def monte_carlo(
             rng.randrange(2**63),
             slippage_multiplier,
             spread_multiplier,
+            block_size,
         )
         for _ in range(simulations)
     ]
