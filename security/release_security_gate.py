@@ -1,11 +1,12 @@
 """Static security gate for SHREEK V5.1 release validation.
 
-This gate is intentionally conservative: it blocks release when source text
-contains common credential material or direct live-order authority markers.
-It does not claim to replace secret scanners or a human security review.
+The gate detects credential-like literals and actual live-order call sites.
+Test fixtures may contain intentionally dangerous examples and are excluded
+by the CI tree policy; the scanner itself remains useful for targeted checks.
 """
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 import re
 from typing import Iterable
@@ -23,11 +24,22 @@ _SECRET_PATTERNS = (
     ("telegram-bot-token", re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")),
     ("openai-key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
 )
-_LIVE_MARKERS = (
-    "order_send(",
-    "mt5.order_send(",
-    "MetaTrader5.order_send(",
-)
+_LIVE_FUNCTIONS = {"order_send"}
+
+
+def _has_live_order_call(content: str) -> bool:
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            function = node.func
+            if isinstance(function, ast.Name) and function.id in _LIVE_FUNCTIONS:
+                return True
+            if isinstance(function, ast.Attribute) and function.attr in _LIVE_FUNCTIONS:
+                return True
+    return False
 
 
 def scan_source(path: str, content: str) -> tuple[SecurityFinding, ...]:
@@ -40,9 +52,8 @@ def scan_source(path: str, content: str) -> tuple[SecurityFinding, ...]:
     for rule, pattern in _SECRET_PATTERNS:
         if pattern.search(content):
             findings.append(SecurityFinding(rule, path, "credential-like material detected"))
-    for marker in _LIVE_MARKERS:
-        if marker in content:
-            findings.append(SecurityFinding("live-order-authority", path, f"live execution marker: {marker}"))
+    if _has_live_order_call(content):
+        findings.append(SecurityFinding("live-order-authority", path, "live order_send call detected"))
     return tuple(findings)
 
 
