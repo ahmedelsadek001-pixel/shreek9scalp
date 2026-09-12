@@ -32,6 +32,26 @@ jobs:
       run: |
         python -m compileall -q .
         python -c "import config.settings, core.models, core.scanner, journal.decision_journal, market.structure, risk.trade_gates"
+    - name: Static release security gate
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        python - <<'PY'
+        from pathlib import Path
+        from security.release_security_gate import evaluate_tree
+
+        files = []
+        for path in Path('.').rglob('*.py'):
+            if any(part in {'.git', '.venv', 'venv', '__pycache__'} for part in path.parts):
+                continue
+            files.append((str(path), path.read_text(encoding='utf-8')))
+        passed, findings = evaluate_tree(files)
+        if not passed:
+            for finding in findings:
+                print(f"SECURITY GATE: {finding.rule} in {finding.path}")
+            raise SystemExit(1)
+        print(f"Security gate passed for {len(files)} Python files")
+        PY
     - name: Lint with flake8
       env:
         PYTHONPATH: ${{ github.workspace }}
