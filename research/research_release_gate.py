@@ -14,7 +14,9 @@ class ResearchReleaseEvidence:
     sample_coverage: bool
     edge_matrix_validated: bool
     wfo_stability_validated: bool
+    purged_wfo_validated: bool
     robustness_validated: bool
+    bootstrap_validated: bool
     mae_mfe_validated: bool
     execution_quality_validated: bool
 
@@ -26,6 +28,7 @@ class ResearchReleaseDecision:
 
 
 def evaluate_research_release(evidence: ResearchReleaseEvidence) -> ResearchReleaseDecision:
+    """Return a release decision; every research prerequisite must be explicitly true."""
     if not isinstance(evidence, ResearchReleaseEvidence):
         raise TypeError("evidence must be ResearchReleaseEvidence")
     checks = {
@@ -33,7 +36,9 @@ def evaluate_research_release(evidence: ResearchReleaseEvidence) -> ResearchRele
         "sample coverage is insufficient": evidence.sample_coverage,
         "edge matrix is not validated": evidence.edge_matrix_validated,
         "walk-forward stability is not validated": evidence.wfo_stability_validated,
+        "purged walk-forward validation is not validated": evidence.purged_wfo_validated,
         "robustness is not validated": evidence.robustness_validated,
+        "bootstrap expectancy validation is not validated": evidence.bootstrap_validated,
         "MAE/MFE is not validated": evidence.mae_mfe_validated,
         "execution quality is not validated": evidence.execution_quality_validated,
     }
