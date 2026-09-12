@@ -56,6 +56,17 @@ def test_malformed_layer_fails_closed():
     assert "broker decision malformed" in decision.reasons
 
 
+def test_internally_inconsistent_allowed_layer_fails_closed():
+    decision = evaluate_execution_gate(
+        operational=(True, ("unexpected reason",)),
+        broker=(True, ()),
+        recovery=_ready_recovery(),
+        kill_switch_active=False,
+    )
+    assert decision.allowed is False
+    assert "operational decision internally inconsistent" in decision.reasons
+
+
 def test_malformed_recovery_admission_fails_closed():
     decision = evaluate_execution_gate(
         operational=(True, ()),
