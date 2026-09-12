@@ -33,6 +33,8 @@ def evaluate_post_trade(
         not isinstance(reason, str) for reason in reconciliation.reasons
     ):
         reasons.append("reconciliation reasons malformed")
+    elif reconciliation.matched and reconciliation.reasons:
+        reasons.append("reconciliation decision internally inconsistent")
     elif not reconciliation.matched:
         reasons.extend("reconciliation: " + reason for reason in reconciliation.reasons)
         if not reconciliation.reasons:
@@ -46,6 +48,8 @@ def evaluate_post_trade(
         not isinstance(reason, str) for reason in quality.reasons
     ):
         reasons.append("execution quality reasons malformed")
+    elif quality.allowed and quality.reasons:
+        reasons.append("execution quality decision internally inconsistent")
     elif not quality.allowed:
         reasons.extend("quality: " + reason for reason in quality.reasons)
         if not quality.reasons:
