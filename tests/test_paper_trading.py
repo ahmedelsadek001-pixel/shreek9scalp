@@ -77,9 +77,15 @@ def test_invalid_order_geometry_fails_closed():
 
 def test_journal_records_open_and_close(tmp_path):
     path = tmp_path / "paper.jsonl"
-    engine = PaperTradingEngine(1000, journal=DecisionJournal(path))
+    journal = DecisionJournal(path)
+    engine = PaperTradingEngine(1000, journal=journal)
     assert engine.submit(order(), admitted=True, robustness_passed=True)
     engine.close(101.0, "manual")
-    records = DecisionJournal(path).read()
+
+    records = journal.read()
     assert [record.decision for record in records] == ["PAPER_OPEN", "PAPER_CLOSE"]
-    assert json.loads(path.read_text(encoding="utf-8"))["decision"] == "PAPER_OPEN"
+
+    # JSONL is deliberately one JSON object per line; json.loads() must be
+    # applied per non-empty line rather than json.load() over the whole file.
+    raw_records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert [record["decision"] for record in raw_records] == ["PAPER_OPEN", "PAPER_CLOSE"]
