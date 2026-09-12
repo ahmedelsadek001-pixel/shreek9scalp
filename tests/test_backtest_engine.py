@@ -1,10 +1,11 @@
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 import pytest
 from core.backtest_engine import BacktestBar, BacktestOrder, CostModel, run_backtest
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
 from core.execution_levels import build_execution_levels
 from core.models import TradeSignal
 from core.position_lifecycle import LifecyclePolicy
+from core.trading_window import SessionWindow, TradingWindowPolicy
 
 
 def levels(direction=Direction.BUY):
@@ -76,11 +77,7 @@ def test_lifecycle_realizes_tp1_tp2_tp3_and_records_events():
         (102, 103.1, 101.9, 103, 0),
     ])
     policy = LifecyclePolicy(tp1_fraction=0.5, tp2_fraction=0.25, tp3_fraction=0.25)
-    result = run_backtest(
-        series,
-        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
-        lifecycle_policy=policy,
-    )
+    result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], lifecycle_policy=policy)
     trade = result.trades[0]
     assert trade.exit_reason == "TP3"
     assert trade.volume == 1.0
@@ -89,17 +86,45 @@ def test_lifecycle_realizes_tp1_tp2_tp3_and_records_events():
 
 
 def test_lifecycle_stop_after_tp1_uses_breakeven_on_following_bar():
-    series = bars([
-        (100, 100, 100, 100, 0),
-        (100, 101.1, 100, 101, 0),
-        (101, 101.0, 99.9, 100, 0),
-    ])
-    result = run_backtest(
-        series,
-        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
-        lifecycle_policy=LifecyclePolicy(),
-    )
+    series = bars([(100, 100, 100, 100, 0), (100, 101.1, 100, 101, 0), (101, 101.0, 99.9, 100, 0)])
+    result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], lifecycle_policy=LifecyclePolicy())
     trade = result.trades[0]
     assert trade.exit_reason == "SL"
     assert trade.lifecycle_events == ("TP1",)
     assert trade.net_pnl > -0.1
+
+
+def test_lifecycle_trailing_activates_after_tp2_and_exits_on_next_bar():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 101.1, 100, 101, 0),
+        (101, 102.1, 100.9, 102, 0),
+        (102, 104.5, 102.5, 104, 0),
+    ])
+    policy = LifecyclePolicy(trailing_after_tp2=True, trailing_distance_r=1.0)
+    result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], lifecycle_policy=policy)
+    trade = result.trades[0]
+    assert trade.exit_reason == "SL"
+    assert trade.lifecycle_events == ("TP1", "TP2")
+    assert trade.net_pnl > 0
+
+
+def test_session_window_blocks_entry_outside_allowed_period():
+    series = bars([(100, 100, 100, 100, 0), (100, 101, 99, 100, 0), (100, 101, 99, 100, 0)])
+    policy = TradingWindowPolicy((SessionWindow("NY", time(13), time(14)),))
+    result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], trading_window=policy)
+    assert result.trades == ()
+
+
+def test_max_holding_exits_at_bar_open_without_lookahead():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 100, 100, 100, 0),
+        (105, 110, 104, 109, 0),
+    ])
+    policy = TradingWindowPolicy(max_holding_minutes=1)
+    result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())], trading_window=policy)
+    trade = result.trades[0]
+    assert trade.exit_reason == "TIME"
+    assert trade.exit_time == series[2].timestamp
+    assert trade.exit == 105.0
