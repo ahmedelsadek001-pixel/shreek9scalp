@@ -1,0 +1,339 @@
+"""Causal backtest engine with deterministic partial-exit lifecycle support."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from math import isfinite, sqrt
+from typing import Iterable, Optional, Sequence
+
+from core.enums import Direction
+from core.models import ExecutionLevels
+from core.position_lifecycle import LifecyclePolicy, LifecycleState, initial_state, trailing_stop_price
+from core.trading_window import TradingWindowPolicy
+
+
+@dataclass(frozen=True)
+class BacktestBar:
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    spread: float = 0.0
+
+    def valid(self) -> bool:
+        values = (self.open, self.high, self.low, self.close, self.spread)
+        return all(isfinite(float(x)) for x in values) and self.low <= self.high and self.spread >= 0
+
+
+@dataclass(frozen=True)
+class BacktestOrder:
+    signal_time: datetime
+    direction: Direction
+    levels: ExecutionLevels
+    volume: float = 1.0
+    tag: str = ""
+
+
+@dataclass(frozen=True)
+class BacktestTrade:
+    signal_time: datetime
+    entry_time: datetime
+    exit_time: datetime
+    direction: Direction
+    entry: float
+    exit: float
+    volume: float
+    gross_pnl: float
+    costs: float
+    net_pnl: float
+    exit_reason: str
+    tag: str = ""
+    lifecycle_events: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class BacktestStats:
+    starting_equity: float
+    ending_equity: float
+    net_pnl: float
+    return_pct: float
+    trades: int
+    wins: int
+    losses: int
+    win_rate: float
+    profit_factor: float
+    expectancy: float
+    max_drawdown: float
+    max_drawdown_pct: float
+    sharpe: float
+
+
+@dataclass(frozen=True)
+class BacktestResult:
+    trades: tuple[BacktestTrade, ...]
+    equity_curve: tuple[float, ...]
+    stats: BacktestStats
+
+
+@dataclass(frozen=True)
+class CostModel:
+    slippage: float = 0.0
+    point_value: float = 1.0
+    commission_per_volume: float = 0.0
+
+    def valid(self) -> bool:
+        values = (self.slippage, self.point_value, self.commission_per_volume)
+        return (
+            all(isfinite(float(x)) for x in values)
+            and self.slippage >= 0
+            and self.point_value > 0
+            and self.commission_per_volume >= 0
+        )
+
+
+def _validate_levels(direction: Direction, levels: ExecutionLevels) -> None:
+    values = (levels.entry, levels.sl, levels.tp1, levels.tp2, levels.tp3, levels.risk)
+    if not all(isfinite(float(x)) and float(x) > 0 for x in values):
+        raise ValueError("execution levels must be finite and positive")
+    if direction == Direction.BUY:
+        valid = levels.sl < levels.entry < levels.tp1 <= levels.tp2 <= levels.tp3
+    elif direction == Direction.SELL:
+        valid = levels.sl > levels.entry > levels.tp1 >= levels.tp2 >= levels.tp3
+    else:
+        valid = False
+    if not valid or abs(abs(levels.entry - levels.sl) - levels.risk) > max(1e-9, levels.risk * 1e-6):
+        raise ValueError("execution levels are inconsistent with order direction")
+
+
+def _fill_price(bar: BacktestBar, direction: Direction, slippage: float) -> float:
+    half = bar.spread / 2
+    return bar.open + half + slippage if direction == Direction.BUY else bar.open - half - slippage
+
+
+def _exit_price(bar: BacktestBar, direction: Direction, price: float, slippage: float) -> float:
+    half = bar.spread / 2
+    return price - slippage - half if direction == Direction.BUY else price + slippage + half
+
+
+def _hit(bar: BacktestBar, direction: Direction, stop: float, target: float) -> Optional[tuple[float, str]]:
+    stop_hit = bar.low <= stop if direction == Direction.BUY else bar.high >= stop
+    target_hit = bar.high >= target if direction == Direction.BUY else bar.low <= target
+    if stop_hit:
+        return stop, "SL"
+    if target_hit:
+        return target, "TP"
+    return None
+
+
+def _pnl(entry: float, exit_price: float, direction: Direction, volume: float, point_value: float) -> float:
+    move = exit_price - entry if direction == Direction.BUY else entry - exit_price
+    return move * volume * point_value
+
+
+def _stats(start: float, equity: Sequence[float], trades: Sequence[BacktestTrade]) -> BacktestStats:
+    end = equity[-1] if equity else start
+    net = end - start
+    wins = sum(t.net_pnl > 0 for t in trades)
+    losses = sum(t.net_pnl < 0 for t in trades)
+    gross_profit = sum(max(t.net_pnl, 0) for t in trades)
+    gross_loss = sum(-min(t.net_pnl, 0) for t in trades)
+    profit_factor = gross_profit / gross_loss if gross_loss else (float("inf") if gross_profit else 0)
+    peak = start
+    drawdown = 0.0
+    for value in equity:
+        peak = max(peak, value)
+        drawdown = max(drawdown, peak - value)
+    returns = []
+    previous = start
+    for value in equity:
+        if previous:
+            returns.append((value - previous) / previous)
+        previous = value
+    mean = sum(returns) / len(returns) if returns else 0
+    variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1) if len(returns) > 1 else 0
+    sharpe = mean / sqrt(variance) * sqrt(252) if variance > 0 else 0
+    return BacktestStats(
+        start, end, net, net / start * 100, len(trades), wins, losses,
+        wins / len(trades) * 100 if trades else 0, profit_factor,
+        net / len(trades) if trades else 0, drawdown, drawdown / start * 100, sharpe,
+    )
+
+
+def _close_at_bar(
+    bar: BacktestBar,
+    direction: Direction,
+    entry: float,
+    volume: float,
+    costs: CostModel,
+    raw_price: float,
+) -> tuple[float, float, float]:
+    exit_price = _exit_price(bar, direction, raw_price, costs.slippage)
+    return exit_price, _pnl(entry, exit_price, direction, volume, costs.point_value), costs.commission_per_volume * volume
+
+
+def _run_lifecycle(
+    series: Sequence[BacktestBar],
+    order: BacktestOrder,
+    entry_index: int,
+    entry: float,
+    costs: CostModel,
+    policy: LifecyclePolicy,
+    trading_window: Optional[TradingWindowPolicy] = None,
+    force_close_at_end: bool = True,
+) -> tuple[Optional[int], Optional[float], str, float, float, float, tuple[str, ...]]:
+    policy.validate()
+    if trading_window is not None:
+        trading_window.validate()
+    state: LifecycleState = initial_state(order.volume, order.levels, policy)
+    remaining = order.volume
+    gross_total = 0.0
+    cost_total = costs.commission_per_volume * order.volume
+    events: list[str] = []
+    entry_time = series[entry_index].timestamp
+    stages = (("TP1", order.levels.tp1), ("TP2", order.levels.tp2), ("TP3", order.levels.tp3))
+    stage_index = 0
+    index = entry_index
+
+    while index < len(series) and remaining > 0:
+        bar = series[index]
+        if trading_window is not None and trading_window.holding_expired(entry_time, bar.timestamp):
+            exit_price, gross, commission = _close_at_bar(
+                bar, order.direction, entry, remaining, costs, bar.open
+            )
+            return index, exit_price, "TIME", gross_total + gross, cost_total + commission, remaining, tuple(events)
+
+        stop = state.stop_price if state.stop_price is not None else order.levels.sl
+        if state.trailing_active and index > entry_index:
+            trail = trailing_stop_price(state, order.levels, series[index - 1].close, policy)
+            stop = max(stop, trail) if order.direction == Direction.BUY else min(stop, trail)
+            state = LifecycleState(
+                state.remaining_volume, state.closed_tp1, state.closed_tp2, state.closed_tp3,
+                state.breakeven_active, stop, state.trailing_active
+            )
+
+        hit = _hit(bar, order.direction, stop, stages[stage_index][1])
+        if hit is None:
+            index += 1
+            continue
+        raw_price, reason = hit
+        exit_price = _exit_price(bar, order.direction, raw_price, costs.slippage)
+        if reason == "SL":
+            gross_total += _pnl(entry, exit_price, order.direction, remaining, costs.point_value)
+            return index, exit_price, "SL", gross_total, cost_total, remaining, tuple(events)
+
+        fraction = (policy.tp1_fraction, policy.tp2_fraction, policy.tp3_fraction)[stage_index]
+        close_volume = min(remaining, order.volume * fraction)
+        if close_volume <= 0:
+            raise ValueError("lifecycle stage has zero executable volume")
+        gross_total += _pnl(entry, exit_price, order.direction, close_volume, costs.point_value)
+        cost_total += costs.commission_per_volume * close_volume
+        remaining -= close_volume
+        events.append(stages[stage_index][0])
+        if stage_index == 0:
+            from core.position_lifecycle import after_tp1
+            state = after_tp1(state, order.levels, policy, order.volume)
+        elif stage_index == 1:
+            from core.position_lifecycle import after_tp2
+            state = after_tp2(state, order.volume, order.levels, policy)
+        else:
+            return index, exit_price, "TP3", gross_total, cost_total, 0.0, tuple(events)
+        stage_index += 1
+        index += 1
+
+    if remaining > 0 and force_close_at_end and series:
+        bar = series[-1]
+        exit_price, gross, commission = _close_at_bar(bar, order.direction, entry, remaining, costs, bar.close)
+        return len(series) - 1, exit_price, "EOD", gross_total + gross, cost_total + commission, remaining, tuple(events)
+    return None, None, "", 0.0, 0.0, remaining, tuple(events)
+
+
+def run_backtest(
+    bars: Iterable[BacktestBar],
+    orders: Iterable[BacktestOrder],
+    starting_equity: float = 10000.0,
+    costs: CostModel = CostModel(),
+    force_close_at_end: bool = True,
+    lifecycle_policy: Optional[LifecyclePolicy] = None,
+    trading_window: Optional[TradingWindowPolicy] = None,
+) -> BacktestResult:
+    if not isfinite(starting_equity) or starting_equity <= 0 or not costs.valid():
+        raise ValueError("invalid backtest configuration")
+    if trading_window is not None:
+        trading_window.validate()
+    series = list(bars)
+    if not series or any(not b.valid() for b in series):
+        raise ValueError("invalid or empty bar series")
+    if any(series[i].timestamp >= series[i + 1].timestamp for i in range(len(series) - 1)):
+        raise ValueError("bars must be strictly chronological")
+    by_time = {b.timestamp: i for i, b in enumerate(series)}
+    pending = sorted(orders, key=lambda o: o.signal_time)
+    for order in pending:
+        if order.signal_time not in by_time:
+            raise ValueError("every order must reference an existing signal bar")
+        if order.direction not in (Direction.BUY, Direction.SELL):
+            raise ValueError("backtest orders must be BUY or SELL")
+        if not isfinite(order.volume) or order.volume <= 0:
+            raise ValueError("order volume must be positive and finite")
+        _validate_levels(order.direction, order.levels)
+
+    trades = []
+    equity = [starting_equity]
+    occupied = -1
+    for order in pending:
+        signal_index = by_time[order.signal_time]
+        entry_index = signal_index + 1
+        if entry_index >= len(series) or entry_index <= occupied:
+            continue
+        entry_bar = series[entry_index]
+        if trading_window is not None and not trading_window.is_open(entry_bar.timestamp):
+            continue
+        entry = _fill_price(entry_bar, order.direction, costs.slippage)
+        if (order.direction == Direction.BUY and entry <= order.levels.sl) or (
+            order.direction == Direction.SELL and entry >= order.levels.sl
+        ):
+            continue
+
+        if lifecycle_policy is not None:
+            exit_index, exit_price, reason, gross, cost, _remaining, events = _run_lifecycle(
+                series, order, entry_index, entry, costs, lifecycle_policy, trading_window, force_close_at_end
+            )
+            if exit_index is None:
+                continue
+        else:
+            exit_index = None
+            raw_exit = None
+            reason = ""
+            for i in range(entry_index, len(series)):
+                if trading_window is not None and trading_window.holding_expired(entry_bar.timestamp, series[i].timestamp):
+                    exit_index = i
+                    raw_exit = series[i].open
+                    reason = "TIME"
+                    break
+                hit = _hit(series[i], order.direction, order.levels.sl, order.levels.tp3)
+                if hit is not None:
+                    raw_exit, reason = hit
+                    exit_index = i
+                    break
+            if exit_index is None:
+                if not force_close_at_end:
+                    continue
+                exit_index = len(series) - 1
+                raw_exit = series[-1].close
+                reason = "EOD"
+            exit_price, gross, cost = _close_at_bar(
+                series[exit_index], order.direction, entry, order.volume, costs, raw_exit
+            )
+            events = ()
+
+        net = gross - cost
+        trades.append(
+            BacktestTrade(
+                order.signal_time, entry_bar.timestamp, series[exit_index].timestamp,
+                order.direction, entry, exit_price, order.volume, gross, cost, net,
+                reason, order.tag, events,
+            )
+        )
+        equity.append(equity[-1] + net)
+        occupied = exit_index
+    return BacktestResult(tuple(trades), tuple(equity), _stats(starting_equity, equity, trades))

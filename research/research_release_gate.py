@@ -1,0 +1,41 @@
+"""Fail-closed research release gate for SHREEK V5.2.
+
+This gate determines whether the research package has sufficient evidence to
+progress toward V5.3. It does not authorize execution.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ResearchReleaseEvidence:
+    ci_green: bool
+    sample_coverage: bool
+    edge_matrix_validated: bool
+    wfo_stability_validated: bool
+    robustness_validated: bool
+    mae_mfe_validated: bool
+    execution_quality_validated: bool
+
+
+@dataclass(frozen=True)
+class ResearchReleaseDecision:
+    ready: bool
+    failures: tuple[str, ...]
+
+
+def evaluate_research_release(evidence: ResearchReleaseEvidence) -> ResearchReleaseDecision:
+    if not isinstance(evidence, ResearchReleaseEvidence):
+        raise TypeError("evidence must be ResearchReleaseEvidence")
+    checks = {
+        "CI is not green": evidence.ci_green,
+        "sample coverage is insufficient": evidence.sample_coverage,
+        "edge matrix is not validated": evidence.edge_matrix_validated,
+        "walk-forward stability is not validated": evidence.wfo_stability_validated,
+        "robustness is not validated": evidence.robustness_validated,
+        "MAE/MFE is not validated": evidence.mae_mfe_validated,
+        "execution quality is not validated": evidence.execution_quality_validated,
+    }
+    failures = tuple(name for name, passed in checks.items() if type(passed) is not bool or not passed)
+    return ResearchReleaseDecision(not failures, failures)
