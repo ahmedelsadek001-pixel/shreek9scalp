@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -71,3 +72,18 @@ def test_bundle_id_is_order_independent_for_same_records():
     first = _bundle()
     second = ReleaseEvidenceBundle.from_records(tuple(reversed(first.records)))
     assert first.bundle_id == second.bundle_id
+
+
+def test_tampered_bundle_id_is_rejected():
+    tampered = replace(_bundle(), bundle_id="0" * 64)
+    with pytest.raises(ValueError, match="bundle_id"):
+        tampered.validate()
+
+
+def test_tampered_record_is_rejected_by_release_evaluation():
+    original = _bundle()
+    changed = replace(original.records[0], run_id="attacker-run")
+    tampered = replace(original, records=(changed,) + original.records[1:])
+    decision = evaluate_evidence_bundle(tampered, _required())
+    assert not decision.ready
+    assert decision.failures == ("evidence bundle integrity validation failed",)
