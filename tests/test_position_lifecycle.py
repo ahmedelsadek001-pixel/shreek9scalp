@@ -13,6 +13,7 @@ from core.position_lifecycle import (
     tp1_action,
     tp2_action,
     tp3_action,
+    trailing_stop_price,
 )
 
 
@@ -74,3 +75,23 @@ def test_policy_fractions_must_sum_to_one():
     policy = LifecyclePolicy(tp1_fraction=0.6, tp2_fraction=0.2, tp3_fraction=0.1)
     with pytest.raises(ValueError, match="sum to 1"):
         initial_state(1.0, levels, policy)
+
+
+def test_trailing_stop_is_monotonic_for_buy():
+    levels = make_levels(Direction.BUY)
+    policy = LifecyclePolicy(tp1_fraction=0.5, tp2_fraction=0.25, tp3_fraction=0.25, trailing_after_tp2=True)
+    state = after_tp2(after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0), 1.0, levels, policy)
+    first = trailing_stop_price(state, levels, 103.0, policy)
+    second = trailing_stop_price(state, levels, 102.0, policy)
+    assert first >= levels.entry
+    assert second >= first
+
+
+def test_trailing_stop_is_monotonic_for_sell():
+    levels = make_levels(Direction.SELL)
+    policy = LifecyclePolicy(trailing_after_tp2=True)
+    state = after_tp2(after_tp1(initial_state(1.0, levels, policy), levels, policy, 1.0), 1.0, levels, policy)
+    first = trailing_stop_price(state, levels, 97.0, policy)
+    second = trailing_stop_price(state, levels, 98.0, policy)
+    assert first <= levels.entry
+    assert second <= first
