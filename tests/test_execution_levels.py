@@ -23,12 +23,19 @@ def test_buy_uses_valid_draw_target():
     assert levels.tp3 == 106.0
 
 
-def test_sell_falls_back_to_two_r_when_draw_target_is_too_close():
+def test_sell_legacy_fallback_is_two_r_when_no_min_rr_is_supplied():
     levels = build_execution_levels(signal(Direction.SELL, 100.0, 102.0), draw_target=99.0)
     assert levels is not None
     assert levels.tp1 == 98.0
     assert levels.tp2 == 96.0
     assert levels.tp3 == 94.0
+
+
+def test_explicit_min_rr_controls_draw_target_and_fallback():
+    signal_obj = signal(Direction.SELL, 100.0, 102.0)
+    levels = build_execution_levels(signal_obj, draw_target=99.0, min_rr=1.5)
+    assert levels is not None
+    assert levels.tp2 == 97.0
 
 
 def test_invalid_stop_side_fails_closed():
