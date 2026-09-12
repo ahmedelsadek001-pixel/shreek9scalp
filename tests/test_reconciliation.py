@@ -26,6 +26,12 @@ def test_reconciliation_allows_configured_price_tolerance():
     assert result.matched
 
 
+def test_reconciliation_allows_boundary_volume_tolerance_despite_float_noise():
+    report = ExecutionReport("sig-001", "XAUUSD", Direction.BUY, 0.030000000000000002, 2500.0)
+    result = reconcile_execution(_intent(), report, volume_tolerance=0.0)
+    assert result.matched
+
+
 def test_reconciliation_blocks_volume_and_direction_mismatch():
     report = ExecutionReport("sig-001", "XAUUSD", Direction.SELL, 0.04, 2500.0)
     result = reconcile_execution(_intent(), report)
