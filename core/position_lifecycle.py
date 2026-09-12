@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Optional
 
-from core.enums import Direction
 from core.models import ExecutionLevels
 
 
@@ -64,8 +63,7 @@ def initial_state(volume: float, levels: ExecutionLevels, policy: LifecyclePolic
 
 
 def _fraction_volume(remaining: float, original: float, fraction: float) -> float:
-    target = original * fraction
-    return min(remaining, target)
+    return min(remaining, original * fraction)
 
 
 def tp1_action(state: LifecycleState, original_volume: float, levels: ExecutionLevels, policy: LifecyclePolicy) -> LifecycleAction:
@@ -83,7 +81,12 @@ def after_tp1(state: LifecycleState, levels: ExecutionLevels, policy: LifecycleP
     stop = state.stop_price
     be = state.breakeven_active
     if policy.breakeven_after_tp1:
-        stop = levels.entry + policy.breakeven_offset if levels.selected_frame == Direction.UNKNOWN else levels.entry + policy.breakeven_offset
+        if levels.sl < levels.entry:
+            stop = levels.entry + policy.breakeven_offset
+        elif levels.sl > levels.entry:
+            stop = levels.entry - policy.breakeven_offset
+        else:
+            raise ValueError("invalid execution levels: stop equals entry")
         be = True
     return LifecycleState(
         remaining_volume=state.remaining_volume - action.volume,
