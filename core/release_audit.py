@@ -46,6 +46,7 @@ REQUIRED_PATHS = (
     "research/execution_quality.py",
     "research/mae_mfe.py",
     "research/performance_metrics.py",
+    "research/purged_wfo.py",
     "research/regime.py",
     "research/regime_attribution.py",
     "research/research_evidence.py",
