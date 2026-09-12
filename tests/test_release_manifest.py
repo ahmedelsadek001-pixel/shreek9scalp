@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from core.release_certification import CertificationResult
 from core.release_manifest import ReleaseManifest
 
@@ -28,3 +26,13 @@ def test_manifest_rejects_invalid_commit_sha():
         assert "commit_sha" in str(exc)
     else:
         raise AssertionError("invalid commit SHA was accepted")
+
+
+def test_manifest_rejects_non_hex_commit_sha():
+    result = CertificationResult(True, "b" * 64, ())
+    try:
+        ReleaseManifest.from_certification("V5.1-RC1", "g" * 40, result)
+    except ValueError as exc:
+        assert "hexadecimal" in str(exc)
+    else:
+        raise AssertionError("non-hex commit SHA was accepted")
