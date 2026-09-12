@@ -1,0 +1,8 @@
+# CI-only dependencies. MetaTrader5 is intentionally excluded because the
+# broker terminal/runtime is platform-specific and CI runs on Linux.
+pandas
+httpx
+google-genai
+python-telegram-bot
+pytest
+flake8
