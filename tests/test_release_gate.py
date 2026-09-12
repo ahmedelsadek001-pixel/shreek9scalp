@@ -17,6 +17,7 @@ def _evidence(**overrides):
         paper_trading_validated=True,
         security_reviewed=True,
         execution_reconciled=True,
+        shadow_validated=True,
     )
     values.update(overrides)
     return ReleaseEvidence(**values)
@@ -32,6 +33,12 @@ def test_release_gate_blocks_missing_control():
     decision = evaluate_release(_evidence(robustness_passed=False))
     assert not decision.ready
     assert "robustness validation has not passed" in decision.failures
+
+
+def test_release_gate_blocks_missing_shadow_validation():
+    decision = evaluate_release(_evidence(shadow_validated=False))
+    assert not decision.ready
+    assert "shadow execution has not been validated" in decision.failures
 
 
 def test_release_gate_rejects_non_boolean_evidence():
