@@ -4,7 +4,7 @@
 
 ## Architecture
 
-`MARKET DATA → DATA INTEGRITY → ICT SIGNAL ENGINE → SETUP QUALITY → ADMISSION FIREWALL → RISK → PAPER/BACKTEST → VALIDATION`
+`MARKET DATA → DATA INTEGRITY → ICT SIGNAL ENGINE → SETUP QUALITY → ADMISSION FIREWALL → RISK BUDGET → DAILY RISK STATE → PAPER/BACKTEST → SHADOW RECONCILIATION → RECOVERY → RELEASE GATE`
 
 ## Implemented
 
@@ -19,13 +19,16 @@
 - Walk-forward parameter selection with out-of-sample evaluation.
 - Monte Carlo robustness and drawdown/ruin gates.
 - Daily realized-risk ledger and explicit risk state machine.
+- Deterministic risk budget and stop-distance position sizing; no execution authority.
 - Deterministic paper-trading engine; no broker routing.
+- Shadow execution intents and fail-closed reconciliation.
+- Disconnect/recovery state machine that blocks submission until pending shadow orders reconcile.
 - Decision journal and automated tests.
 - AI advisor is advisory-only; it cannot authorize, size, or execute trades.
 
 ## Safety boundary
 
-Live MT5 execution remains disabled until CI, historical validation, walk-forward, Monte Carlo, paper trading, reconciliation, and final security review all pass. Passing tests do not establish profitability or broker compatibility.
+Live MT5 execution remains disabled until CI, historical validation, walk-forward, Monte Carlo, paper trading, reconciliation, shadow validation, recovery validation, and final security review all pass. Passing tests do not establish profitability or broker compatibility.
 
 ## Development rule
 
