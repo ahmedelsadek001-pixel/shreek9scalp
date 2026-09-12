@@ -50,7 +50,6 @@ def test_failed_paper_submission_keeps_existing_position_intact():
     bridge = PaperShadowBridge(shadow)
     bridge.register_paper_order("paper-1", _order())
 
-    # The shadow layer is observational only; a second paper submission must fail.
     with pytest.raises(RuntimeError):
         engine.submit(_order())
 
