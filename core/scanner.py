@@ -16,7 +16,11 @@ from core.execution_levels import build_execution_levels
 from core.models import ExecutionLevels, MarketStructure, TradeSignal
 from core.signal_identity import signal_fingerprint
 from core.signal_pipeline import AdmissionDecision, admit_signal
-from market.entry_signals import analyze_execution_frame, analyze_m15_entry_signal, select_best_execution_frame
+from market.entry_signals import (
+    analyze_execution_frame,
+    analyze_m15_entry_signal,
+    select_best_execution_frame,
+)
 from market.structure import determine_structure
 from risk.trade_gates import GateResult
 
@@ -37,7 +41,9 @@ def _closed(data: dict[str, object]) -> dict[str, object]:
     return {name: frame.copy(deep=True) for name, frame in data.items()}
 
 
-def _structure(data: dict[str, object], name: str, settings: Settings) -> Optional[MarketStructure]:
+def _structure(
+    data: dict[str, object], name: str, settings: Settings
+) -> Optional[MarketStructure]:
     df = data.get(name)
     if df is None or getattr(df, "empty", True):
         return None
@@ -74,40 +80,102 @@ def scan_symbol(
     """
     settings = settings or Settings()
     closed = _closed(data)
+    symbol = symbol.strip().upper()
     if direction not in (Direction.BUY, Direction.SELL):
-        return ScanDecision(symbol.upper(), direction, None, None, AdmissionDecision(False, "direction is not executable"), None)
+        return ScanDecision(
+            symbol,
+            direction,
+            None,
+            None,
+            AdmissionDecision(False, "direction is not executable"),
+            None,
+        )
     required = {"D1", "H4", "H1", "M15"}
     if not required.issubset(closed):
-        return ScanDecision(symbol.upper(), direction, None, None, AdmissionDecision(False, "required timeframe data missing"), None)
+        return ScanDecision(
+            symbol,
+            direction,
+            None,
+            None,
+            AdmissionDecision(False, "required timeframe data missing"),
+            None,
+        )
 
-    d1, h4, h1, m15 = (_structure(closed, x, settings) for x in ("D1", "H4", "H1", "M15"))
+    d1, h4, h1, m15 = (
+        _structure(closed, x, settings) for x in ("D1", "H4", "H1", "M15")
+    )
     if d1 is None or h4 is None or h1 is None or m15 is None:
-        return ScanDecision(symbol.upper(), direction, None, None, AdmissionDecision(False, "required structure unavailable"), None)
+        return ScanDecision(
+            symbol,
+            direction,
+            None,
+            None,
+            AdmissionDecision(False, "required structure unavailable"),
+            None,
+        )
 
     signal = analyze_m15_entry_signal(closed["M15"], direction, settings)
     if not signal.is_valid:
-        return ScanDecision(symbol.upper(), direction, signal, None, AdmissionDecision(False, signal.details, signal), None)
+        return ScanDecision(
+            symbol,
+            direction,
+            signal,
+            None,
+            AdmissionDecision(False, signal.details, signal),
+            None,
+        )
 
     execution_signals = []
-    for name, frame in (("M15", Timeframe.M15), ("M5", Timeframe.M5), ("M3", Timeframe.M3)):
+    for name, frame in (
+        ("M15", Timeframe.M15),
+        ("M5", Timeframe.M5),
+        ("M3", Timeframe.M3),
+    ):
         if name in closed and getattr(closed[name], "empty", True) is False:
-            execution_signals.append(analyze_execution_frame(closed[name], direction, frame, settings))
+            execution_signals.append(
+                analyze_execution_frame(closed[name], direction, frame, settings)
+            )
     best = select_best_execution_frame(execution_signals) or signal
 
     confluence = evaluate_confluence(
-        direction, d1, h4, h1, m15, best,
-        in_pd_zone, killzone_active, draw_on_liquidity, settings,
+        direction,
+        d1,
+        h4,
+        h1,
+        m15,
+        best,
+        in_pd_zone,
+        killzone_active,
+        draw_on_liquidity,
+        settings,
     )
     if not confluence.tradable:
-        return ScanDecision(symbol.upper(), direction, best, confluence, AdmissionDecision(False, confluence.reason, best), None)
+        return ScanDecision(
+            symbol,
+            direction,
+            best,
+            confluence,
+            AdmissionDecision(False, confluence.reason, best),
+            None,
+        )
 
     identity = signal_fingerprint(
-        symbol, str(closed["M15"].iloc[-1]["time"]),
-        direction.value, best.setup_type.value, best.frame.value,
+        symbol,
+        str(closed["M15"].iloc[-1]["time"]),
+        direction.value,
+        best.setup_type.value,
+        best.frame.value,
     )
     admission = admit_signal(best, gates)
     if not admission.allowed:
-        return ScanDecision(symbol.upper(), direction, best, confluence, admission, identity)
+        return ScanDecision(
+            symbol,
+            direction,
+            best,
+            confluence,
+            admission,
+            identity,
+        )
 
     levels = build_execution_levels(
         best,
@@ -117,7 +185,13 @@ def scan_symbol(
     )
     if levels is None:
         return ScanDecision(
-            symbol.upper(), direction, best, confluence,
-            AdmissionDecision(False, "execution levels unavailable", best), identity,
+            symbol,
+            direction,
+            best,
+            confluence,
+            AdmissionDecision(False, "execution levels unavailable", best),
+            identity,
         )
-    return ScanDecision(symbol.upper(), direction, best, confluence, admission, identity, levels)
+    return ScanDecision(
+        symbol, direction, best, confluence, admission, identity, levels
+    )
