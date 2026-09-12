@@ -23,13 +23,13 @@ def _valid(df: pd.DataFrame) -> bool:
     return not df.empty and all(c in df.columns for c in ("high", "low", "close"))
 
 
-def _timeframe(value: str | Timeframe) -> Timeframe:
+def _timeframe(value: str | Timeframe) -> Optional[Timeframe]:
     if isinstance(value, Timeframe):
         return value
     try:
         return Timeframe(str(value).upper())
-    except ValueError:
-        return Timeframe.M15
+    except (TypeError, ValueError):
+        return None
 
 
 def confirmed_swings(df: pd.DataFrame, confirmation_bars: int = 2) -> list[SwingPoint]:
@@ -58,8 +58,14 @@ def determine_structure(
     threshold_atr: float = 0.10,
     confirmation_bars: int = 2,
 ) -> MarketStructure:
-    """Classify the latest closed candle against confirmed swings."""
+    """Classify the latest closed candle against confirmed swings.
+
+    Invalid timeframe input is rejected instead of silently becoming M15; this
+    prevents a configuration/data-integrity error from changing strategy logic.
+    """
     tf = _timeframe(timeframe)
+    if tf is None:
+        return MarketStructure(Timeframe.M15, Direction.UNKNOWN, StructureEvent.NONE, None, None, True)
     if not _valid(df):
         return MarketStructure(tf, Direction.UNKNOWN, StructureEvent.NONE, None, None, True)
     data = df.reset_index(drop=True)
