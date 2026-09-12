@@ -3,6 +3,7 @@
 pandas
 httpx
 google-genai
+openai
 python-telegram-bot
 pytest
 flake8
