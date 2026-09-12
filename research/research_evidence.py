@@ -45,12 +45,23 @@ class ResearchEvidence:
                 raise ValueError("metric values must be finite")
             normalized[key.strip()] = numeric
         canonical = json.dumps(
-            {"dataset_id": dataset_id.strip(), "version": version.strip(), "samples": samples, "metrics": dict(sorted(normalized.items()))},
+            {
+                "dataset_id": dataset_id.strip(),
+                "version": version.strip(),
+                "samples": samples,
+                "metrics": dict(sorted(normalized.items())),
+            },
             sort_keys=True,
             separators=(",", ":"),
         )
         digest = sha256(canonical.encode("utf-8")).hexdigest()
-        return cls(dataset_id.strip(), version.strip(), samples, dict(sorted(normalized.items())), digest)
+        return cls(
+            dataset_id.strip(),
+            version.strip(),
+            samples,
+            dict(sorted(normalized.items())),
+            digest,
+        )
 
 
 def verify_evidence(evidence: ResearchEvidence) -> bool:
