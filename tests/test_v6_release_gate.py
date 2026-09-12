@@ -43,9 +43,11 @@ def test_v6_release_fails_closed_on_failed_evidence():
         require_v6_release(ReleaseEvidenceBundle.from_records(records))
 
 
-def test_v6_release_rejects_raw_boolean_mapping():
-    with pytest.raises(TypeError):
-        evaluate_v6_release({name: True for name in REQUIRED_EVIDENCE})
+def test_v6_release_blocks_raw_boolean_mapping():
+    decision = evaluate_v6_release({name: True for name in REQUIRED_EVIDENCE})
+    assert decision.release_ready is False
+    assert decision.live.authorized is False
+    assert decision.failures == ("evidence bundle integrity validation failed",)
 
 
 def test_v6_release_requires_all_provenance_records():
