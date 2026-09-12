@@ -1,8 +1,9 @@
+import pytest
+
 from core.enums import Direction
 from execution.reconciliation import ExecutionReport, OrderIntent
 from execution.recovery import RecoveryState, ShadowRecovery
 from execution.shadow import ShadowExecution
-import pytest
 
 
 def test_disconnect_blocks_and_clean_recovery_reenables_submission():
