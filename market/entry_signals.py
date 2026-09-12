@@ -125,13 +125,11 @@ def analyze_m15_entry_signal(
         threshold_atr=settings.bos_break_threshold_atr,
         confirmation_bars=settings.swing_window.get("M15", 10),
     )
-    if settings.m15_bos_required and not _matching_event(structure, trade_direction):
+    bos_confirmed = _matching_event(structure, trade_direction)
+    if settings.m15_bos_required and not bos_confirmed:
         return TradeSignal(SignalStatus.WAIT, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "M15 structure confirmation pending", bos_confirmed=False, structure=structure)
 
-    ob = find_order_block(
-        df_m15, trade_direction, price, structure.last_swing_high,
-        structure.last_swing_low, settings.ob_min_body_atr,
-    )
+    ob = find_order_block(df_m15, trade_direction, price, structure.last_swing_high, structure.last_swing_low, settings.ob_min_body_atr)
     fvgs = find_fvgs(df_m15, lookback=min(40, settings.fvg_max_age_bars))
     fvg = nearest_fvg(fvgs, price, trade_direction)
     sweep = detect_liquidity_sweep(df_m15, structure)
@@ -139,27 +137,24 @@ def analyze_m15_entry_signal(
     candle_confirmed = _directional_candle(df_m15, trade_direction)
 
     if settings.m15_sweep_confirmation and not sweep_confirmed:
-        return TradeSignal(SignalStatus.WAIT, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "Liquidity sweep confirmation pending", candle_confirmation=candle_confirmed, bos_confirmed=_matching_event(structure, trade_direction), sweep_confirmed=False, structure=structure)
+        return TradeSignal(SignalStatus.WAIT, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "Liquidity sweep confirmation pending", candle_confirmation=candle_confirmed, bos_confirmed=bos_confirmed, sweep_confirmed=False, structure=structure)
+    if settings.m15_candle_confirmation and not candle_confirmed:
+        return TradeSignal(SignalStatus.WAIT, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "M15 candle confirmation pending", candle_confirmation=False, bos_confirmed=bos_confirmed, sweep_confirmed=sweep_confirmed, structure=structure)
 
     combined = ob is not None and fvg is not None and not (float(ob.high) < float(fvg.bottom) or float(fvg.top) < float(ob.low))
     fvg_failure = settings.m15_fvg_entry and detect_fvg_failure(df_m15, fvg, trade_direction)
     if combined:
-        setup = SetupType.COMBINED
-        confidence = 0.95
+        setup, confidence = SetupType.COMBINED, 0.95
     elif ob is not None and settings.m15_ob_entry:
-        setup = SetupType.OB_ENTRY
-        confidence = 0.85
+        setup, confidence = SetupType.OB_ENTRY, 0.85
     elif fvg is not None and settings.m15_fvg_entry:
-        setup = SetupType.FVG_ENTRY
-        confidence = 0.80
+        setup, confidence = SetupType.FVG_ENTRY, 0.80
     elif sweep_confirmed:
-        setup = SetupType.SWEEP_ENTRY
-        confidence = 0.70
+        setup, confidence = SetupType.SWEEP_ENTRY, 0.70
     else:
-        return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "No executable M15 setup", candle_confirmation=candle_confirmed, bos_confirmed=_matching_event(structure, trade_direction), sweep_confirmed=sweep_confirmed, structure=structure)
+        return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "No executable M15 setup", candle_confirmation=candle_confirmed, bos_confirmed=bos_confirmed, sweep_confirmed=sweep_confirmed, structure=structure)
 
-    if candle_confirmed:
-        confidence += 0.05
+    confidence += 0.05
     if sweep_confirmed:
         confidence += 0.05
     if fvg_failure:
@@ -173,7 +168,7 @@ def analyze_m15_entry_signal(
         min(0.99, confidence),
         "M15 causal entry: structure + liquidity + OB/FVG; downstream risk gate required",
         candle_confirmation=candle_confirmed,
-        bos_confirmed=_matching_event(structure, trade_direction),
+        bos_confirmed=bos_confirmed,
         sweep_confirmed=sweep_confirmed,
         fvg_failure=fvg_failure,
         order_block=ob, fvg=fvg, structure=structure,
@@ -202,6 +197,8 @@ def analyze_execution_frame(
     sweep_confirmed = sweep.swept_low if trade_direction == Direction.BUY else sweep.swept_high
     candle = _directional_candle(df, trade_direction)
     failure = detect_fvg_failure(df, fvg, trade_direction)
+    if frame == Timeframe.M3 and settings.m3_fvg_failure_required and not failure:
+        return TradeSignal(SignalStatus.WAIT, SetupType.NONE, frame, trade_direction, price, 0.0, 0.0, "M3 FVG-failure confirmation pending", candle_confirmation=candle, bos_confirmed=_matching_event(structure, trade_direction), sweep_confirmed=sweep_confirmed, fvg_failure=False, structure=structure)
     combined = ob is not None and fvg is not None and not (float(ob.high) < float(fvg.bottom) or float(fvg.top) < float(ob.low))
 
     if failure and frame == Timeframe.M3:
@@ -228,7 +225,7 @@ def analyze_execution_frame(
 
 def select_best_execution_frame(signals: Sequence[TradeSignal]) -> Optional[TradeSignal]:
     """Select the strongest valid execution signal deterministically."""
-    candidates = [s for s in signals if s is not None and s.is_valid]
+    candidates = [s for s in signals if s is not None and s.is_valid and s.aligned]
     if not candidates:
         return None
     frame_bonus = {Timeframe.M3: 3, Timeframe.M5: 2, Timeframe.M15: 1}
