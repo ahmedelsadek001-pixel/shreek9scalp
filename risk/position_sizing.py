@@ -9,14 +9,14 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def compute_lot_size(symbol: str, risk_usd: float, sl_pips: float) -> float:
-    """Return a volume that does not exceed the requested monetary risk.
+def compute_lot_size(symbol: str, risk_usd: float, sl_distance: float) -> float:
+    """Return broker-valid volume whose modeled risk does not exceed risk_usd.
 
-    Missing/invalid broker metadata is a hard failure (0.0), never a
-    fabricated minimum lot. Volume is floored to the broker step so rounding
-    cannot silently increase risk above the requested cap.
+    ``sl_distance`` is a price distance, not a pip count. This avoids the
+    common 5-digit/3-digit/CFD pip-conversion error and works with MT5 tick
+    size/value metadata across symbols.
     """
-    if risk_usd <= 0 or sl_pips <= 0:
+    if not all(math.isfinite(float(x)) for x in (risk_usd, sl_distance)) or risk_usd <= 0 or sl_distance <= 0:
         return 0.0
     if not MT5Manager.ensure_initialized():
         log.error("Position sizing blocked: MT5 unavailable")
@@ -32,17 +32,17 @@ def compute_lot_size(symbol: str, risk_usd: float, sl_pips: float) -> float:
     lot_step = float(getattr(symbol_info, "volume_step", 0) or 0)
     lot_min = float(getattr(symbol_info, "volume_min", 0) or 0)
     lot_max = float(getattr(symbol_info, "volume_max", 0) or 0)
-    if min(tick_size, tick_value, lot_step, lot_min, lot_max) <= 0:
-        log.error("Position sizing blocked: invalid broker volume/tick metadata for %s", symbol)
+    if not all(math.isfinite(x) and x > 0 for x in (tick_size, tick_value, lot_step, lot_min, lot_max)):
+        log.error("Position sizing blocked: invalid broker metadata for %s", symbol)
         return 0.0
 
-    risk_per_lot = (sl_pips / tick_size) * tick_value
-    if risk_per_lot <= 0 or not math.isfinite(risk_per_lot):
+    risk_per_lot = (sl_distance / tick_size) * tick_value
+    if not math.isfinite(risk_per_lot) or risk_per_lot <= 0:
         return 0.0
-
     raw_lots = risk_usd / risk_per_lot
-    if raw_lots < lot_min:
+    if not math.isfinite(raw_lots) or raw_lots < lot_min:
         return 0.0
+
     lots = math.floor((raw_lots + 1e-12) / lot_step) * lot_step
     lots = min(lots, lot_max)
     if lots < lot_min or not math.isfinite(lots):
