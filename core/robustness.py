@@ -34,6 +34,26 @@ class RobustnessReport:
     failures: tuple[str, ...]
 
 
+def _validate_pnl(pnl: Sequence[float]) -> None:
+    if not pnl or any(not isfinite(float(value)) for value in pnl):
+        raise ValueError("pnl must be non-empty and finite")
+
+
+def _wfo_failure(wfo: WalkForwardSummary, policy: RobustnessPolicy) -> str | None:
+    if wfo.stability_pct < policy.min_wfo_stability_pct:
+        return "WFO stability below minimum"
+    return None
+
+
+def _mc_failures(mc: RobustnessSummary, policy: RobustnessPolicy) -> tuple[str, ...]:
+    failures = []
+    if mc.ruin_rate_pct > policy.max_ruin_rate_pct:
+        failures.append("Monte Carlo ruin rate above maximum")
+    if mc.worst_max_drawdown > policy.max_monte_carlo_drawdown:
+        failures.append("Monte Carlo drawdown above maximum")
+    return tuple(failures)
+
+
 def build_robustness_report(
     wfo: WalkForwardSummary,
     pnl: Sequence[float],
@@ -44,12 +64,11 @@ def build_robustness_report(
 ) -> RobustnessReport:
     """Evaluate WFO stability and Monte Carlo tail-risk gates without execution."""
     policy.validate()
+    _validate_pnl(pnl)
     mc = monte_carlo(pnl, starting_equity, simulations, seed)
     failures = []
-    if wfo.stability_pct < policy.min_wfo_stability_pct:
-        failures.append("WFO stability below minimum")
-    if mc.ruin_rate_pct > policy.max_ruin_rate_pct:
-        failures.append("Monte Carlo ruin rate above maximum")
-    if mc.worst_max_drawdown > policy.max_monte_carlo_drawdown:
-        failures.append("Monte Carlo drawdown above maximum")
+    wfo_failure = _wfo_failure(wfo, policy)
+    if wfo_failure:
+        failures.append(wfo_failure)
+    failures.extend(_mc_failures(mc, policy))
     return RobustnessReport(wfo, mc, not failures, tuple(failures))
