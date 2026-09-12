@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from math import isfinite
-from typing import Mapping, Any
+from typing import Mapping
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,7 @@ class ResearchEvidence:
             raise ValueError("samples must be a positive integer")
         if not isinstance(metrics, Mapping) or not metrics:
             raise ValueError("metrics are required")
-        normalized = {}
+        normalized: dict[str, float] = {}
         for key, value in metrics.items():
             if not isinstance(key, str) or not key.strip():
                 raise ValueError("metric names must be non-empty strings")
@@ -44,28 +44,23 @@ class ResearchEvidence:
             if not isfinite(numeric):
                 raise ValueError("metric values must be finite")
             normalized[key.strip()] = numeric
+        normalized = dict(sorted(normalized.items()))
         canonical = json.dumps(
             {
                 "dataset_id": dataset_id.strip(),
                 "version": version.strip(),
                 "samples": samples,
-                "metrics": dict(sorted(normalized.items())),
+                "metrics": normalized,
             },
             sort_keys=True,
             separators=(",", ":"),
         )
         digest = sha256(canonical.encode("utf-8")).hexdigest()
-        return cls(
-            dataset_id.strip(),
-            version.strip(),
-            samples,
-            dict(sorted(normalized.items())),
-            digest,
-        )
+        return cls(dataset_id.strip(), version.strip(), samples, normalized, digest)
 
 
 def verify_evidence(evidence: ResearchEvidence) -> bool:
-    """Recompute the canonical hash and verify integrity of the evidence record."""
+    """Recompute the canonical hash and verify evidence-record integrity."""
     if not isinstance(evidence, ResearchEvidence):
         raise TypeError("evidence must be ResearchEvidence")
     try:
