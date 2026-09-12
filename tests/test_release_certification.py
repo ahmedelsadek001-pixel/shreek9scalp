@@ -10,11 +10,12 @@ _NAMES = (
     "robustness_passed", "paper_trading_validated", "security_reviewed",
     "execution_reconciled", "shadow_validated", "recovery_validated",
 )
+_COMMIT = "a" * 40
 
 
 def _bundle(passed: bool = True) -> ReleaseEvidenceBundle:
     records = tuple(
-        EvidenceRecord(name, passed, "validated-stage", "run-001", datetime(2026, 9, 12, tzinfo=timezone.utc))
+        EvidenceRecord(name, passed, "validated-stage", "run-001", datetime(2026, 9, 12, tzinfo=timezone.utc), _COMMIT)
         for name in _NAMES
     )
     return ReleaseEvidenceBundle.from_records(records)
