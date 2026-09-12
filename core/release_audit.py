@@ -39,6 +39,7 @@ REQUIRED_PATHS = (
     "core/robustness.py",
     "core/risk_simulation.py",
     "research/advanced_wfo.py",
+    "research/bootstrap_validation.py",
     "research/edge_matrix.py",
     "research/edge_selection.py",
     "research/excursion_stats.py",
