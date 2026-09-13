@@ -5,8 +5,9 @@ import pytest
 
 from execution.execution_gate import ExecutionGateDecision, evaluate_execution_gate
 from execution.guarded_adapter import GuardedExecutionAdapter
-from execution.reconciliation import OrderIntent
-from execution.recovery import RecoveryDecision, RecoveryState
+from execution.reconciliation import ExecutionReport, OrderIntent
+from execution.recovery import RecoveryDecision, RecoveryState, ShadowRecovery
+from execution.shadow import ShadowExecution
 from core.enums import Direction
 
 
@@ -119,6 +120,71 @@ def test_intent_aware_rejected_gate_never_reaches_transport() -> None:
     assert result.executed is False
     assert result.reasons == ("kill switch active",)
     assert calls == []
+
+
+def test_recovery_pending_order_blocks_guarded_execution_until_reconciled() -> None:
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+    intent = _intent()
+    shadow.submit_intent(intent)
+    adapter = GuardedExecutionAdapter(lambda received: received.order_id)
+
+    blocked_gate = evaluate_execution_gate(
+        operational=(True, ()),
+        broker=(True, ()),
+        recovery=recovery.admission(),
+        kill_switch_active=False,
+    )
+    blocked = adapter.execute_intent(blocked_gate, intent)
+    assert blocked.executed is False
+    assert blocked.result is None
+    assert "recovery: execution channel is not ready" in blocked.reasons
+
+    shadow.observe(ExecutionReport(intent.order_id, intent.symbol, intent.direction, intent.volume, intent.expected_price))
+    ready_gate = evaluate_execution_gate(
+        operational=(True, ()),
+        broker=(True, ()),
+        recovery=recovery.admission(),
+        kill_switch_active=False,
+    )
+    admitted = adapter.execute_intent(ready_gate, intent)
+    assert admitted.executed is True
+    assert admitted.result == intent.order_id
+
+
+def test_recovery_transition_blocks_execution_until_clean_recovery() -> None:
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+    adapter = GuardedExecutionAdapter(lambda received: received.order_id)
+    intent = _intent()
+
+    recovery.disconnect()
+    assert recovery.begin_recovery().state is RecoveryState.RECOVERING
+    blocked = adapter.execute_intent(
+        evaluate_execution_gate(
+            operational=(True, ()),
+            broker=(True, ()),
+            recovery=recovery.admission(),
+            kill_switch_active=False,
+        ),
+        intent,
+    )
+    assert blocked.executed is False
+    assert blocked.result is None
+    assert blocked.reasons == ("recovery: execution channel is not ready",)
+
+    assert recovery.complete_recovery().can_submit
+    admitted = adapter.execute_intent(
+        evaluate_execution_gate(
+            operational=(True, ()),
+            broker=(True, ()),
+            recovery=recovery.admission(),
+            kill_switch_active=False,
+        ),
+        intent,
+    )
+    assert admitted.executed is True
+    assert admitted.result == intent.order_id
 
 
 def test_non_callable_executor_rejected() -> None:
