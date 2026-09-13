@@ -1,8 +1,17 @@
+import ast
+from pathlib import Path
+
 import pytest
 
 from execution.execution_gate import ExecutionGateDecision, evaluate_execution_gate
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.recovery import RecoveryDecision, RecoveryState
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PRODUCTION_DIRS = ("ai", "config", "core", "execution", "market", "paper_trading", "research", "risk", "utils")
+COMPAT_PATH = Path("utils/mt5_compat.py")
+GUARDED_PATH = Path("execution/guarded_adapter.py")
 
 
 def _ready_gate() -> ExecutionGateDecision:
@@ -106,3 +115,41 @@ def test_executor_failure_is_reported_without_retry() -> None:
 def test_non_callable_executor_rejected() -> None:
     with pytest.raises(TypeError, match="executor must be callable"):
         GuardedExecutionAdapter(None)  # type: ignore[arg-type]
+
+
+def _production_python_files() -> list[Path]:
+    files: list[Path] = []
+    for directory in PRODUCTION_DIRS:
+        files.extend((ROOT / directory).rglob("*.py"))
+    return files
+
+
+def test_no_direct_mt5_import_outside_compatibility_boundary() -> None:
+    violations: list[str] = []
+    for path in _production_python_files():
+        if path.relative_to(ROOT) == COMPAT_PATH:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name == "MetaTrader5" or alias.name.startswith("MetaTrader5.") for alias in node.names):
+                    violations.append(str(path.relative_to(ROOT)))
+            elif isinstance(node, ast.ImportFrom):
+                if node.module == "MetaTrader5" or (node.module and node.module.startswith("MetaTrader5.")):
+                    violations.append(str(path.relative_to(ROOT)))
+    assert violations == []
+
+
+def test_no_direct_order_transport_call_outside_guarded_adapter() -> None:
+    violations: list[str] = []
+    forbidden = {"order_send", "send_order", "place_order", "submit_order"}
+    for path in _production_python_files():
+        relative = path.relative_to(ROOT)
+        if relative == GUARDED_PATH:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr.lower() in forbidden:
+                    violations.append(f"{relative}:{node.lineno}")
+    assert violations == []
