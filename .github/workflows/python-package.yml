@@ -63,3 +63,69 @@ jobs:
         PYTHONPATH: ${{ github.workspace }}
       run: |
         pytest -q
+
+  release-evidence:
+    name: Release evidence
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ needs.build.result == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.sha }}
+        fetch-depth: 1
+    - name: Generate immutable CI provenance
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+      run: |
+        python - <<'PY'
+        import hashlib
+        import json
+        import os
+        from pathlib import Path
+        from datetime import datetime, timezone
+
+        commit_sha = os.environ["GITHUB_SHA"]
+        if len(commit_sha) != 40 or any(c not in "0123456789abcdefABCDEF" for c in commit_sha):
+            raise SystemExit("invalid GITHUB_SHA")
+
+        files = []
+        for path in sorted(Path(".").rglob("*.py")):
+            if any(part in {".git", ".venv", "venv", "__pycache__"} for part in path.parts):
+                continue
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            files.append({"path": str(path), "sha256": digest})
+
+        payload = {
+            "schema": "shreek.ci-provenance.v1",
+            "workflow": os.environ["GITHUB_WORKFLOW"],
+            "run_id": os.environ["GITHUB_RUN_ID"],
+            "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+            "repository": os.environ["GITHUB_REPOSITORY"],
+            "ref": os.environ["GITHUB_REF"],
+            "commit_sha": commit_sha.lower(),
+            "event": os.environ["GITHUB_EVENT_NAME"],
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "production_python_files": files,
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        payload["manifest_sha256"] = hashlib.sha256(canonical).hexdigest()
+        Path("shreek-ci-provenance.json").write_text(
+            json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+        print(json.dumps({
+            "run_id": payload["run_id"],
+            "commit_sha": payload["commit_sha"],
+            "manifest_sha256": payload["manifest_sha256"],
+        }, sort_keys=True))
+        PY
+    - name: Upload release evidence
+      uses: actions/upload-artifact@v4
+      with:
+        name: shreek-ci-provenance-${{ github.sha }}-${{ github.run_id }}
+        path: shreek-ci-provenance.json
+        if-no-files-found: error
+        retention-days: 90
