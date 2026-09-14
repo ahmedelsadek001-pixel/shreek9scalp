@@ -51,6 +51,8 @@ def test_metrics_are_derived_from_realized_trade_pnl():
     assert metrics.win_rate_pct == 100.0
     assert metrics.expectancy == pytest.approx(metrics.net_pnl / 2)
     assert metrics.max_drawdown == 0.0
+    assert metrics.profit_factor == float("inf")
+    assert metrics.payoff_ratio == float("inf")
 
 
 def test_metrics_preserve_cost_aware_net_pnl():
