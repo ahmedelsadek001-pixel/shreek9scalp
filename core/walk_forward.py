@@ -43,18 +43,29 @@ def rolling_windows(
     train_size: int,
     test_size: int,
     step: Optional[int] = None,
+    purge_size: int = 0,
 ) -> tuple[WalkForwardWindow, ...]:
-    """Create chronological train/test windows without future-data leakage."""
+    """Create chronological train/test windows with an optional embargo gap.
+
+    ``purge_size`` removes observations immediately after the training set
+    from test evaluation, reducing leakage from labels or features whose
+    information horizon crosses the train/test boundary.
+    """
     if length <= 0 or train_size <= 0 or test_size <= 0:
         raise ValueError("window sizes and length must be positive")
+    if purge_size < 0:
+        raise ValueError("purge_size must be non-negative")
     step = test_size if step is None else step
     if step <= 0:
         raise ValueError("step must be positive")
     windows = []
     start = 0
-    while start + train_size + test_size <= length:
+    while start + train_size + purge_size + test_size <= length:
         train_end = start + train_size
-        windows.append(WalkForwardWindow(start, train_end, train_end, train_end + test_size))
+        test_start = train_end + purge_size
+        windows.append(
+            WalkForwardWindow(start, train_end, test_start, test_start + test_size)
+        )
         start += step
     if not windows:
         raise ValueError("insufficient data for one walk-forward window")
@@ -69,13 +80,16 @@ def run_walk_forward(
     test_size: int,
     step: Optional[int] = None,
     maximize: bool = True,
+    purge_size: int = 0,
 ) -> WalkForwardSummary:
     """Select parameters only on training data, then evaluate them OOS."""
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
-    windows = rolling_windows(len(data), train_size, test_size, step)
+    if type(maximize) is not bool:
+        raise ValueError("maximize must be a bool")
+    windows = rolling_windows(len(data), train_size, test_size, step, purge_size)
     results = []
     for window in windows:
         train = data[window.train_start : window.train_end]
