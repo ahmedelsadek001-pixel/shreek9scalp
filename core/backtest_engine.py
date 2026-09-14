@@ -23,7 +23,13 @@ class BacktestBar:
 
     def valid(self) -> bool:
         values = (self.open, self.high, self.low, self.close, self.spread)
-        return all(isfinite(float(x)) for x in values) and self.low <= self.high and self.spread >= 0
+        return (
+            all(isfinite(float(x)) for x in values)
+            and self.low <= self.high
+            and self.low <= self.open <= self.high
+            and self.low <= self.close <= self.high
+            and self.spread >= 0
+        )
 
 
 @dataclass(frozen=True)
@@ -188,7 +194,8 @@ def _run_lifecycle(
     state: LifecycleState = initial_state(order.volume, order.levels, policy)
     remaining = order.volume
     gross_total = 0.0
-    cost_total = costs.commission_per_volume * order.volume
+    entry_cost = costs.commission_per_volume * order.volume
+    exit_cost_total = 0.0
     events: list[str] = []
     entry_time = series[entry_index].timestamp
     stages = (("TP1", order.levels.tp1), ("TP2", order.levels.tp2), ("TP3", order.levels.tp3))
@@ -201,7 +208,7 @@ def _run_lifecycle(
             exit_price, gross, commission = _close_at_bar(
                 bar, order.direction, entry, remaining, costs, bar.open
             )
-            return index, exit_price, "TIME", gross_total + gross, cost_total + commission, remaining, tuple(events)
+            return index, exit_price, "TIME", gross_total + gross, entry_cost + exit_cost_total + commission, remaining, tuple(events)
 
         stop = state.stop_price if state.stop_price is not None else order.levels.sl
         if state.trailing_active and index > entry_index:
@@ -219,15 +226,16 @@ def _run_lifecycle(
         raw_price, reason = hit
         exit_price = _exit_price(bar, order.direction, raw_price, costs.slippage)
         if reason == "SL":
+            exit_cost_total += costs.commission_per_volume * remaining
             gross_total += _pnl(entry, exit_price, order.direction, remaining, costs.point_value)
-            return index, exit_price, "SL", gross_total, cost_total, remaining, tuple(events)
+            return index, exit_price, "SL", gross_total, entry_cost + exit_cost_total, remaining, tuple(events)
 
         fraction = (policy.tp1_fraction, policy.tp2_fraction, policy.tp3_fraction)[stage_index]
         close_volume = min(remaining, order.volume * fraction)
         if close_volume <= 0:
             raise ValueError("lifecycle stage has zero executable volume")
         gross_total += _pnl(entry, exit_price, order.direction, close_volume, costs.point_value)
-        cost_total += costs.commission_per_volume * close_volume
+        exit_cost_total += costs.commission_per_volume * close_volume
         remaining -= close_volume
         events.append(stages[stage_index][0])
         if stage_index == 0:
@@ -237,14 +245,14 @@ def _run_lifecycle(
             from core.position_lifecycle import after_tp2
             state = after_tp2(state, order.volume, order.levels, policy)
         else:
-            return index, exit_price, "TP3", gross_total, cost_total, 0.0, tuple(events)
+            return index, exit_price, "TP3", gross_total, entry_cost + exit_cost_total, 0.0, tuple(events)
         stage_index += 1
         index += 1
 
     if remaining > 0 and force_close_at_end and series:
         bar = series[-1]
         exit_price, gross, commission = _close_at_bar(bar, order.direction, entry, remaining, costs, bar.close)
-        return len(series) - 1, exit_price, "EOD", gross_total + gross, cost_total + commission, remaining, tuple(events)
+        return len(series) - 1, exit_price, "EOD", gross_total + gross, entry_cost + exit_cost_total + commission, remaining, tuple(events)
     return None, None, "", 0.0, 0.0, remaining, tuple(events)
 
 
