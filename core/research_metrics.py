@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite, sqrt
-from statistics import median
+from statistics import mean
 from typing import Sequence
 
 from core.backtest_engine import BacktestResult, BacktestTrade
@@ -81,8 +81,8 @@ def calculate_research_metrics(result: BacktestResult) -> ResearchMetrics:
     gross_profit = sum(wins)
     gross_loss = -sum(losses)
     profit_factor = gross_profit / gross_loss if gross_loss else (float("inf") if gross_profit else 0.0)
-    average_win = median(wins) if wins else 0.0
-    average_loss = -median(losses) if losses else 0.0
+    average_win = mean(wins) if wins else 0.0
+    average_loss = -mean(losses) if losses else 0.0
     payoff = average_win / average_loss if average_loss else (float("inf") if average_win else 0.0)
     max_dd, max_dd_pct = _drawdown(result.equity_curve, result.stats.starting_equity)
     returns = []
@@ -91,13 +91,13 @@ def calculate_research_metrics(result: BacktestResult) -> ResearchMetrics:
         if previous:
             returns.append((value - previous) / previous)
         previous = value
-    mean = sum(returns) / len(returns) if returns else 0.0
+    mean_return = sum(returns) / len(returns) if returns else 0.0
     variance = (
-        sum((value - mean) ** 2 for value in returns) / (len(returns) - 1)
+        sum((value - mean_return) ** 2 for value in returns) / (len(returns) - 1)
         if len(returns) > 1
         else 0.0
     )
-    sharpe = mean / sqrt(variance) * sqrt(252) if variance > 0 else 0.0
+    sharpe = mean_return / sqrt(variance) * sqrt(252) if variance > 0 else 0.0
     metrics = ResearchMetrics(
         count,
         len(wins),
