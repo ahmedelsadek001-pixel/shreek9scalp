@@ -1,6 +1,6 @@
 from datetime import datetime, time, timedelta
 import pytest
-from core.backtest_engine import BacktestBar, BacktestOrder, CostModel, run_backtest
+from core.backtest_engine import BacktestBar, BacktestOrder, CostModel, IntrabarPolicy, run_backtest
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
 from core.execution_levels import build_execution_levels
 from core.models import TradeSignal
@@ -32,11 +32,38 @@ def test_entry_is_next_bar_not_signal_bar():
     assert result.trades[0].entry == 101.0
 
 
-def test_ambiguous_bar_resolves_stop_first():
+def test_ambiguous_bar_resolves_stop_first_by_default():
     series = bars([(100, 100, 100, 100, 0), (100, 100, 100, 100, 0), (100, 103, 97, 100, 0)])
     result = run_backtest(series, [BacktestOrder(series[0].timestamp, Direction.BUY, levels())])
     assert result.trades[0].exit_reason == "SL"
     assert result.trades[0].net_pnl < 0
+
+
+def test_ambiguous_bar_can_resolve_target_first():
+    series = bars([(100, 100, 100, 100, 0), (100, 100, 100, 100, 0), (100, 103, 97, 100, 0)])
+    result = run_backtest(
+        series,
+        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
+        intrabar_policy=IntrabarPolicy.TARGET_FIRST,
+    )
+    assert result.trades[0].exit_reason == "TP"
+    assert result.trades[0].net_pnl > 0
+
+
+def test_ambiguous_bar_can_be_skipped():
+    series = bars([(100, 100, 100, 100, 0), (100, 100, 100, 100, 0), (100, 103, 97, 100, 0), (100, 100, 100, 100, 0)])
+    result = run_backtest(
+        series,
+        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
+        intrabar_policy=IntrabarPolicy.SKIP_AMBIGUOUS,
+    )
+    assert result.trades[0].exit_reason == "EOD"
+
+
+def test_invalid_intrabar_policy_fails_closed():
+    series = bars([(100, 100, 100, 100, 0), (100, 101, 99, 100, 0)])
+    with pytest.raises(ValueError, match="invalid intrabar policy"):
+        run_backtest(series, [], intrabar_policy="UNKNOWN")
 
 
 def test_spread_slippage_and_commission_reduce_pnl():
