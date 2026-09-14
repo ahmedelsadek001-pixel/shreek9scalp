@@ -34,6 +34,11 @@ def test_ruin_is_path_dependent_and_stops_after_breach():
     assert len(result.pnl) == 1
 
 
+def test_invalid_simulation_count_rejects_boolean():
+    with pytest.raises(ValueError, match="positive integer"):
+        monte_carlo([1], 1000, simulations=True)
+
+
 def test_invalid_inputs_fail_closed():
     with pytest.raises(ValueError):
         simulate_sequence([], 1000)
