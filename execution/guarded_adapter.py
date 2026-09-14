@@ -1,20 +1,16 @@
-"""Fail-closed execution adapter boundary for SHREEK V5.3.
-
-The boundary separates safety admission from transport. A downstream adapter
-may be called only after an explicit successful ExecutionGateDecision issued by
-the execution gate. Intent-aware execution additionally binds the admitted
-order identity to the downstream transport call.
-"""
+"""Fail-closed execution adapter boundary for SHREEK V5.3."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Generic, TypeVar
+from typing import Callable, Generic, TypeVar, cast
 
 from execution.execution_gate import ExecutionGateDecision, is_gate_issued
 from execution.reconciliation import OrderIntent
 
-
 T = TypeVar("T")
+LegacyExecutor = Callable[[], T]
+IntentExecutor = Callable[[OrderIntent], T]
+Executor = LegacyExecutor[T] | IntentExecutor[T]
 
 
 @dataclass(frozen=True)
@@ -27,15 +23,9 @@ class GuardedExecutionResult(Generic[T]):
 
 
 class GuardedExecutionAdapter(Generic[T]):
-    """Invoke a downstream executor only after a valid gate-issued decision.
+    """Invoke downstream transport only after a valid gate-issued decision."""
 
-    The legacy ``execute`` method remains broker-agnostic and is retained for
-    compatibility. New transport paths must use ``execute_intent`` so the
-    immutable OrderIntent identity is passed to the executor as part of the
-    guarded boundary rather than being handled outside it.
-    """
-
-    def __init__(self, executor: Callable[[], T]) -> None:
+    def __init__(self, executor: Executor[T]) -> None:
         if not callable(executor):
             raise TypeError("executor must be callable")
         self._executor = executor
@@ -55,23 +45,18 @@ class GuardedExecutionAdapter(Generic[T]):
         return None
 
     def execute(self, decision: ExecutionGateDecision) -> GuardedExecutionResult[T]:
-        """Execute only when the decision is gate-issued, valid, and allowed."""
+        """Legacy broker-agnostic execution path; retained for compatibility."""
         reasons = self._validate_decision(decision)
         if reasons is not None:
             return GuardedExecutionResult(False, None, reasons)
         try:
-            result = self._executor()
+            result = cast(LegacyExecutor[T], self._executor)()
         except Exception as exc:
             return GuardedExecutionResult(False, None, (f"downstream execution failed: {exc}",))
         return GuardedExecutionResult(True, result, ())
 
     def execute_intent(self, decision: ExecutionGateDecision, intent: OrderIntent) -> GuardedExecutionResult[T]:
-        """Execute a gate-approved immutable order intent through one boundary.
-
-        The adapter validates identity-bearing intent fields before transport.
-        The injected executor receives the exact intent object, preventing a
-        transport layer from silently substituting a different order identity.
-        """
+        """Execute a gate-approved immutable order intent through one boundary."""
         reasons = self._validate_decision(decision)
         if reasons is not None:
             return GuardedExecutionResult(False, None, reasons)
@@ -82,7 +67,7 @@ class GuardedExecutionAdapter(Generic[T]):
         if not isinstance(intent.symbol, str) or not intent.symbol.strip():
             return GuardedExecutionResult(False, None, ("order intent symbol missing",))
         try:
-            result = self._executor(intent)  # type: ignore[call-arg]
+            result = cast(IntentExecutor[T], self._executor)(intent)
         except Exception as exc:
             return GuardedExecutionResult(False, None, (f"downstream execution failed: {exc}",))
         return GuardedExecutionResult(True, result, ())
