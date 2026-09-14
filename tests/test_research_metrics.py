@@ -38,6 +38,7 @@ def _bars():
         (102, 102, 100, 100),
         (100, 100, 100, 100),
         (100, 102.1, 100, 102),
+        (102, 102, 102, 102),
     )
     return [BacktestBar(start + timedelta(minutes=i), *row) for i, row in enumerate(rows)]
 
@@ -48,7 +49,7 @@ def test_metrics_are_derived_from_realized_trade_pnl():
         series,
         [
             BacktestOrder(series[0].timestamp, Direction.BUY, _levels()),
-            BacktestOrder(series[3].timestamp, Direction.BUY, _levels()),
+            BacktestOrder(series[4].timestamp, Direction.BUY, _levels()),
         ],
         costs=CostModel(),
     )
