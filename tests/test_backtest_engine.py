@@ -50,6 +50,12 @@ def test_spread_slippage_and_commission_reduce_pnl():
     assert result.stats.net_pnl < 3.0
 
 
+def test_invalid_ohlc_fails_closed():
+    series = bars([(100, 99, 98, 99, 0), (99, 100, 98, 99, 0)])
+    with pytest.raises(ValueError, match="invalid or empty"):
+        run_backtest(series, [])
+
+
 def test_invalid_chronology_fails_closed():
     series = bars([(100, 101, 99, 100, 0), (100, 101, 99, 100, 0)])
     series.reverse()
@@ -83,6 +89,24 @@ def test_lifecycle_realizes_tp1_tp2_tp3_and_records_events():
     assert trade.volume == 1.0
     assert trade.lifecycle_events == ("TP1", "TP2", "TP3")
     assert trade.net_pnl > 0
+
+
+def test_lifecycle_commission_is_charged_once_per_execution_leg():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 101.1, 100, 101, 0),
+        (101, 102.1, 100.9, 102, 0),
+        (102, 103.1, 101.9, 103, 0),
+    ])
+    policy = LifecyclePolicy(tp1_fraction=0.5, tp2_fraction=0.25, tp3_fraction=0.25)
+    result = run_backtest(
+        series,
+        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
+        lifecycle_policy=policy,
+        costs=CostModel(commission_per_volume=2.0),
+    )
+    trade = result.trades[0]
+    assert trade.costs == pytest.approx(4.0)
 
 
 def test_lifecycle_stop_after_tp1_uses_breakeven_on_following_bar():
