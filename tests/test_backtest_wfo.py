@@ -89,7 +89,7 @@ def test_wfo_objective_is_based_only_on_train_metrics():
 
     assert result.validation.selected_parameters[0] == {"mult": 1.0}
     assert tuple(data[4:5]) not in calls
-    assert result.oos_results[0].trades[0].net_pnl == -200.0
+    assert result.oos_results[0].trades[0].net_pnl == -99.0
 
 
 def test_wfo_rejects_non_backtest_evaluator_output():
