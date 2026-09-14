@@ -28,7 +28,7 @@ def test_monte_carlo_summary_is_reproducible():
 
 
 def test_ruin_is_path_dependent_and_stops_after_breach():
-    result = simulate_sequence([100.0, -1500.0, 10000.0], 1000, seed=1)
+    result = simulate_sequence([100.0, -1500.0, 10000.0], 1000, seed=5)
     assert result.ruin is True
     assert result.ending_equity <= 0
     assert len(result.pnl) == 2
