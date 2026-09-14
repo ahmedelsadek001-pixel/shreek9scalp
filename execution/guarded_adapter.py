@@ -10,7 +10,7 @@ from execution.reconciliation import OrderIntent
 T = TypeVar("T")
 LegacyExecutor = Callable[[], T]
 IntentExecutor = Callable[[OrderIntent], T]
-Executor = LegacyExecutor[T] | IntentExecutor[T]
+Executor = Callable[..., T]
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class GuardedExecutionResult(Generic[T]):
 class GuardedExecutionAdapter(Generic[T]):
     """Invoke downstream transport only after a valid gate-issued decision."""
 
-    def __init__(self, executor: Executor[T]) -> None:
+    def __init__(self, executor: Executor) -> None:
         if not callable(executor):
             raise TypeError("executor must be callable")
         self._executor = executor
