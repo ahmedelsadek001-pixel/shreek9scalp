@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from math import isfinite, sqrt
 from typing import Iterable, Optional, Sequence
 
@@ -10,6 +11,14 @@ from core.enums import Direction
 from core.models import ExecutionLevels
 from core.position_lifecycle import LifecyclePolicy, LifecycleState, initial_state, trailing_stop_price
 from core.trading_window import TradingWindowPolicy
+
+
+class IntrabarPolicy(str, Enum):
+    """Policy for bars that touch both stop and target without tick ordering."""
+
+    STOP_FIRST = "STOP_FIRST"
+    TARGET_FIRST = "TARGET_FIRST"
+    SKIP_AMBIGUOUS = "SKIP_AMBIGUOUS"
 
 
 @dataclass(frozen=True)
@@ -122,9 +131,25 @@ def _exit_price(bar: BacktestBar, direction: Direction, price: float, slippage: 
     return price - slippage - half if direction == Direction.BUY else price + slippage + half
 
 
-def _hit(bar: BacktestBar, direction: Direction, stop: float, target: float) -> Optional[tuple[float, str]]:
+def _hit(
+    bar: BacktestBar,
+    direction: Direction,
+    stop: float,
+    target: float,
+    intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST,
+) -> Optional[tuple[float, str]]:
+    try:
+        policy = IntrabarPolicy(intrabar_policy)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid intrabar policy") from exc
     stop_hit = bar.low <= stop if direction == Direction.BUY else bar.high >= stop
     target_hit = bar.high >= target if direction == Direction.BUY else bar.low <= target
+    if stop_hit and target_hit:
+        if policy == IntrabarPolicy.STOP_FIRST:
+            return stop, "SL"
+        if policy == IntrabarPolicy.TARGET_FIRST:
+            return target, "TP"
+        return None
     if stop_hit:
         return stop, "SL"
     if target_hit:
@@ -187,6 +212,7 @@ def _run_lifecycle(
     policy: LifecyclePolicy,
     trading_window: Optional[TradingWindowPolicy] = None,
     force_close_at_end: bool = True,
+    intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST,
 ) -> tuple[Optional[int], Optional[float], str, float, float, float, tuple[str, ...]]:
     policy.validate()
     if trading_window is not None:
@@ -219,7 +245,7 @@ def _run_lifecycle(
                 state.breakeven_active, stop, state.trailing_active
             )
 
-        hit = _hit(bar, order.direction, stop, stages[stage_index][1])
+        hit = _hit(bar, order.direction, stop, stages[stage_index][1], intrabar_policy)
         if hit is None:
             index += 1
             continue
@@ -264,9 +290,14 @@ def run_backtest(
     force_close_at_end: bool = True,
     lifecycle_policy: Optional[LifecyclePolicy] = None,
     trading_window: Optional[TradingWindowPolicy] = None,
+    intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST,
 ) -> BacktestResult:
     if not isfinite(starting_equity) or starting_equity <= 0 or not costs.valid():
         raise ValueError("invalid backtest configuration")
+    try:
+        intrabar_policy = IntrabarPolicy(intrabar_policy)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("invalid intrabar policy") from exc
     if trading_window is not None:
         trading_window.validate()
     series = list(bars)
@@ -304,7 +335,7 @@ def run_backtest(
 
         if lifecycle_policy is not None:
             exit_index, exit_price, reason, gross, cost, _remaining, events = _run_lifecycle(
-                series, order, entry_index, entry, costs, lifecycle_policy, trading_window, force_close_at_end
+                series, order, entry_index, entry, costs, lifecycle_policy, trading_window, force_close_at_end, intrabar_policy
             )
             if exit_index is None:
                 continue
@@ -318,7 +349,7 @@ def run_backtest(
                     raw_exit = series[i].open
                     reason = "TIME"
                     break
-                hit = _hit(series[i], order.direction, order.levels.sl, order.levels.tp3)
+                hit = _hit(series[i], order.direction, order.levels.sl, order.levels.tp3, intrabar_policy)
                 if hit is not None:
                     raw_exit, reason = hit
                     exit_index = i
