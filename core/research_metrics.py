@@ -40,6 +40,9 @@ class ResearchMetrics:
         )
         if not all(isfinite(float(value)) for value in numeric):
             raise ValueError("research metrics must be finite")
+        for value, name in ((self.profit_factor, "profit factor"), (self.payoff_ratio, "payoff ratio")):
+            if float(value) < 0 or not (isfinite(float(value)) or float(value) == float("inf")):
+                raise ValueError(f"{name} must be non-negative or infinity")
         if self.trades < 0 or self.wins < 0 or self.losses < 0:
             raise ValueError("research trade counts must be non-negative")
         if self.wins + self.losses > self.trades:
