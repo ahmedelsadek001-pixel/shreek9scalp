@@ -31,8 +31,8 @@ def _validate(pnl: Sequence[float], starting_equity: float, simulations: int) ->
         raise ValueError("starting equity must be positive and finite")
     if not pnl or any(not isfinite(float(x)) for x in pnl):
         raise ValueError("pnl must be non-empty and finite")
-    if simulations <= 0:
-        raise ValueError("simulations must be positive")
+    if type(simulations) is not int or simulations <= 0:
+        raise ValueError("simulations must be a positive integer")
 
 
 def simulate_sequence(
