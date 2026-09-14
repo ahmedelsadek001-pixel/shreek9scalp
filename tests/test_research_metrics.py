@@ -2,7 +2,15 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from core.backtest_engine import BacktestBar, BacktestOrder, CostModel, run_backtest
+from core.backtest_engine import (
+    BacktestBar,
+    BacktestOrder,
+    BacktestResult,
+    BacktestStats,
+    BacktestTrade,
+    CostModel,
+    run_backtest,
+)
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
 from core.execution_levels import build_execution_levels
 from core.models import TradeSignal
@@ -65,6 +73,25 @@ def test_metrics_preserve_cost_aware_net_pnl():
     metrics = calculate_research_metrics(result)
     assert metrics.net_pnl == pytest.approx(result.stats.net_pnl)
     assert metrics.expectancy == pytest.approx(result.stats.net_pnl)
+
+
+def test_average_win_and_loss_are_arithmetic_means():
+    start = datetime(2026, 1, 1)
+    trades = (
+        BacktestTrade(start, start, start, Direction.BUY, 100, 101, 1, 1, 0, 1, "TP"),
+        BacktestTrade(start, start, start, Direction.BUY, 100, 104, 1, 4, 0, 4, "TP"),
+        BacktestTrade(start, start, start, Direction.BUY, 100, 99, 1, -1, 0, -1, "SL"),
+        BacktestTrade(start, start, start, Direction.BUY, 100, 98, 1, -2, 0, -2, "SL"),
+    )
+    result = BacktestResult(
+        trades,
+        (10000.0, 10001.0, 10005.0, 10004.0, 10002.0),
+        BacktestStats(10000.0, 10002.0, 2.0, 0.02, 4, 2, 2, 50.0, 1.6666666667, 0.5, 3.0, 0.03, 1.0),
+    )
+    metrics = calculate_research_metrics(result)
+    assert metrics.average_win == pytest.approx(2.5)
+    assert metrics.average_loss == pytest.approx(1.5)
+    assert metrics.payoff_ratio == pytest.approx(2.5 / 1.5)
 
 
 def test_invalid_result_type_fails_closed():
