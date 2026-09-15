@@ -97,7 +97,7 @@ def test_backtest_timeframe_is_explicitly_carried_into_orders():
     )
     orders = build_breakout_retest_orders(_bars(), config)
     assert orders
-    assert orders[0].selected_frame is Timeframe.H1
+    assert orders[0].levels.selected_frame is Timeframe.H1
 
 
 def test_negative_spread_is_rejected():
