@@ -86,7 +86,13 @@ class BreakoutRetestSignal:
     volume_ratio: float
     confirmation: str
 
-    def to_backtest_order(self, volume: float = 1.0) -> BacktestOrder:
+    def to_backtest_order(
+        self,
+        volume: float = 1.0,
+        selected_frame: Timeframe = Timeframe.M5,
+    ) -> BacktestOrder:
+        if not isinstance(selected_frame, Timeframe):
+            raise ValueError("selected_frame must be a Timeframe")
         risk = abs(self.entry_price - self.sl_price)
         return BacktestOrder(
             signal_time=self.signal_time,
@@ -101,7 +107,7 @@ class BreakoutRetestSignal:
                 rr1=1.5,
                 setup_type=SetupType.COMBINED,
                 confidence=1.0,
-                selected_frame=Timeframe.M5,
+                selected_frame=selected_frame,
                 details="causal_breakout_retest",
             ),
             volume=volume,
@@ -241,6 +247,7 @@ def detect_breakout_retest(
                     entry - risk * config.tp2_rr,
                     entry - risk * config.tp3_rr,
                 )
+
             signals.append(
                 BreakoutRetestSignal(
                     direction=direction,
@@ -259,4 +266,5 @@ def detect_breakout_retest(
             )
             used_breakouts.add(breakout_index)
             break
+
     return tuple(signals)
