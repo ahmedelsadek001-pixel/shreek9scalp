@@ -50,3 +50,32 @@ def test_evidence_gate_rejects_unvalidated_report():
 def test_policy_rejects_invalid_trade_threshold():
     with pytest.raises(ValueError, match="min_oos_trades"):
         EvidenceGatePolicy(min_oos_trades=0).validate()
+
+
+def test_policy_rejects_boolean_numeric_thresholds():
+    with pytest.raises(ValueError, match="must not be bool"):
+        EvidenceGatePolicy(min_expectancy=True).validate()
+
+
+def test_policy_rejects_non_finite_expectancy():
+    with pytest.raises(ValueError, match="min_expectancy"):
+        EvidenceGatePolicy(min_expectancy=float("inf")).validate()
+
+
+def test_policy_rejects_invalid_stability_range():
+    with pytest.raises(ValueError, match="stability"):
+        EvidenceGatePolicy(min_oos_stability_pct=101.0).validate()
+
+
+def test_policy_rejects_negative_ruin_limit():
+    with pytest.raises(ValueError, match="ruin rate"):
+        EvidenceGatePolicy(max_ruin_rate_pct=-0.1).validate()
+
+
+def test_policy_allows_unbounded_drawdown_explicitly():
+    EvidenceGatePolicy(max_worst_drawdown=float("inf")).validate()
+
+
+def test_policy_rejects_negative_drawdown_limit():
+    with pytest.raises(ValueError, match="drawdown"):
+        EvidenceGatePolicy(max_worst_drawdown=-1.0).validate()
