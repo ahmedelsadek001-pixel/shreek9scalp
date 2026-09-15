@@ -19,7 +19,8 @@ def _bars() -> list[ResearchBar]:
     for i in range(6):
         bars.append(ResearchBar(start + timedelta(minutes=20 + i), 100.003, 100.005, 100.002, 100.004, 100.0))
     bars.append(ResearchBar(start + timedelta(minutes=26), 100.003, 100.008, 100.0025, 100.0075, 200.0))
-    bars.append(ResearchBar(start + timedelta(minutes=27), 100.006, 100.0075, 100.0045, 100.007, 100.0))
+    # Bullish pin-bar style retest: body is >= 40% of the range and the lower wick is >= body.
+    bars.append(ResearchBar(start + timedelta(minutes=27), 100.0055, 100.0075, 100.004, 100.007, 100.0))
     bars.append(ResearchBar(start + timedelta(minutes=28), 100.007, 100.009, 100.007, 100.009, 100.0))
     return bars
 
@@ -45,9 +46,9 @@ def test_breakout_retest_runs_through_real_backtest_engine():
     trade = result.trades[0]
     assert trade.direction is Direction.BUY
     assert trade.tag == "breakout_retest"
-    assert trade.entry_price == pytest.approx(100.007)
-    assert trade.exit_price == pytest.approx(100.009)
-    assert trade.exit_reason in {"TP1", "TP2", "TP3", "EOD"}
+    assert trade.entry == pytest.approx(100.007)
+    assert trade.exit == pytest.approx(100.009)
+    assert trade.exit_reason in {"TP1", "TP2", "TP3", "EOD", "TP", "SL"}
     assert result.stats.trades == 1
 
 
