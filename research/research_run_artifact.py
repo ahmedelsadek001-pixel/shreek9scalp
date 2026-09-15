@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from hashlib import sha256
-from typing import Any, Mapping
+from typing import Any
 
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import serialize_evidence_export
@@ -43,7 +44,7 @@ class ResearchRunArtifact:
             raise ValueError("metadata must be a tuple")
         for item in self.metadata:
             if type(item) is not tuple or len(item) != 2 or any(
-                not isinstance(value, str) or not value for value in item
+                type(value) is not str or not value for value in item
             ):
                 raise ValueError("metadata must contain non-empty string key/value pairs")
         if tuple(sorted(self.metadata)) != self.metadata:
@@ -64,7 +65,12 @@ def build_research_run_artifact(
     if metadata is not None:
         if not isinstance(metadata, Mapping):
             raise ValueError("metadata must be a mapping")
-        normalized = tuple(sorted((str(k), str(v)) for k, v in metadata.items()))
+        if any(
+            type(key) is not str or not key or type(value) is not str or not value
+            for key, value in metadata.items()
+        ):
+            raise ValueError("metadata must contain non-empty string key/value pairs")
+        normalized = tuple(sorted(metadata.items()))
     else:
         normalized = ()
     evidence_export = serialize_evidence_export(result, provenance)
