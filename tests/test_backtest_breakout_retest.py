@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from core.enums import Direction
+from core.enums import Direction, Timeframe
 from research.backtest_breakout_retest import (
     BreakoutRetestBacktestConfig,
     build_breakout_retest_orders,
@@ -41,6 +41,19 @@ def test_breakout_retest_builds_causal_order():
     assert len(orders) == 1
     assert orders[0].direction is Direction.BUY
     assert orders[0].signal_time == datetime(2026, 1, 1, 0, 27, tzinfo=timezone.utc)
+
+
+def test_breakout_retest_order_uses_configured_timeframe():
+    config = BreakoutRetestBacktestConfig(pip_size=0.0001, timeframe=Timeframe.H1)
+    orders = build_breakout_retest_orders(_bars(), config)
+    assert len(orders) == 1
+    assert orders[0].levels.selected_frame is Timeframe.H1
+
+
+def test_invalid_timeframe_is_rejected():
+    config = BreakoutRetestBacktestConfig(pip_size=0.0001, timeframe="H1")
+    with pytest.raises(ValueError, match="timeframe"):
+        build_breakout_retest_orders(_bars(), config)
 
 
 def test_breakout_retest_runs_through_real_backtest_engine():
