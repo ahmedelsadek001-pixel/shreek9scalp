@@ -14,7 +14,7 @@ from typing import Any, Mapping, Sequence
 from research.backtest_wfo import BacktestEvaluator
 from research.breakout_retest import ResearchBar
 from research.csv_adapter import load_ohlcv_csv
-from research.data_provenance import DatasetProvenance, fingerprint_bars
+from research.dataset_provenance import DatasetProvenance, fingerprint_bars
 from research.data_validation import MarketDataValidation, validate_market_data
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
