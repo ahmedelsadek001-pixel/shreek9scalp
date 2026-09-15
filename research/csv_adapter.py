@@ -7,7 +7,7 @@ runs fail-closed chronological validation.
 from __future__ import annotations
 
 import csv
-from datetime import datetime
+from datetime import datetime, tzinfo
 from io import StringIO
 from typing import TextIO
 
@@ -18,7 +18,9 @@ from research.data_validation import MarketDataValidation, validate_market_data
 REQUIRED_COLUMNS = ("timestamp", "open", "high", "low", "close", "volume")
 
 
-def _parse_timestamp(value: str, row_number: int) -> datetime:
+def _parse_timestamp(
+    value: str, row_number: int, *, assume_timezone: tzinfo | None = None
+) -> datetime:
     text = value.strip()
     if not text:
         raise ValueError(f"row {row_number}: timestamp is required")
@@ -28,7 +30,9 @@ def _parse_timestamp(value: str, row_number: int) -> datetime:
     except ValueError as exc:
         raise ValueError(f"row {row_number}: invalid timestamp") from exc
     if timestamp.tzinfo is None:
-        raise ValueError(f"row {row_number}: timestamp must be timezone-aware")
+        if assume_timezone is None:
+            raise ValueError(f"row {row_number}: timestamp must be timezone-aware")
+        timestamp = timestamp.replace(tzinfo=assume_timezone)
     return timestamp
 
 
@@ -42,11 +46,15 @@ def _parse_float(value: str, field: str, row_number: int) -> float:
         raise ValueError(f"row {row_number}: invalid {field}") from exc
 
 
-def load_ohlcv_csv(source: str | TextIO) -> tuple[tuple[ResearchBar, ...], MarketDataValidation]:
+def load_ohlcv_csv(
+    source: str | TextIO, *, assume_timezone: tzinfo | None = None
+) -> tuple[tuple[ResearchBar, ...], MarketDataValidation]:
     """Load strict OHLCV CSV text or a text stream and validate it.
 
     Required header: ``timestamp,open,high,low,close,volume``. Timestamps
-    must be ISO-8601 with an explicit timezone (``Z`` is accepted).
+    must be ISO-8601 with an explicit timezone (``Z`` is accepted). For
+    broker exports containing naive timestamps, ``assume_timezone`` must be
+    supplied explicitly; the adapter never guesses a timezone.
     """
     if hasattr(source, "read"):
         reader = csv.DictReader(source)
@@ -71,7 +79,9 @@ def load_ohlcv_csv(source: str | TextIO) -> tuple[tuple[ResearchBar, ...], Marke
             raise ValueError(f"row {row_number}: missing required field")
         bars.append(
             ResearchBar(
-                _parse_timestamp(row["timestamp"], row_number),
+                _parse_timestamp(
+                    row["timestamp"], row_number, assume_timezone=assume_timezone
+                ),
                 _parse_float(row["open"], "open", row_number),
                 _parse_float(row["high"], "high", row_number),
                 _parse_float(row["low"], "low", row_number),
