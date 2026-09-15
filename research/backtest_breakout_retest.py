@@ -71,11 +71,18 @@ def to_backtest_bars(bars: Sequence[ResearchBar], spread: float = 0.0) -> tuple[
 def build_breakout_retest_orders(
     bars: Sequence[ResearchBar],
     config: BreakoutRetestBacktestConfig,
+    *,
+    min_signal_index: int = 0,
 ) -> tuple[BacktestOrder, ...]:
-    """Generate only completed, causal signals and convert them to orders."""
+    """Generate causal signals while preserving an optional OOS boundary."""
     if not isinstance(config.timeframe, Timeframe):
         raise ValueError("timeframe must be a Timeframe")
-    signals = detect_breakout_retest(bars, pip_size=config.pip_size, config=config.signal)
+    signals = detect_breakout_retest(
+        bars,
+        pip_size=config.pip_size,
+        config=config.signal,
+        min_signal_index=min_signal_index,
+    )
     return tuple(
         signal.to_backtest_order(volume=config.volume, selected_frame=config.timeframe)
         for signal in signals
@@ -85,11 +92,24 @@ def build_breakout_retest_orders(
 def run_breakout_retest_backtest(
     bars: Sequence[ResearchBar],
     config: BreakoutRetestBacktestConfig,
+    *,
+    min_signal_index: int = 0,
 ) -> BacktestResult:
-    """Run the real SHREEK backtest engine with explicit economics only."""
+    """Run the real SHREEK backtest engine with an optional OOS signal boundary.
+
+    Warm-up bars may precede ``min_signal_index`` and are available to the signal
+    detector for consolidation and volume context, but no returned order may be
+    confirmed before that boundary.
+    """
     config.validate()
+    if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
+        raise ValueError("min_signal_index must be an integer within bars")
     execution_bars = to_backtest_bars(bars, spread=config.spread)
-    orders = build_breakout_retest_orders(bars, config)
+    orders = build_breakout_retest_orders(
+        bars,
+        config,
+        min_signal_index=min_signal_index,
+    )
     costs = CostModel(
         slippage=config.slippage,
         point_value=config.point_value,
