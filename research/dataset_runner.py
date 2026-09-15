@@ -18,6 +18,7 @@ from research.dataset_provenance import DatasetProvenance, fingerprint_bars
 from research.data_validation import MarketDataValidation, validate_market_data
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
+from research.research_run_artifact import ResearchRunArtifact, build_research_run_artifact
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class DatasetResearchResult:
     validation: MarketDataValidation
     provenance: DatasetProvenance
     evidence: EvidencePipelineResult
+    artifact: ResearchRunArtifact
 
 
 def run_dataset_research(
@@ -46,8 +48,9 @@ def run_dataset_research(
     slippage_multiplier: float = 1.0,
     spread_multiplier: float = 1.0,
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
+    artifact_metadata: Mapping[str, str] | None = None,
 ) -> DatasetResearchResult:
-    """Validate and fingerprint bars before running research evidence."""
+    """Validate, fingerprint, research, and package one deterministic run."""
     validation = validate_market_data(bars, max_gap=max_gap)
     provenance = fingerprint_bars(bars, validation)
     evidence = run_evidence_pipeline(
@@ -66,7 +69,10 @@ def run_dataset_research(
         spread_multiplier=spread_multiplier,
         policy=policy,
     )
-    return DatasetResearchResult(validation, provenance, evidence)
+    artifact = build_research_run_artifact(
+        evidence, provenance, metadata=artifact_metadata
+    )
+    return DatasetResearchResult(validation, provenance, evidence, artifact)
 
 
 def run_csv_research(
