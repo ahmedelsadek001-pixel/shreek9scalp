@@ -11,6 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from research.backtest_wfo import BacktestEvaluator
 from research.breakout_retest import ResearchBar
 from research.csv_adapter import load_ohlcv_csv
 from research.data_validation import MarketDataValidation, validate_market_data
@@ -29,7 +30,7 @@ class DatasetResearchResult:
 def run_dataset_research(
     bars: Sequence[ResearchBar],
     parameter_sets: Sequence[Mapping[str, Any]],
-    evaluator,
+    evaluator: BacktestEvaluator,
     *,
     max_gap: timedelta | None = None,
     train_size: int,
@@ -68,7 +69,7 @@ def run_dataset_research(
 def run_csv_research(
     path: str | Path,
     parameter_sets: Sequence[Mapping[str, Any]],
-    evaluator,
+    evaluator: BacktestEvaluator,
     **kwargs: Any,
 ) -> DatasetResearchResult:
     """Load a local CSV through the strict adapter, then run research."""
