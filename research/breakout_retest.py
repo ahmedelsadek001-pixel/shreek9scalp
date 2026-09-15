@@ -90,9 +90,12 @@ class BreakoutRetestSignal:
         self,
         volume: float = 1.0,
         selected_frame: Timeframe = Timeframe.M5,
+        rr1: float = 1.5,
     ) -> BacktestOrder:
         if not isinstance(selected_frame, Timeframe):
             raise ValueError("selected_frame must be a Timeframe")
+        if not isfinite(float(rr1)) or rr1 <= 0:
+            raise ValueError("rr1 must be finite and positive")
         risk = abs(self.entry_price - self.sl_price)
         return BacktestOrder(
             signal_time=self.signal_time,
@@ -104,7 +107,7 @@ class BreakoutRetestSignal:
                 tp2=self.tp2,
                 tp3=self.tp3,
                 risk=risk,
-                rr1=1.5,
+                rr1=rr1,
                 setup_type=SetupType.COMBINED,
                 confidence=1.0,
                 selected_frame=selected_frame,
