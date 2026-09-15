@@ -23,6 +23,7 @@ class EvidencePipelineResult:
     robustness: RobustnessEvidence
     report: OOSEvidenceReport
     gate: EvidenceGateResult
+    policy: EvidenceGatePolicy = EvidenceGatePolicy()
 
 
 def run_evidence_pipeline(
@@ -70,4 +71,4 @@ def run_evidence_pipeline(
     )
     report = build_oos_evidence_report(wfo, robustness)
     gate = evaluate_oos_evidence(report, policy)
-    return EvidencePipelineResult(wfo, robustness, report, gate)
+    return EvidencePipelineResult(wfo, robustness, report, gate, policy)
