@@ -11,11 +11,11 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from research.csv_adapter import load_csv
-from research.data_validation import MarketDataValidation
+from research.breakout_retest import ResearchBar
+from research.csv_adapter import load_ohlcv_csv
+from research.data_validation import MarketDataValidation, validate_market_data
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
-from research.breakout_retest import ResearchBar
 
 
 @dataclass(frozen=True)
@@ -45,8 +45,6 @@ def run_dataset_research(
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
 ) -> DatasetResearchResult:
     """Validate bars, then execute the existing research-only evidence chain."""
-    from research.data_validation import validate_market_data
-
     validation = validate_market_data(bars, max_gap=max_gap)
     evidence = run_evidence_pipeline(
         bars,
@@ -74,5 +72,12 @@ def run_csv_research(
     **kwargs: Any,
 ) -> DatasetResearchResult:
     """Load a local CSV through the strict adapter, then run research."""
-    bars = load_csv(path)
+    csv_path = Path(path)
+    if not csv_path.is_file():
+        raise ValueError("CSV path must reference an existing file")
+    try:
+        text = csv_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError("unable to read CSV dataset") from exc
+    bars, _ = load_ohlcv_csv(text)
     return run_dataset_research(bars, parameter_sets, evaluator, **kwargs)
