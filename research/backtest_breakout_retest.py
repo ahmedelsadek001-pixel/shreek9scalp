@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Sequence
 
 from core.backtest_engine import (
@@ -23,10 +24,29 @@ class BreakoutRetestBacktestConfig:
     volume: float = 1.0
     spread: float = 0.0
     slippage: float = 0.0
-    point_value: float = 1.0
+    point_value: float | None = None
     commission_per_volume: float = 0.0
     timeframe: Timeframe = Timeframe.M5
     signal: BreakoutRetestConfig = BreakoutRetestConfig()
+
+    def validate(self) -> None:
+        """Reject incomplete or non-finite economics before performance is computed."""
+        if not isfinite(float(self.pip_size)) or self.pip_size <= 0:
+            raise ValueError("pip_size must be finite and positive")
+        if not isfinite(float(self.volume)) or self.volume <= 0:
+            raise ValueError("volume must be finite and positive")
+        if not isfinite(float(self.spread)) or self.spread < 0:
+            raise ValueError("spread must be finite and non-negative")
+        if not isfinite(float(self.slippage)) or self.slippage < 0:
+            raise ValueError("slippage must be finite and non-negative")
+        if self.point_value is None:
+            raise ValueError("point_value must be explicitly provided for performance backtests")
+        if not isfinite(float(self.point_value)) or self.point_value <= 0:
+            raise ValueError("point_value must be finite and positive")
+        if not isfinite(float(self.commission_per_volume)) or self.commission_per_volume < 0:
+            raise ValueError("commission_per_volume must be finite and non-negative")
+        if not isinstance(self.timeframe, Timeframe):
+            raise ValueError("timeframe must be a Timeframe")
 
 
 def to_backtest_bars(bars: Sequence[ResearchBar], spread: float = 0.0) -> tuple[BacktestBar, ...]:
@@ -66,7 +86,8 @@ def run_breakout_retest_backtest(
     bars: Sequence[ResearchBar],
     config: BreakoutRetestBacktestConfig,
 ) -> BacktestResult:
-    """Run the real SHREEK backtest engine on Breakout + Retest signals."""
+    """Run the real SHREEK backtest engine with explicit economics only."""
+    config.validate()
     execution_bars = to_backtest_bars(bars, spread=config.spread)
     orders = build_breakout_retest_orders(bars, config)
     costs = CostModel(
