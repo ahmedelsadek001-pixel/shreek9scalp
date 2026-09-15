@@ -14,7 +14,7 @@ def _bars() -> list[ResearchBar]:
     for i in range(6):
         bars.append(ResearchBar(start + timedelta(minutes=20 + i), 100.003, 100.005, 100.002, 100.004, 100.0))
     bars.append(ResearchBar(start + timedelta(minutes=26), 100.003, 100.008, 100.0025, 100.0075, 200.0))
-    bars.append(ResearchBar(start + timedelta(minutes=27), 100.006, 100.0075, 100.0045, 100.007, 100.0))
+    bars.append(ResearchBar(start + timedelta(minutes=27), 100.006, 100.0075, 100.0045, 100.0075, 100.0))
     return bars
 
 
