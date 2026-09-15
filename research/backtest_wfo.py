@@ -37,6 +37,14 @@ class BacktestWFOResult:
         return sum(metric.net_pnl for metric in self.oos_metrics)
 
     @property
+    def oos_trade_pnl(self) -> tuple[float, ...]:
+        """Flatten realized net P&L from actual OOS trades in window order."""
+        pnl = tuple(trade.net_pnl for result in self.oos_results for trade in result.trades)
+        if any(not isfinite(float(value)) for value in pnl):
+            raise ValueError("OOS trade P&L must be finite")
+        return pnl
+
+    @property
     def positive_oos_windows(self) -> int:
         return sum(metric.net_pnl > 0 for metric in self.oos_metrics)
 
