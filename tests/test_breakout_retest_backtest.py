@@ -5,6 +5,7 @@ import pytest
 from core.enums import Direction, Timeframe
 from research.backtest_breakout_retest import (
     BreakoutRetestBacktestConfig,
+    build_breakout_retest_orders,
     run_breakout_retest_backtest,
     to_backtest_bars,
 )
@@ -82,7 +83,7 @@ def test_backtest_timeframe_is_explicitly_carried_into_orders():
         point_value=1.0,
         timeframe=Timeframe.H1,
     )
-    orders = __import__("research.backtest_breakout_retest", fromlist=["build_breakout_retest_orders"]).build_breakout_retest_orders(_bars(), config)
+    orders = build_breakout_retest_orders(_bars(), config)
     assert orders
     assert orders[0].selected_frame is Timeframe.H1
 
