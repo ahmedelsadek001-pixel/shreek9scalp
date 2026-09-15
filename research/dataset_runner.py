@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 from research.backtest_wfo import BacktestEvaluator
 from research.breakout_retest import ResearchBar
 from research.csv_adapter import load_ohlcv_csv
+from research.data_provenance import DatasetProvenance, fingerprint_bars
 from research.data_validation import MarketDataValidation, validate_market_data
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
@@ -21,9 +22,10 @@ from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipe
 
 @dataclass(frozen=True)
 class DatasetResearchResult:
-    """Validated input evidence plus the complete research result."""
+    """Validated input evidence plus deterministic dataset provenance."""
 
     validation: MarketDataValidation
+    provenance: DatasetProvenance
     evidence: EvidencePipelineResult
 
 
@@ -45,8 +47,9 @@ def run_dataset_research(
     spread_multiplier: float = 1.0,
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
 ) -> DatasetResearchResult:
-    """Validate bars, then execute the existing research-only evidence chain."""
+    """Validate and fingerprint bars before running research evidence."""
     validation = validate_market_data(bars, max_gap=max_gap)
+    provenance = fingerprint_bars(bars, validation)
     evidence = run_evidence_pipeline(
         bars,
         parameter_sets,
@@ -63,7 +66,7 @@ def run_dataset_research(
         spread_multiplier=spread_multiplier,
         policy=policy,
     )
-    return DatasetResearchResult(validation, evidence)
+    return DatasetResearchResult(validation, provenance, evidence)
 
 
 def run_csv_research(
