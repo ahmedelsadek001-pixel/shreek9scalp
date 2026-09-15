@@ -4,7 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from core.backtest_engine import BacktestBar, BacktestOrder, BacktestResult, run_backtest
+from core.backtest_engine import (
+    BacktestBar,
+    BacktestOrder,
+    BacktestResult,
+    CostModel,
+    run_backtest,
+)
 from research.breakout_retest import BreakoutRetestConfig, ResearchBar, detect_breakout_retest
 
 
@@ -56,10 +62,9 @@ def run_breakout_retest_backtest(
     """Run the real SHREEK backtest engine on Breakout + Retest signals."""
     execution_bars = to_backtest_bars(bars, spread=config.spread)
     orders = build_breakout_retest_orders(bars, config)
-    return run_backtest(
-        execution_bars,
-        orders,
+    costs = CostModel(
         slippage=config.slippage,
         point_value=config.point_value,
         commission_per_volume=config.commission_per_volume,
     )
+    return run_backtest(execution_bars, orders, costs=costs)
