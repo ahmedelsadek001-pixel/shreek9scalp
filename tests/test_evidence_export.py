@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import (
     build_evidence_export,
     fingerprint_evidence_export,
     serialize_evidence_export,
 )
-from research.evidence_gate import EvidenceGateResult
+from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
 
@@ -29,15 +31,24 @@ def _result():
 
 def test_export_is_deterministic():
     result = _result()
-    first = serialize_evidence_export(result, _provenance())
-    second = serialize_evidence_export(result, _provenance())
+    policy = EvidenceGatePolicy(min_expectancy=1.0)
+    first = serialize_evidence_export(result, _provenance(), policy)
+    second = serialize_evidence_export(result, _provenance(), policy)
     assert first == second
-    assert fingerprint_evidence_export(result, _provenance()) == fingerprint_evidence_export(result, _provenance())
+    assert fingerprint_evidence_export(result, _provenance(), policy) == fingerprint_evidence_export(result, _provenance(), policy)
 
 
-def test_export_contains_dataset_identity_and_evidence():
-    payload = build_evidence_export(_result(), _provenance())
-    assert payload["schema_version"] == "1"
+def test_export_contains_dataset_identity_evidence_and_policy():
+    policy = EvidenceGatePolicy(min_oos_trades=30, min_expectancy=1.0)
+    payload = build_evidence_export(_result(), _provenance(), policy)
+    assert payload["schema_version"] == "2"
     assert payload["dataset"]["sha256"] == "a" * 64
     assert "oos_expectancy" in payload["evidence"]
     assert payload["gate"]["passed"] is True
+    assert payload["gate_policy"]["min_expectancy"] == 1.0
+
+
+def test_export_rejects_invalid_policy():
+    invalid = EvidenceGatePolicy(min_oos_trades=0)
+    with pytest.raises(ValueError, match="min_oos_trades"):
+        build_evidence_export(_result(), _provenance(), invalid)
