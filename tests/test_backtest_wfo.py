@@ -92,6 +92,31 @@ def test_wfo_objective_is_based_only_on_train_metrics():
     assert result.oos_results[0].trades[0].net_pnl == -99.0
 
 
+def test_wfo_evaluates_each_selected_oos_slice_once():
+    data = list(range(9))
+    params = ({"mult": 1.0},)
+    calls = []
+
+    def evaluator(rows, selected):
+        rows = tuple(rows)
+        calls.append(rows)
+        return _result(sum(rows) * selected["mult"])
+
+    result = run_backtest_wfo(
+        data,
+        params,
+        evaluator,
+        train_size=4,
+        test_size=2,
+        purge_size=1,
+        step=2,
+    )
+
+    assert len(result.oos_results) == 2
+    assert calls.count((5, 6)) == 1
+    assert calls.count((7, 8)) == 1
+
+
 def test_wfo_rejects_non_backtest_evaluator_output():
     with pytest.raises(ValueError, match="BacktestResult"):
         run_backtest_wfo(
