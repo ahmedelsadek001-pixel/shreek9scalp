@@ -7,7 +7,7 @@ broker, credential, or execution authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import timedelta, tzinfo
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -79,9 +79,15 @@ def run_csv_research(
     path: str | Path,
     parameter_sets: Sequence[Mapping[str, Any]],
     evaluator: BacktestEvaluator,
+    *,
+    assume_timezone: tzinfo | None = None,
     **kwargs: Any,
 ) -> DatasetResearchResult:
-    """Load a local CSV through the strict adapter, then run research."""
+    """Load a local CSV through the strict adapter, then run research.
+
+    Naive broker timestamps are accepted only when the caller supplies an
+    explicit timezone. The runner never guesses a broker/server timezone.
+    """
     csv_path = Path(path)
     if not csv_path.is_file():
         raise ValueError("CSV path must reference an existing file")
@@ -89,5 +95,5 @@ def run_csv_research(
         text = csv_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise ValueError("unable to read CSV dataset") from exc
-    bars, _ = load_ohlcv_csv(text)
+    bars, _ = load_ohlcv_csv(text, assume_timezone=assume_timezone)
     return run_dataset_research(bars, parameter_sets, evaluator, **kwargs)
