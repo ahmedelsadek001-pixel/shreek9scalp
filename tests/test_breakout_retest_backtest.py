@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from core.enums import Direction
+from core.enums import Direction, Timeframe
 from research.backtest_breakout_retest import (
     BreakoutRetestBacktestConfig,
     run_breakout_retest_backtest,
@@ -54,6 +54,37 @@ def test_breakout_retest_runs_through_real_backtest_engine():
     assert trade.exit == pytest.approx(100.009)
     assert trade.exit_reason in {"TP1", "TP2", "TP3", "EOD", "TP", "SL"}
     assert result.stats.trades == 1
+
+
+def test_backtest_requires_explicit_point_value():
+    config = BreakoutRetestBacktestConfig(pip_size=0.0001)
+    with pytest.raises(ValueError, match="point_value must be explicitly provided"):
+        config.validate()
+
+
+def test_backtest_rejects_invalid_economics():
+    invalid_configs = (
+        BreakoutRetestBacktestConfig(pip_size=0.0, point_value=1.0),
+        BreakoutRetestBacktestConfig(pip_size=0.0001, volume=0.0, point_value=1.0),
+        BreakoutRetestBacktestConfig(pip_size=0.0001, spread=-0.1, point_value=1.0),
+        BreakoutRetestBacktestConfig(pip_size=0.0001, slippage=-0.1, point_value=1.0),
+        BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=0.0),
+        BreakoutRetestBacktestConfig(pip_size=0.0001, commission_per_volume=-0.1, point_value=1.0),
+    )
+    for config in invalid_configs:
+        with pytest.raises(ValueError):
+            config.validate()
+
+
+def test_backtest_timeframe_is_explicitly_carried_into_orders():
+    config = BreakoutRetestBacktestConfig(
+        pip_size=0.0001,
+        point_value=1.0,
+        timeframe=Timeframe.H1,
+    )
+    orders = __import__("research.backtest_breakout_retest", fromlist=["build_breakout_retest_orders"]).build_breakout_retest_orders(_bars(), config)
+    assert orders
+    assert orders[0].selected_frame is Timeframe.H1
 
 
 def test_negative_spread_is_rejected():
