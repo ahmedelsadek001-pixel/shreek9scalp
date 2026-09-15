@@ -9,7 +9,7 @@ from research.backtest_breakout_retest import (
     run_breakout_retest_backtest,
     to_backtest_bars,
 )
-from research.breakout_retest import ResearchBar
+from research.breakout_retest import BreakoutRetestConfig, ResearchBar
 
 
 def _bars() -> list[ResearchBar]:
@@ -67,6 +67,18 @@ def test_breakout_retest_boundary_allows_warmup_but_blocks_pre_boundary_signal()
     assert len(warmup_orders) == 1
     assert warmup_orders[0].signal_time == bars[27].timestamp
     assert blocked_orders == ()
+
+
+def test_backtest_preserves_configured_tp1_rr_in_order_metadata():
+    signal = BreakoutRetestConfig(tp1_rr=2.0)
+    config = BreakoutRetestBacktestConfig(
+        pip_size=0.0001,
+        point_value=1.0,
+        signal=signal,
+    )
+    orders = build_breakout_retest_orders(_bars(), config)
+    assert orders
+    assert orders[0].levels.rr1 == pytest.approx(2.0)
 
 
 def test_backtest_requires_explicit_point_value():
