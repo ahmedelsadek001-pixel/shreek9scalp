@@ -16,6 +16,11 @@ NAIVE = """timestamp,open,high,low,close,volume
 2026-01-01T10:05:00,100.5,101.5,100,101,12
 """
 
+OFFSET_AWARE = """timestamp,open,high,low,close,volume
+2026-01-01T13:00:00+03:00,100,101,99,100.5,10
+2026-01-01T10:05:00Z,100.5,101.5,100,101,12
+"""
+
 
 def test_loads_valid_csv_and_returns_validation_evidence():
     bars, result = load_ohlcv_csv(VALID)
@@ -56,6 +61,14 @@ def test_accepts_naive_timestamp_only_with_explicit_timezone():
     assert result.valid is True
     assert all(bar.timestamp.tzinfo is not None for bar in bars)
     assert bars[0].timestamp.utcoffset().total_seconds() == 0
+
+
+def test_orders_rows_by_absolute_instant_across_offsets():
+    bars, result = load_ohlcv_csv(OFFSET_AWARE)
+    assert result.valid is True
+    assert bars[0].timestamp.utcoffset().total_seconds() == 3 * 3600
+    assert bars[0].timestamp.astimezone(timezone.utc).hour == 10
+    assert bars[1].timestamp.hour == 10
 
 
 def test_rejects_non_monotonic_rows():
