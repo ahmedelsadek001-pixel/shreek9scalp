@@ -12,6 +12,7 @@ from research.purged_wfo import PurgedWFOResult, build_purged_windows
 
 MetricEvaluator = Callable[[ResearchMetrics], float]
 BacktestEvaluator = Callable[[Sequence[Any], Mapping[str, Any]], BacktestResult]
+ContextBacktestEvaluator = Callable[[Sequence[Any], Mapping[str, Any], int], BacktestResult]
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,8 @@ def run_backtest_wfo(
     step: int | None = None,
     maximize: bool = True,
     objective: MetricEvaluator = lambda metrics: metrics.expectancy,
+    context_size: int = 0,
+    context_evaluator: ContextBacktestEvaluator | None = None,
 ) -> BacktestWFOResult:
     """Select parameters on train backtests and evaluate each OOS slice once.
 
@@ -80,11 +83,22 @@ def run_backtest_wfo(
     are selected using only train metrics; the selected parameters are then run
     once on each embargoed OOS slice. No OOS metric participates in selection,
     and the same OOS result is retained as the source for all reported metrics.
+
+    When ``context_size`` is positive, the OOS evaluator receives up to that many
+    immediately preceding bars as warm-up context plus the full OOS slice. A
+    three-argument ``context_evaluator`` is mandatory and receives the OOS start
+    index relative to that contextual slice. The evaluator must use that boundary
+    to prevent pre-OOS bars from producing OOS orders. This fail-closed contract
+    prevents indicator/consolidation warm-up from being mistaken for OOS data.
     """
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
     if type(maximize) is not bool:
         raise ValueError("maximize must be a bool")
+    if type(context_size) is not int or context_size < 0:
+        raise ValueError("context_size must be a non-negative integer")
+    if context_size > 0 and not callable(context_evaluator):
+        raise ValueError("context_evaluator is required when context_size is positive")
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
 
@@ -100,7 +114,6 @@ def run_backtest_wfo(
 
     for window in windows:
         train = data[window.train_start : window.train_end]
-        test = data[window.test_start : window.test_end]
         scored: list[tuple[float, Mapping[str, Any], BacktestResult, ResearchMetrics]] = []
         for params in parameter_sets:
             train_result = evaluator(train, params)
@@ -111,7 +124,15 @@ def run_backtest_wfo(
 
         scored.sort(key=lambda item: item[0], reverse=maximize)
         train_score, params, train_result, selected_train_metrics = scored[0]
-        oos_result = evaluator(test, params)
+
+        if context_size:
+            context_start = max(0, window.test_start - context_size)
+            oos_slice = data[context_start : window.test_end]
+            oos_start_index = window.test_start - context_start
+            # context_evaluator is checked above whenever context_size is positive.
+            oos_result = context_evaluator(oos_slice, params, oos_start_index)  # type: ignore[misc]
+        else:
+            oos_result = evaluator(data[window.test_start : window.test_end], params)
         if not isinstance(oos_result, BacktestResult):
             raise ValueError("evaluator must return a BacktestResult")
         oos_metric = calculate_research_metrics(oos_result)
