@@ -117,6 +117,49 @@ def test_wfo_evaluates_each_selected_oos_slice_once():
     assert calls.count((7, 8)) == 1
 
 
+def test_wfo_warmup_passes_context_but_defines_oos_boundary():
+    data = list(range(9))
+    params = ({"mult": 1.0},)
+    oos_calls = []
+
+    def evaluator(rows, selected):
+        return _result(sum(rows) * selected["mult"])
+
+    def context_evaluator(rows, selected, oos_start_index):
+        rows = tuple(rows)
+        oos_calls.append((rows, oos_start_index))
+        assert rows[oos_start_index:] == tuple(data[5:7]) or rows[oos_start_index:] == tuple(data[7:9])
+        return _result(sum(rows[oos_start_index:]) * selected["mult"])
+
+    result = run_backtest_wfo(
+        data,
+        params,
+        evaluator,
+        train_size=4,
+        test_size=2,
+        purge_size=1,
+        step=2,
+        context_size=2,
+        context_evaluator=context_evaluator,
+    )
+
+    assert len(result.oos_results) == 2
+    assert oos_calls == [((3, 4, 5, 6), 2), ((5, 6, 7, 8), 2)]
+
+
+def test_wfo_requires_context_evaluator_when_warmup_is_requested():
+    with pytest.raises(ValueError, match="context_evaluator is required"):
+        run_backtest_wfo(
+            list(range(8)),
+            ({"x": 1},),
+            lambda rows, params: _result(1.0),
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            context_size=1,
+        )
+
+
 def test_wfo_rejects_non_backtest_evaluator_output():
     with pytest.raises(ValueError, match="BacktestResult"):
         run_backtest_wfo(
