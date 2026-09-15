@@ -34,16 +34,22 @@ def _result(policy=None):
 
 
 def test_artifact_is_deterministic_and_fingerprinted():
-    artifact = build_research_run_artifact(_result(), _provenance(), metadata={"run": "1", "source": "local"})
+    artifact = build_research_run_artifact(
+        _result(), _provenance(), metadata={"run": "1", "source": "local"}
+    )
     assert serialize_research_run_artifact(artifact) == serialize_research_run_artifact(artifact)
     assert fingerprint_research_run_artifact(artifact) == fingerprint_research_run_artifact(artifact)
     artifact.validate()
 
 
 def test_artifact_binds_exact_evidence_export():
-    artifact = build_research_run_artifact(_result(EvidenceGatePolicy(min_expectancy=1.0)), _provenance())
-    assert len(artifact.evidence_export_sha256) == 64
-    assert artifact.evidence_export_sha256 in fingerprint_research_run_artifact(artifact) or artifact.evidence_export_sha256 != fingerprint_research_run_artifact(artifact)
+    artifact = build_research_run_artifact(
+        _result(EvidenceGatePolicy(min_expectancy=1.0)), _provenance()
+    )
+    assert artifact.evidence_export_sha256 == __import__("hashlib").sha256(
+        artifact.evidence_export.encode("utf-8")
+    ).hexdigest()
+    assert '"gate_policy"' in artifact.evidence_export
 
 
 def test_artifact_changes_when_metadata_changes():
