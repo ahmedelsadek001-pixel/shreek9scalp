@@ -22,10 +22,8 @@ class ResearchInstrumentSpec:
             raise ValueError("price_decimals must be an integer from 0 to 10")
 
 
-# OW Markets XAUUSD research export uses two decimal price precision. The
-# Breakout + Retest legacy thresholds are expressed in 0.10 price-unit pips
-# (20-40 pips = 2.0-4.0 USD consolidation range), so this assumption is kept
-# explicit rather than embedded in the signal detector.
+# Research-only XAUUSD price-unit convention. Contract value is intentionally
+# not encoded here: dollar P&L depends on the broker/account specification.
 XAUUSD_RESEARCH_SPEC = ResearchInstrumentSpec(
     symbol="XAUUSD",
     pip_size=0.10,
