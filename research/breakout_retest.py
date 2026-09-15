@@ -176,11 +176,21 @@ def detect_breakout_retest(
     bars: Sequence[ResearchBar],
     pip_size: float,
     config: BreakoutRetestConfig = BreakoutRetestConfig(),
+    *,
+    min_signal_index: int = 0,
 ) -> tuple[BreakoutRetestSignal, ...]:
-    """Detect completed Breakout + Retest setups without look-ahead bias."""
+    """Detect completed Breakout + Retest setups without look-ahead bias.
+
+    ``min_signal_index`` defines an evaluation boundary. Bars before the boundary
+    remain available as historical context for consolidation and volume baselines,
+    but a confirmation before that boundary can never become a returned signal.
+    This is the key distinction between warm-up context and OOS performance data.
+    """
     config.validate()
     if not isfinite(float(pip_size)) or pip_size <= 0:
         raise ValueError("pip_size must be finite and positive")
+    if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
+        raise ValueError("min_signal_index must be an integer within bars")
     if len(bars) < config.consolidation_bars + config.volume_lookback + 2:
         return ()
     for bar in bars:
@@ -224,7 +234,7 @@ def detect_breakout_retest(
             if not touched:
                 continue
             confirmation = _confirmation(bars, index, direction)
-            if confirmation is None:
+            if confirmation is None or index < min_signal_index:
                 continue
             entry = retest.close
             if direction is Direction.BUY:
