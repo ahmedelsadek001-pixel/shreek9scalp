@@ -69,14 +69,14 @@ def _validate_context_result(
     oos_start_index: int,
 ) -> None:
     """Reject context backtests that report trades outside the OOS boundary."""
+    if not 0 <= oos_start_index < len(contextual_data):
+        raise ValueError("oos_start_index must identify a bar in the contextual slice")
     if not contextual_data or not result.trades:
         return
     first = contextual_data[0]
     last = contextual_data[-1]
     if not hasattr(first, "timestamp") or not hasattr(last, "timestamp"):
         return
-    if not 0 <= oos_start_index < len(contextual_data):
-        raise ValueError("oos_start_index must identify a bar in the contextual slice")
 
     oos_start = contextual_data[oos_start_index].timestamp
     oos_end = contextual_data[-1].timestamp
@@ -157,6 +157,8 @@ def run_backtest_wfo(
             oos_start_index = window.test_start - context_start
             # context_evaluator is checked above whenever context_size is positive.
             oos_result = context_evaluator(oos_slice, params, oos_start_index)  # type: ignore[misc]
+            if not isinstance(oos_result, BacktestResult):
+                raise ValueError("context_evaluator must return a BacktestResult")
             _validate_context_result(oos_result, oos_slice, oos_start_index)
         else:
             oos_result = evaluator(data[window.test_start : window.test_end], params)
