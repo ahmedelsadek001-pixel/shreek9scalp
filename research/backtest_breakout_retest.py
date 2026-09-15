@@ -84,7 +84,11 @@ def build_breakout_retest_orders(
         min_signal_index=min_signal_index,
     )
     return tuple(
-        signal.to_backtest_order(volume=config.volume, selected_frame=config.timeframe)
+        signal.to_backtest_order(
+            volume=config.volume,
+            selected_frame=config.timeframe,
+            rr1=config.signal.tp1_rr,
+        )
         for signal in signals
     )
 
