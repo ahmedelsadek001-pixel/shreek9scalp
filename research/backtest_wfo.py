@@ -7,7 +7,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core.backtest_engine import BacktestResult
 from core.research_metrics import ResearchMetrics, calculate_research_metrics
-from research.purged_wfo import PurgedWFOResult, run_purged_wfo
+from research.purged_wfo import PurgedWFOResult, build_purged_windows
 
 
 MetricEvaluator = Callable[[ResearchMetrics], float]
@@ -74,11 +74,12 @@ def run_backtest_wfo(
     maximize: bool = True,
     objective: MetricEvaluator = lambda metrics: metrics.expectancy,
 ) -> BacktestWFOResult:
-    """Select parameters from realized train backtests and collect OOS evidence.
+    """Select parameters on train backtests and evaluate each OOS slice once.
 
     The evaluator must run a causal backtest over the supplied slice. Parameters
     are selected using only train metrics; the selected parameters are then run
-    once on each embargoed OOS slice. No OOS metric participates in selection.
+    once on each embargoed OOS slice. No OOS metric participates in selection,
+    and the same OOS result is retained as the source for all reported metrics.
     """
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
@@ -87,35 +88,48 @@ def run_backtest_wfo(
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
 
-    def score(rows: Sequence[Any], params: Mapping[str, Any]) -> float:
-        result = evaluator(rows, params)
-        if not isinstance(result, BacktestResult):
-            raise ValueError("evaluator must return a BacktestResult")
-        return _score_metric(calculate_research_metrics(result), objective)
-
-    validation = run_purged_wfo(
-        data,
-        parameter_sets,
-        score,
-        train_size=train_size,
-        test_size=test_size,
-        purge_size=purge_size,
-        step=step,
-        maximize=maximize,
+    windows = build_purged_windows(
+        len(data), train_size, test_size, purge_size, step
     )
-
+    train_scores: list[float] = []
+    test_scores: list[float] = []
+    selected_parameters: list[Mapping[str, Any]] = []
     train_metrics: list[ResearchMetrics] = []
     oos_metrics: list[ResearchMetrics] = []
     oos_results: list[BacktestResult] = []
-    for window, params in zip(validation.windows, validation.selected_parameters):
-        train_result = evaluator(data[window.train_start : window.train_end], params)
-        oos_result = evaluator(data[window.test_start : window.test_end], params)
-        if not isinstance(train_result, BacktestResult) or not isinstance(oos_result, BacktestResult):
+
+    for window in windows:
+        train = data[window.train_start : window.train_end]
+        test = data[window.test_start : window.test_end]
+        scored: list[tuple[float, Mapping[str, Any], BacktestResult, ResearchMetrics]] = []
+        for params in parameter_sets:
+            train_result = evaluator(train, params)
+            if not isinstance(train_result, BacktestResult):
+                raise ValueError("evaluator must return a BacktestResult")
+            metrics = calculate_research_metrics(train_result)
+            scored.append((_score_metric(metrics, objective), params, train_result, metrics))
+
+        scored.sort(key=lambda item: item[0], reverse=maximize)
+        train_score, params, train_result, selected_train_metrics = scored[0]
+        oos_result = evaluator(test, params)
+        if not isinstance(oos_result, BacktestResult):
             raise ValueError("evaluator must return a BacktestResult")
-        train_metrics.append(calculate_research_metrics(train_result))
-        oos_metrics.append(calculate_research_metrics(oos_result))
+        oos_metric = calculate_research_metrics(oos_result)
+        test_score = _score_metric(oos_metric, objective)
+
+        train_scores.append(train_score)
+        test_scores.append(test_score)
+        selected_parameters.append(dict(params))
+        train_metrics.append(selected_train_metrics)
+        oos_metrics.append(oos_metric)
         oos_results.append(oos_result)
 
+    validation = PurgedWFOResult(
+        tuple(windows),
+        tuple(train_scores),
+        tuple(test_scores),
+        tuple(selected_parameters),
+    )
     return BacktestWFOResult(
         validation,
         tuple(train_metrics),
