@@ -56,10 +56,23 @@ def test_invalid_timeframe_is_rejected():
         build_breakout_retest_orders(_bars(), config)
 
 
+def test_backtest_rejects_missing_point_value():
+    config = BreakoutRetestBacktestConfig(pip_size=0.0001, volume=0.03)
+    with pytest.raises(ValueError, match="point_value"):
+        run_breakout_retest_backtest(_bars(), config)
+
+
+def test_backtest_rejects_invalid_economics():
+    with pytest.raises(ValueError, match="point_value"):
+        run_breakout_retest_backtest(
+            _bars(), BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=0.0)
+        )
+
+
 def test_breakout_retest_runs_through_real_backtest_engine():
     result = run_breakout_retest_backtest(
         _bars(),
-        BreakoutRetestBacktestConfig(pip_size=0.0001, volume=0.03),
+        BreakoutRetestBacktestConfig(pip_size=0.0001, volume=0.03, point_value=1.0),
     )
 
     assert result.stats.trades == 1
