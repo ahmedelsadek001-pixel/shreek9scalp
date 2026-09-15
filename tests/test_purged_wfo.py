@@ -12,6 +12,30 @@ def test_windows_have_embargo_gap():
     assert windows[0].test_end == 18
 
 
+def test_every_window_has_disjoint_train_purge_test_regions():
+    windows = build_purged_windows(50, train_size=12, test_size=6, purge_size=4, step=3)
+    assert windows
+    for window in windows:
+        assert 0 <= window.train_start < window.train_end
+        assert window.train_end == window.purge_start
+        assert window.purge_start < window.purge_end
+        assert window.purge_end == window.test_start
+        assert window.test_start < window.test_end
+        assert window.train_end <= window.purge_start <= window.purge_end <= window.test_start
+        assert window.train_end <= window.test_start
+        assert set(range(window.train_start, window.train_end)).isdisjoint(
+            range(window.test_start, window.test_end)
+        )
+        assert len(range(window.purge_start, window.purge_end)) == 4
+
+
+def test_windows_move_forward_without_train_test_overlap():
+    windows = build_purged_windows(80, train_size=10, test_size=5, purge_size=3, step=7)
+    assert all(later.train_start > earlier.train_start for earlier, later in zip(windows, windows[1:]))
+    assert all(earlier.test_end <= later.test_start or later.train_start >= earlier.test_start
+               for earlier, later in zip(windows, windows[1:]))
+
+
 def test_purged_wfo_selects_on_train_only():
     data = list(range(30))
 
