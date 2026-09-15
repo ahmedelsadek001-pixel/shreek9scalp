@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from math import isfinite
+from math import isfinite, isclose
 from typing import Optional, Sequence
 
 from core.backtest_engine import BacktestOrder
@@ -120,7 +120,7 @@ def _is_bullish_pin(bar: ResearchBar) -> bool:
         return False
     body = abs(bar.close - bar.open)
     lower_wick = min(bar.open, bar.close) - bar.low
-    return body / candle_range >= 0.40 and lower_wick >= body
+    return body / candle_range >= 0.40 and (lower_wick >= body or isclose(lower_wick, body, rel_tol=1e-9, abs_tol=1e-12))
 
 
 def _is_bearish_pin(bar: ResearchBar) -> bool:
@@ -129,7 +129,7 @@ def _is_bearish_pin(bar: ResearchBar) -> bool:
         return False
     body = abs(bar.close - bar.open)
     upper_wick = bar.high - max(bar.open, bar.close)
-    return body / candle_range >= 0.40 and upper_wick >= body
+    return body / candle_range >= 0.40 and (upper_wick >= body or isclose(upper_wick, body, rel_tol=1e-9, abs_tol=1e-12))
 
 
 def _is_bullish_engulfing(previous: ResearchBar, current: ResearchBar) -> bool:
