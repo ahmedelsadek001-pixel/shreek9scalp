@@ -37,7 +37,7 @@ def test_evidence_gate_fails_each_material_threshold():
         max_ruin_rate_pct=0.0,
         max_worst_drawdown=90.0,
     )
-    result = evaluate_oos_evidence(_report(), policy)
+    result = evaluate_oos_evidence(_report(ruin_rate_pct=1.0), policy)
     assert not result.passed
     assert len(result.failures) == 5
 
@@ -68,7 +68,7 @@ def test_policy_rejects_invalid_stability_range():
 
 
 def test_policy_rejects_negative_ruin_limit():
-    with pytest.raises(ValueError, match="ruin rate"):
+    with pytest.raises(ValueError, match="max_ruin_rate_pct"):
         EvidenceGatePolicy(max_ruin_rate_pct=-0.1).validate()
 
 
