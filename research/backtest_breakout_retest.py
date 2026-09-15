@@ -11,6 +11,7 @@ from core.backtest_engine import (
     CostModel,
     run_backtest,
 )
+from core.enums import Timeframe
 from research.breakout_retest import BreakoutRetestConfig, ResearchBar, detect_breakout_retest
 
 
@@ -24,6 +25,7 @@ class BreakoutRetestBacktestConfig:
     slippage: float = 0.0
     point_value: float = 1.0
     commission_per_volume: float = 0.0
+    timeframe: Timeframe = Timeframe.M5
     signal: BreakoutRetestConfig = BreakoutRetestConfig()
 
 
@@ -51,8 +53,13 @@ def build_breakout_retest_orders(
     config: BreakoutRetestBacktestConfig,
 ) -> tuple[BacktestOrder, ...]:
     """Generate only completed, causal signals and convert them to orders."""
+    if not isinstance(config.timeframe, Timeframe):
+        raise ValueError("timeframe must be a Timeframe")
     signals = detect_breakout_retest(bars, pip_size=config.pip_size, config=config.signal)
-    return tuple(signal.to_backtest_order(volume=config.volume) for signal in signals)
+    return tuple(
+        signal.to_backtest_order(volume=config.volume, selected_frame=config.timeframe)
+        for signal in signals
+    )
 
 
 def run_breakout_retest_backtest(
