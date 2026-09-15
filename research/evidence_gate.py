@@ -22,6 +22,7 @@ class EvidenceGatePolicy:
     max_worst_drawdown: float = float("inf")
 
     def validate(self) -> None:
+        """Fail closed on malformed or unsafe research thresholds."""
         if type(self.min_oos_trades) is not int or self.min_oos_trades <= 0:
             raise ValueError("min_oos_trades must be a positive integer")
         numeric = (
@@ -30,6 +31,8 @@ class EvidenceGatePolicy:
             self.max_ruin_rate_pct,
             self.max_worst_drawdown,
         )
+        if any(isinstance(value, bool) for value in numeric):
+            raise ValueError("policy numeric values must not be bool")
         if not isfinite(self.min_expectancy):
             raise ValueError("min_expectancy must be finite")
         if not isfinite(self.min_oos_stability_pct) or not 0 <= self.min_oos_stability_pct <= 100:
@@ -40,8 +43,6 @@ class EvidenceGatePolicy:
             isfinite(self.max_worst_drawdown) or self.max_worst_drawdown == float("inf")
         ):
             raise ValueError("max_worst_drawdown must be non-negative")
-        if any(isinstance(value, bool) for value in numeric):
-            raise ValueError("policy numeric values must not be bool")
 
 
 @dataclass(frozen=True)
