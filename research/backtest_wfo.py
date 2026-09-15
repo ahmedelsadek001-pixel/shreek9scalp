@@ -63,6 +63,31 @@ def _score_metric(metrics: ResearchMetrics, objective: MetricEvaluator) -> float
     return score
 
 
+def _validate_context_result(
+    result: BacktestResult,
+    contextual_data: Sequence[Any],
+    oos_start_index: int,
+) -> None:
+    """Reject context backtests that report trades outside the OOS boundary."""
+    if not contextual_data or not result.trades:
+        return
+    first = contextual_data[0]
+    last = contextual_data[-1]
+    if not hasattr(first, "timestamp") or not hasattr(last, "timestamp"):
+        return
+    if not 0 <= oos_start_index < len(contextual_data):
+        raise ValueError("oos_start_index must identify a bar in the contextual slice")
+
+    oos_start = contextual_data[oos_start_index].timestamp
+    oos_end = contextual_data[-1].timestamp
+    for trade in result.trades:
+        signal_time = getattr(trade, "signal_time", None)
+        if signal_time is None:
+            raise ValueError("context backtest trades must expose signal_time")
+        if signal_time < oos_start or signal_time > oos_end:
+            raise ValueError("context backtest produced a trade outside the OOS boundary")
+
+
 def run_backtest_wfo(
     data: Sequence[Any],
     parameter_sets: Sequence[Mapping[str, Any]],
@@ -87,9 +112,10 @@ def run_backtest_wfo(
     When ``context_size`` is positive, the OOS evaluator receives up to that many
     immediately preceding bars as warm-up context plus the full OOS slice. A
     three-argument ``context_evaluator`` is mandatory and receives the OOS start
-    index relative to that contextual slice. The evaluator must use that boundary
-    to prevent pre-OOS bars from producing OOS orders. This fail-closed contract
-    prevents indicator/consolidation warm-up from being mistaken for OOS data.
+    index relative to that contextual slice. When timestamped data are supplied,
+    the returned trades are also checked to ensure their signal times are inside
+    the OOS boundary. This fail-closed contract prevents warm-up context from
+    being mistaken for OOS performance data.
     """
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
@@ -131,6 +157,7 @@ def run_backtest_wfo(
             oos_start_index = window.test_start - context_start
             # context_evaluator is checked above whenever context_size is positive.
             oos_result = context_evaluator(oos_slice, params, oos_start_index)  # type: ignore[misc]
+            _validate_context_result(oos_result, oos_slice, oos_start_index)
         else:
             oos_result = evaluator(data[window.test_start : window.test_end], params)
         if not isinstance(oos_result, BacktestResult):
