@@ -69,3 +69,31 @@ def test_artifact_rejects_tampered_export():
     )
     with pytest.raises(ValueError, match="fingerprint mismatch"):
         tampered.validate()
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"run": 1},
+        {1: "run"},
+        {"run": None},
+        {"run": ""},
+        {"": "value"},
+    ],
+)
+def test_artifact_rejects_non_string_or_empty_metadata(metadata):
+    with pytest.raises(ValueError, match="metadata"):
+        build_research_run_artifact(_result(), _provenance(), metadata=metadata)
+
+
+def test_artifact_rejects_non_string_metadata_items_after_construction():
+    artifact = build_research_run_artifact(_result(), _provenance(), metadata={"run": "1"})
+    tampered = ResearchRunArtifact(
+        artifact.schema_version,
+        artifact.dataset,
+        artifact.evidence_export_sha256,
+        artifact.evidence_export,
+        (("run", 1),),
+    )
+    with pytest.raises(ValueError, match="metadata"):
+        tampered.validate()
