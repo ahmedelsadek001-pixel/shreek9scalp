@@ -1,3 +1,4 @@
+from datetime import timezone
 from io import StringIO
 
 import pytest
@@ -8,6 +9,11 @@ from research.csv_adapter import load_ohlcv_csv
 VALID = """timestamp,open,high,low,close,volume
 2026-01-01T10:00:00Z,100,101,99,100.5,10
 2026-01-01T10:05:00+00:00,100.5,101.5,100,101,12
+"""
+
+NAIVE = """timestamp,open,high,low,close,volume
+2026-01-01T10:00:00,100,101,99,100.5,10
+2026-01-01T10:05:00,100.5,101.5,100,101,12
 """
 
 
@@ -40,10 +46,16 @@ def test_rejects_malformed_numeric_field():
         load_ohlcv_csv(bad)
 
 
-def test_rejects_naive_timestamp():
-    bad = VALID.replace("2026-01-01T10:00:00Z", "2026-01-01T10:00:00")
+def test_rejects_naive_timestamp_without_explicit_timezone():
     with pytest.raises(ValueError, match="timezone-aware"):
-        load_ohlcv_csv(bad)
+        load_ohlcv_csv(NAIVE)
+
+
+def test_accepts_naive_timestamp_only_with_explicit_timezone():
+    bars, result = load_ohlcv_csv(NAIVE, assume_timezone=timezone.utc)
+    assert result.valid is True
+    assert all(bar.timestamp.tzinfo is not None for bar in bars)
+    assert bars[0].timestamp.utcoffset().total_seconds() == 0
 
 
 def test_rejects_non_monotonic_rows():
