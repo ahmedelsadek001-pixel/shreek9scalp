@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 
@@ -145,6 +146,30 @@ def test_wfo_warmup_passes_context_but_defines_oos_boundary():
 
     assert len(result.oos_results) == 2
     assert oos_calls == [((3, 4, 5, 6), 2), ((5, 6, 7, 8), 2)]
+
+
+def test_wfo_context_rejects_trade_signal_before_oos_boundary():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def leaking_context_evaluator(rows, selected, oos_start_index):
+        return _result(1.0)
+
+    with pytest.raises(ValueError, match="outside the OOS boundary"):
+        run_backtest_wfo(
+            data,
+            ({"x": 1},),
+            evaluator,
+            train_size=4,
+            test_size=2,
+            purge_size=1,
+            step=2,
+            context_size=2,
+            context_evaluator=leaking_context_evaluator,
+        )
 
 
 def test_wfo_requires_context_evaluator_when_warmup_is_requested():
