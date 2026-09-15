@@ -39,7 +39,11 @@ def test_adapter_preserves_ohlc_and_does_not_import_volume_into_execution_bars()
 def test_breakout_retest_runs_through_real_backtest_engine():
     result = run_breakout_retest_backtest(
         _bars(),
-        BreakoutRetestBacktestConfig(pip_size=0.0001, volume=0.03),
+        BreakoutRetestBacktestConfig(
+            pip_size=0.0001,
+            volume=0.03,
+            point_value=1.0,
+        ),
     )
 
     assert len(result.trades) == 1
