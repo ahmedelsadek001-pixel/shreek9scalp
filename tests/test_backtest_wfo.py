@@ -41,6 +41,42 @@ def _result(pnl: float) -> BacktestResult:
     return BacktestResult((trade,), (10000.0, 10000.0 + pnl), stats)
 
 
+def _timed_result(signal_minute: int, entry_minute: int, exit_minute: int) -> BacktestResult:
+    start = datetime(2026, 1, 1)
+    signal_time = start + timedelta(minutes=signal_minute)
+    entry_time = start + timedelta(minutes=entry_minute)
+    exit_time = start + timedelta(minutes=exit_minute)
+    trade = BacktestTrade(
+        signal_time,
+        entry_time,
+        exit_time,
+        Direction.BUY,
+        100.0,
+        101.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        "TP3",
+    )
+    stats = BacktestStats(
+        10000.0,
+        10001.0,
+        1.0,
+        0.01,
+        1,
+        1,
+        0,
+        100.0,
+        float("inf"),
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+    )
+    return BacktestResult((trade,), (10000.0, 10001.0), stats)
+
+
 def test_wfo_selects_from_train_metrics_and_returns_real_oos_results():
     data = list(range(9))
     params = ({"mult": 1.0}, {"mult": 2.0})
@@ -169,6 +205,78 @@ def test_wfo_context_rejects_trade_signal_before_oos_boundary():
             step=2,
             context_size=2,
             context_evaluator=leaking_context_evaluator,
+        )
+
+
+def test_wfo_context_rejects_trade_entry_before_oos_boundary():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def leaking_context_evaluator(rows, selected, oos_start_index):
+        return _timed_result(5, 4, 5)
+
+    with pytest.raises(ValueError, match="outside the OOS boundary"):
+        run_backtest_wfo(
+            data,
+            ({"x": 1},),
+            evaluator,
+            train_size=4,
+            test_size=2,
+            purge_size=1,
+            step=2,
+            context_size=2,
+            context_evaluator=leaking_context_evaluator,
+        )
+
+
+def test_wfo_context_rejects_trade_exit_after_oos_boundary():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def leaking_context_evaluator(rows, selected, oos_start_index):
+        return _timed_result(5, 6, 7)
+
+    with pytest.raises(ValueError, match="outside the OOS boundary"):
+        run_backtest_wfo(
+            data,
+            ({"x": 1},),
+            evaluator,
+            train_size=4,
+            test_size=2,
+            purge_size=1,
+            step=2,
+            context_size=2,
+            context_evaluator=leaking_context_evaluator,
+        )
+
+
+def test_wfo_context_rejects_non_chronological_trade_timestamps():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def invalid_context_evaluator(rows, selected, oos_start_index):
+        return _timed_result(5, 7, 6)
+
+    with pytest.raises(ValueError, match="non-chronological"):
+        run_backtest_wfo(
+            data,
+            ({"x": 1},),
+            evaluator,
+            train_size=4,
+            test_size=2,
+            purge_size=1,
+            step=2,
+            context_size=2,
+            context_evaluator=invalid_context_evaluator,
         )
 
 
