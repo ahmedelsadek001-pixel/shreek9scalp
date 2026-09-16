@@ -154,9 +154,12 @@ def test_wfo_warmup_passes_timestamped_context_and_defines_oos_boundary():
 
     def context_evaluator(rows, selected, oos_start_index):
         rows = tuple(rows)
+        oos_values = tuple(int(row) for row in rows[oos_start_index:])
         oos_calls.append((tuple(int(row) for row in rows), oos_start_index))
-        assert rows[oos_start_index:] == tuple(data[5:7]) or rows[oos_start_index:] == tuple(data[7:9])
-        return _timed_result(5 if oos_start_index == 2 else 7, 5 if oos_start_index == 2 else 7, 6 if oos_start_index == 2 else 8)
+        assert oos_values in (tuple(range(5, 7)), tuple(range(7, 9)))
+        signal_minute = oos_values[0]
+        exit_minute = oos_values[-1]
+        return _timed_result(signal_minute, signal_minute, exit_minute)
 
     result = run_backtest_wfo(
         data,
@@ -265,7 +268,7 @@ def test_wfo_context_rejects_incomparable_timestamps_fail_closed():
     def context_evaluator(rows, selected, oos_start_index):
         return _timed_result(3, 4, 5)
 
-    data[-1].timestamp = "not-a-timestamp"
+    data[4].timestamp = "not-a-timestamp"
     with pytest.raises(ValueError, match="mutually comparable"):
         run_backtest_wfo(
             data, ({"x": 1},), evaluator, train_size=3, test_size=2,
