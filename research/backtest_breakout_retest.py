@@ -38,14 +38,14 @@ class BreakoutRetestBacktestConfig:
             raise ValueError("spread must be finite and non-negative")
         if not isfinite(float(self.slippage)) or self.slippage < 0:
             raise ValueError("slippage must be finite and non-negative")
+        if not isinstance(self.timeframe, Timeframe):
+            raise ValueError("timeframe must be a Timeframe")
         if self.point_value is None:
             raise ValueError("point_value must be explicitly provided for performance backtests")
         if not isfinite(float(self.point_value)) or self.point_value <= 0:
             raise ValueError("point_value must be finite and positive")
         if not isfinite(float(self.commission_per_volume)) or self.commission_per_volume < 0:
             raise ValueError("commission_per_volume must be finite and non-negative")
-        if not isinstance(self.timeframe, Timeframe):
-            raise ValueError("timeframe must be a Timeframe")
         if not isinstance(self.signal, BreakoutRetestConfig):
             raise ValueError("signal must be a BreakoutRetestConfig")
         self.signal.validate()
