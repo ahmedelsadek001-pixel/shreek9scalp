@@ -62,8 +62,8 @@ def test_spread_and_slippage_are_applied_at_entry_and_exit():
 
     assert trade.entry == pytest.approx(100.2)
     assert trade.exit == pytest.approx(101.8)
-    assert trade.gross_pnl == pytest.approx(3.2)
-    assert trade.costs == pytest.approx(0.0)
+    assert trade.gross_pnl == pytest.approx(4.0)
+    assert trade.costs == pytest.approx(0.8)
     assert trade.net_pnl == pytest.approx(3.2)
 
 
