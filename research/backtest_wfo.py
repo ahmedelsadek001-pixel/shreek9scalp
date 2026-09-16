@@ -68,15 +68,14 @@ def _validate_context_result(
     contextual_data: Sequence[Any],
     oos_start_index: int,
 ) -> None:
-    """Reject context backtests that report any trade outside the OOS interval."""
+    """Reject timestamped trades that are not fully contained in the OOS interval."""
     if not 0 <= oos_start_index < len(contextual_data):
         raise ValueError("oos_start_index must identify a bar in the contextual slice")
     if not contextual_data or not result.trades:
         return
-    first = contextual_data[0]
     boundary = contextual_data[oos_start_index]
     last = contextual_data[-1]
-    if not all(hasattr(item, "timestamp") for item in (first, boundary, last)):
+    if not all(hasattr(item, "timestamp") for item in (boundary, last)):
         return
 
     oos_start = boundary.timestamp
@@ -86,11 +85,11 @@ def _validate_context_result(
         entry_time = getattr(trade, "entry_time", None)
         exit_time = getattr(trade, "exit_time", None)
         if signal_time is None or entry_time is None or exit_time is None:
-            raise ValueError("context backtest trades must expose signal_time, entry_time and exit_time")
+            raise ValueError("OOS backtest trades must expose signal_time, entry_time and exit_time")
         if signal_time < oos_start or entry_time < oos_start or exit_time > oos_end:
-            raise ValueError("context backtest produced a trade outside the OOS boundary")
+            raise ValueError("OOS backtest produced a trade outside the OOS boundary")
         if entry_time < signal_time or exit_time < entry_time:
-            raise ValueError("context backtest produced non-chronological trade timestamps")
+            raise ValueError("OOS backtest produced non-chronological trade timestamps")
 
 
 def run_backtest_wfo(
@@ -120,8 +119,8 @@ def run_backtest_wfo(
     index relative to that contextual slice. When timestamped data are supplied,
     every returned trade must be fully contained in the OOS interval: signal and
     entry times cannot precede the OOS boundary, and exit time cannot exceed the
-    final OOS bar. This fail-closed contract prevents warm-up context or post-OOS
-    bars from being counted as OOS performance data.
+    final OOS bar. This fail-closed contract applies with or without warm-up
+    context and prevents context or post-OOS bars from being counted as OOS data.
     """
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
@@ -163,13 +162,13 @@ def run_backtest_wfo(
             oos_start_index = window.test_start - context_start
             # context_evaluator is checked above whenever context_size is positive.
             oos_result = context_evaluator(oos_slice, params, oos_start_index)  # type: ignore[misc]
-            if not isinstance(oos_result, BacktestResult):
-                raise ValueError("context_evaluator must return a BacktestResult")
-            _validate_context_result(oos_result, oos_slice, oos_start_index)
         else:
-            oos_result = evaluator(data[window.test_start : window.test_end], params)
+            oos_slice = data[window.test_start : window.test_end]
+            oos_start_index = 0
+            oos_result = evaluator(oos_slice, params)
         if not isinstance(oos_result, BacktestResult):
-            raise ValueError("evaluator must return a BacktestResult")
+            raise ValueError("OOS evaluator must return a BacktestResult")
+        _validate_context_result(oos_result, oos_slice, oos_start_index)
         oos_metric = calculate_research_metrics(oos_result)
         test_score = _score_metric(oos_metric, objective)
 
