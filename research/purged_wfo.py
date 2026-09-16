@@ -39,6 +39,8 @@ def build_purged_windows(
     step = test_size if step is None else step
     if step <= 0:
         raise ValueError("step must be positive")
+    if step < test_size:
+        raise ValueError("step must be at least test_size to prevent overlapping OOS windows")
 
     windows = []
     start = 0
