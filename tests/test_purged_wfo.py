@@ -50,6 +50,7 @@ def test_purged_wfo_never_passes_purge_bars_to_evaluator():
         train_size=5,
         test_size=3,
         purge_size=2,
+        step=10,
     )
 
     expected_train = tuple(range(0, 5))
