@@ -81,9 +81,15 @@ def _validate_context_result(
     if not all(hasattr(item, "timestamp") for item in contextual_data):
         raise ValueError("contextual OOS data must expose timestamp for containment validation")
 
-    oos_start = contextual_data[oos_start_index].timestamp
-    oos_end = contextual_data[-1].timestamp
     try:
+        previous_timestamp = contextual_data[0].timestamp
+        for item in contextual_data[1:]:
+            timestamp = item.timestamp
+            if timestamp <= previous_timestamp:
+                raise ValueError("contextual OOS timestamps must be chronological")
+            previous_timestamp = timestamp
+        oos_start = contextual_data[oos_start_index].timestamp
+        oos_end = contextual_data[-1].timestamp
         if oos_end < oos_start:
             raise ValueError("contextual OOS timestamps must be chronological")
         for trade in result.trades:
