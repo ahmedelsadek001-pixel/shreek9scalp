@@ -36,7 +36,11 @@ def test_research_bars_convert_without_volume_leakage():
 
 
 def test_breakout_retest_builds_causal_order():
-    config = BreakoutRetestBacktestConfig(pip_size=0.0001, volume=0.03)
+    config = BreakoutRetestBacktestConfig(
+        pip_size=0.0001,
+        volume=0.03,
+        point_value=1.0,
+    )
     orders = build_breakout_retest_orders(_bars(), config)
     assert len(orders) == 1
     assert orders[0].direction is Direction.BUY
@@ -44,14 +48,22 @@ def test_breakout_retest_builds_causal_order():
 
 
 def test_breakout_retest_order_uses_configured_timeframe():
-    config = BreakoutRetestBacktestConfig(pip_size=0.0001, timeframe=Timeframe.H1)
+    config = BreakoutRetestBacktestConfig(
+        pip_size=0.0001,
+        timeframe=Timeframe.H1,
+        point_value=1.0,
+    )
     orders = build_breakout_retest_orders(_bars(), config)
     assert len(orders) == 1
     assert orders[0].levels.selected_frame is Timeframe.H1
 
 
 def test_invalid_timeframe_is_rejected():
-    config = BreakoutRetestBacktestConfig(pip_size=0.0001, timeframe="H1")
+    config = BreakoutRetestBacktestConfig(
+        pip_size=0.0001,
+        timeframe="H1",
+        point_value=1.0,
+    )
     with pytest.raises(ValueError, match="timeframe"):
         build_breakout_retest_orders(_bars(), config)
 
