@@ -144,3 +144,44 @@ def test_negative_spread_is_rejected():
 def test_non_finite_spread_is_rejected():
     with pytest.raises(ValueError):
         to_backtest_bars(_bars(), spread=float("nan"))
+
+
+def test_spread_and_slippage_reduce_realized_pnl():
+    bars = _bars()
+    baseline = run_breakout_retest_backtest(
+        bars,
+        BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=1.0),
+    )
+    stressed = run_breakout_retest_backtest(
+        bars,
+        BreakoutRetestBacktestConfig(
+            pip_size=0.0001,
+            point_value=1.0,
+            spread=0.0002,
+            slippage=0.0001,
+        ),
+    )
+
+    assert baseline.stats.trades == stressed.stats.trades == 1
+    assert stressed.trades[0].costs > baseline.trades[0].costs
+    assert stressed.stats.net_pnl < baseline.stats.net_pnl
+
+
+def test_commission_is_applied_to_realized_pnl():
+    bars = _bars()
+    baseline = run_breakout_retest_backtest(
+        bars,
+        BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=1.0),
+    )
+    commissioned = run_breakout_retest_backtest(
+        bars,
+        BreakoutRetestBacktestConfig(
+            pip_size=0.0001,
+            point_value=1.0,
+            commission_per_volume=0.5,
+        ),
+    )
+
+    assert commissioned.stats.trades == baseline.stats.trades == 1
+    assert commissioned.trades[0].costs > baseline.trades[0].costs
+    assert commissioned.stats.net_pnl < baseline.stats.net_pnl
