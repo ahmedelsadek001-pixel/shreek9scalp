@@ -31,12 +31,23 @@ def build_purged_windows(
     purge_size: int,
     step: int | None = None,
 ) -> tuple[PurgedWindow, ...]:
-    """Build chronological windows with an explicit purge/embargo gap."""
+    """Build chronological windows with an explicit purge/embargo gap.
+
+    ``purge_size`` is a caller-supplied research contract: it must cover the
+    strategy's maximum information/label overlap horizon. This primitive
+    enforces the requested gap mechanically, but cannot infer that horizon
+    from an arbitrary evaluator.
+    """
+    if any(type(value) is not int for value in (length, train_size, test_size, purge_size)):
+        raise ValueError("length, train_size, test_size and purge_size must be integers")
     if length <= 0 or train_size <= 0 or test_size <= 0:
         raise ValueError("length, train_size and test_size must be positive")
     if purge_size < 0:
         raise ValueError("purge_size must be non-negative")
-    step = test_size if step is None else step
+    if step is None:
+        step = test_size
+    elif type(step) is not int:
+        raise ValueError("step must be an integer")
     if step <= 0:
         raise ValueError("step must be positive")
     if step < test_size:
