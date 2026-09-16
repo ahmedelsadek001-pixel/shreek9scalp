@@ -30,7 +30,6 @@ class BreakoutRetestBacktestConfig:
     signal: BreakoutRetestConfig = BreakoutRetestConfig()
 
     def validate(self) -> None:
-        """Reject incomplete or non-finite economics before performance is computed."""
         if not isfinite(float(self.pip_size)) or self.pip_size <= 0:
             raise ValueError("pip_size must be finite and positive")
         if not isfinite(float(self.volume)) or self.volume <= 0:
@@ -47,12 +46,15 @@ class BreakoutRetestBacktestConfig:
             raise ValueError("commission_per_volume must be finite and non-negative")
         if not isinstance(self.timeframe, Timeframe):
             raise ValueError("timeframe must be a Timeframe")
+        if not isinstance(self.signal, BreakoutRetestConfig):
+            raise ValueError("signal must be a BreakoutRetestConfig")
+        self.signal.validate()
 
 
 def to_backtest_bars(bars: Sequence[ResearchBar], spread: float = 0.0) -> tuple[BacktestBar, ...]:
     """Convert research OHLCV bars to execution bars without using volume."""
-    if spread < 0:
-        raise ValueError("spread must be non-negative")
+    if not isfinite(float(spread)) or spread < 0:
+        raise ValueError("spread must be finite and non-negative")
     for bar in bars:
         bar.validate()
     return tuple(
@@ -75,8 +77,9 @@ def build_breakout_retest_orders(
     min_signal_index: int = 0,
 ) -> tuple[BacktestOrder, ...]:
     """Generate causal signals while preserving an optional OOS boundary."""
-    if not isinstance(config.timeframe, Timeframe):
-        raise ValueError("timeframe must be a Timeframe")
+    config.validate()
+    if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
+        raise ValueError("min_signal_index must be an integer within bars")
     signals = detect_breakout_retest(
         bars,
         pip_size=config.pip_size,
