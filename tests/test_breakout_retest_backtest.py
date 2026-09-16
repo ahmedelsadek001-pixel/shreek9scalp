@@ -57,6 +57,19 @@ def test_breakout_retest_runs_through_real_backtest_engine():
     assert result.stats.trades == 1
 
 
+def test_real_backtest_engine_enforces_oos_signal_boundary():
+    bars = _bars()
+    config = BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=1.0)
+
+    warmup_result = run_breakout_retest_backtest(bars, config, min_signal_index=27)
+    oos_result = run_breakout_retest_backtest(bars, config, min_signal_index=28)
+
+    assert warmup_result.stats.trades == 1
+    assert warmup_result.trades[0].signal_time == bars[27].timestamp
+    assert oos_result.stats.trades == 0
+    assert oos_result.trades == ()
+
+
 def test_breakout_retest_boundary_allows_warmup_but_blocks_pre_boundary_signal():
     bars = _bars()
     config = BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=1.0)
@@ -79,6 +92,17 @@ def test_backtest_preserves_configured_tp1_rr_in_order_metadata():
     orders = build_breakout_retest_orders(_bars(), config)
     assert orders
     assert orders[0].levels.rr1 == pytest.approx(2.0)
+
+
+def test_backtest_rejects_invalid_nested_signal_config():
+    signal = BreakoutRetestConfig(consolidation_bars=0)
+    config = BreakoutRetestBacktestConfig(
+        pip_size=0.0001,
+        point_value=1.0,
+        signal=signal,
+    )
+    with pytest.raises(ValueError, match="consolidation_bars"):
+        config.validate()
 
 
 def test_backtest_requires_explicit_point_value():
@@ -115,3 +139,8 @@ def test_backtest_timeframe_is_explicitly_carried_into_orders():
 def test_negative_spread_is_rejected():
     with pytest.raises(ValueError):
         to_backtest_bars(_bars(), spread=-0.1)
+
+
+def test_non_finite_spread_is_rejected():
+    with pytest.raises(ValueError):
+        to_backtest_bars(_bars(), spread=float("nan"))
