@@ -8,6 +8,13 @@ from core.enums import Direction
 from research.backtest_wfo import run_backtest_wfo
 
 
+class _TimedValue(int):
+    def __new__(cls, value, timestamp):
+        obj = int.__new__(cls, value)
+        obj.timestamp = timestamp
+        return obj
+
+
 def _result(pnl: float) -> BacktestResult:
     now = datetime(2026, 1, 1)
     trade = BacktestTrade(
@@ -85,13 +92,7 @@ def test_wfo_selects_from_train_metrics_and_returns_real_oos_results():
         return _result(sum(rows) * selected["mult"])
 
     result = run_backtest_wfo(
-        data,
-        params,
-        evaluator,
-        train_size=4,
-        test_size=2,
-        purge_size=1,
-        step=2,
+        data, params, evaluator, train_size=4, test_size=2, purge_size=1, step=2
     )
 
     assert len(result.oos_results) == 2
@@ -115,13 +116,7 @@ def test_wfo_objective_is_based_only_on_train_metrics():
         return _result(sum(rows) * selected["mult"])
 
     result = run_backtest_wfo(
-        data,
-        params,
-        evaluator,
-        train_size=4,
-        test_size=2,
-        purge_size=1,
-        step=2,
+        data, params, evaluator, train_size=4, test_size=2, purge_size=1, step=2
     )
 
     assert result.validation.selected_parameters[0] == {"mult": 1.0}
@@ -140,13 +135,7 @@ def test_wfo_evaluates_each_selected_oos_slice_once():
         return _result(sum(rows) * selected["mult"])
 
     result = run_backtest_wfo(
-        data,
-        params,
-        evaluator,
-        train_size=4,
-        test_size=2,
-        purge_size=1,
-        step=2,
+        data, params, evaluator, train_size=4, test_size=2, purge_size=1, step=2
     )
 
     assert len(result.oos_results) == 2
@@ -154,8 +143,9 @@ def test_wfo_evaluates_each_selected_oos_slice_once():
     assert calls.count((7, 8)) == 1
 
 
-def test_wfo_warmup_passes_context_but_defines_oos_boundary():
-    data = list(range(9))
+def test_wfo_warmup_passes_timestamped_context_and_defines_oos_boundary():
+    start = datetime(2026, 1, 1)
+    data = [_TimedValue(i, start + timedelta(minutes=i)) for i in range(9)]
     params = ({"mult": 1.0},)
     oos_calls = []
 
@@ -164,9 +154,9 @@ def test_wfo_warmup_passes_context_but_defines_oos_boundary():
 
     def context_evaluator(rows, selected, oos_start_index):
         rows = tuple(rows)
-        oos_calls.append((rows, oos_start_index))
+        oos_calls.append((tuple(int(row) for row in rows), oos_start_index))
         assert rows[oos_start_index:] == tuple(data[5:7]) or rows[oos_start_index:] == tuple(data[7:9])
-        return _result(sum(rows[oos_start_index:]) * selected["mult"])
+        return _timed_result(5 if oos_start_index == 2 else 7, 5 if oos_start_index == 2 else 7, 6 if oos_start_index == 2 else 8)
 
     result = run_backtest_wfo(
         data,
@@ -196,15 +186,8 @@ def test_wfo_context_rejects_trade_signal_before_oos_boundary():
 
     with pytest.raises(ValueError, match="outside the OOS boundary"):
         run_backtest_wfo(
-            data,
-            ({"x": 1},),
-            evaluator,
-            train_size=4,
-            test_size=2,
-            purge_size=1,
-            step=2,
-            context_size=2,
-            context_evaluator=leaking_context_evaluator,
+            data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1,
+            step=2, context_size=2, context_evaluator=leaking_context_evaluator,
         )
 
 
@@ -220,15 +203,8 @@ def test_wfo_context_rejects_trade_entry_before_oos_boundary():
 
     with pytest.raises(ValueError, match="outside the OOS boundary"):
         run_backtest_wfo(
-            data,
-            ({"x": 1},),
-            evaluator,
-            train_size=4,
-            test_size=2,
-            purge_size=1,
-            step=2,
-            context_size=2,
-            context_evaluator=leaking_context_evaluator,
+            data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1,
+            step=2, context_size=2, context_evaluator=leaking_context_evaluator,
         )
 
 
@@ -244,15 +220,8 @@ def test_wfo_context_rejects_trade_exit_after_oos_boundary():
 
     with pytest.raises(ValueError, match="outside the OOS boundary"):
         run_backtest_wfo(
-            data,
-            ({"x": 1},),
-            evaluator,
-            train_size=4,
-            test_size=2,
-            purge_size=1,
-            step=2,
-            context_size=2,
-            context_evaluator=leaking_context_evaluator,
+            data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1,
+            step=2, context_size=2, context_evaluator=leaking_context_evaluator,
         )
 
 
@@ -268,38 +237,53 @@ def test_wfo_context_rejects_non_chronological_trade_timestamps():
 
     with pytest.raises(ValueError, match="non-chronological"):
         run_backtest_wfo(
-            data,
-            ({"x": 1},),
-            evaluator,
-            train_size=4,
-            test_size=2,
-            purge_size=1,
-            step=2,
-            context_size=2,
-            context_evaluator=invalid_context_evaluator,
+            data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1,
+            step=2, context_size=2, context_evaluator=invalid_context_evaluator,
+        )
+
+
+def test_wfo_context_rejects_missing_timestamps_fail_closed():
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def context_evaluator(rows, selected, oos_start_index):
+        return _result(1.0)
+
+    with pytest.raises(ValueError, match="must expose timestamp"):
+        run_backtest_wfo(
+            list(range(8)), ({"x": 1},), evaluator, train_size=3, test_size=2,
+            purge_size=1, context_size=1, context_evaluator=context_evaluator,
+        )
+
+
+def test_wfo_context_rejects_incomparable_timestamps_fail_closed():
+    data = [SimpleNamespace(timestamp=datetime(2026, 1, 1) + timedelta(minutes=i)) for i in range(8)]
+
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def context_evaluator(rows, selected, oos_start_index):
+        return _timed_result(3, 4, 5)
+
+    data[-1].timestamp = "not-a-timestamp"
+    with pytest.raises(ValueError, match="mutually comparable"):
+        run_backtest_wfo(
+            data, ({"x": 1},), evaluator, train_size=3, test_size=2,
+            purge_size=1, context_size=1, context_evaluator=context_evaluator,
         )
 
 
 def test_wfo_requires_context_evaluator_when_warmup_is_requested():
     with pytest.raises(ValueError, match="context_evaluator is required"):
         run_backtest_wfo(
-            list(range(8)),
-            ({"x": 1},),
-            lambda rows, params: _result(1.0),
-            train_size=3,
-            test_size=2,
-            purge_size=1,
-            context_size=1,
+            list(range(8)), ({"x": 1},), lambda rows, params: _result(1.0),
+            train_size=3, test_size=2, purge_size=1, context_size=1,
         )
 
 
 def test_wfo_rejects_non_backtest_evaluator_output():
     with pytest.raises(ValueError, match="BacktestResult"):
         run_backtest_wfo(
-            list(range(8)),
-            ({"x": 1},),
-            lambda rows, params: 1.0,
-            train_size=3,
-            test_size=2,
-            purge_size=1,
+            list(range(8)), ({"x": 1},), lambda rows, params: 1.0,
+            train_size=3, test_size=2, purge_size=1,
         )
