@@ -87,5 +87,9 @@ def test_invalid_inputs_fail_closed():
         build_purged_windows(20, 5, 5, -1)
     with pytest.raises(ValueError, match="step must be at least test_size"):
         build_purged_windows(30, 10, 5, 2, step=4)
+    with pytest.raises(ValueError, match="must be integers"):
+        build_purged_windows(30, 10.0, 5, 2)
+    with pytest.raises(ValueError, match="must be an integer"):
+        build_purged_windows(30, 10, 5, 2, step=4.0)
     with pytest.raises(ValueError):
         run_purged_wfo([1, 2, 3], [], lambda values, params: 1.0, train_size=1, test_size=1, purge_size=0)
