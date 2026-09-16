@@ -27,6 +27,16 @@
 - Release manifest, release evidence and security/release gates.
 - AI advisor remains advisory-only; it cannot authorize, size, or execute trades.
 
+## Research integrity rules
+
+- Research timestamps must be explicit timezone-aware values; the source timezone is preserved and conversion is explicit.
+- Backtest economics require an explicit positive `point_value`; broker-specific contract assumptions are not embedded in the generic research engine.
+- Spread, slippage and commission are modeled explicitly and validated as finite non-negative inputs.
+- Purged WFO defaults to non-overlapping OOS windows (`step >= test_size`) so observations are not silently reused as independent OOS evidence.
+- Parameter selection is train-only; the selected parameter set is evaluated once on each OOS slice.
+- Warm-up context may provide prior bars for causal state formation, but trades generated before the OOS boundary are rejected from OOS evidence.
+- A green CI run proves software checks passed; it does not prove profitability, statistical significance, broker compatibility or live readiness.
+
 ## Version path
 
 ### V5.1 — Hardening and safety
@@ -40,6 +50,12 @@ Execution-quality measurement, broker safety boundaries, shadow validation and r
 
 ### V6.0 — Controlled release
 Final release certification, security review, empirical evidence package and live-authorization gate.
+
+## CI/CD
+
+The development branch runs GitHub Actions across Python 3.9, 3.10 and 3.11 with import validation, static release security checks, linting and pytest. Release evidence is generated only after the build matrix succeeds.
+
+The release sequence is documented in `CHANGELOG.md`. Release candidates use semantic-version pre-release tags such as `5.1.0-rc.1`; no RC is considered valid until its required empirical and safety gates pass.
 
 ## Safety boundary
 
