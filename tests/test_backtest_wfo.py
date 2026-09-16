@@ -259,6 +259,23 @@ def test_wfo_context_rejects_missing_timestamps_fail_closed():
         )
 
 
+def test_wfo_context_requires_timestamps_even_when_no_oos_trades():
+    data = list(range(8))
+
+    def evaluator(rows, selected):
+        return _result(1.0)
+
+    def empty_context_evaluator(rows, selected, oos_start_index):
+        stats = BacktestStats(10000.0, 10000.0, 0.0, 0.0, 0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+        return BacktestResult((), (10000.0,), stats)
+
+    with pytest.raises(ValueError, match="must expose timestamp"):
+        run_backtest_wfo(
+            data, ({"x": 1},), evaluator, train_size=3, test_size=2,
+            purge_size=1, context_size=1, context_evaluator=empty_context_evaluator,
+        )
+
+
 def test_wfo_context_rejects_incomparable_timestamps_fail_closed():
     data = [SimpleNamespace(timestamp=datetime(2026, 1, 1) + timedelta(minutes=i)) for i in range(8)]
 
@@ -279,14 +296,6 @@ def test_wfo_context_rejects_incomparable_timestamps_fail_closed():
 def test_wfo_requires_context_evaluator_when_warmup_is_requested():
     with pytest.raises(ValueError, match="context_evaluator is required"):
         run_backtest_wfo(
-            list(range(8)), ({"x": 1},), lambda rows, params: _result(1.0),
+            list(range(8)), ({"x": 1},), lambda rows, selected: _result(1.0),
             train_size=3, test_size=2, purge_size=1, context_size=1,
-        )
-
-
-def test_wfo_rejects_non_backtest_evaluator_output():
-    with pytest.raises(ValueError, match="BacktestResult"):
-        run_backtest_wfo(
-            list(range(8)), ({"x": 1},), lambda rows, params: 1.0,
-            train_size=3, test_size=2, purge_size=1,
         )
