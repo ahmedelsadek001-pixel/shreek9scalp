@@ -35,6 +35,31 @@ def test_windows_move_forward_without_oos_overlap():
     assert all(earlier.test_end <= later.test_start for earlier, later in zip(windows, windows[1:]))
 
 
+def test_purged_wfo_never_passes_purge_bars_to_evaluator():
+    data = list(range(30))
+    observed = []
+
+    def evaluator(values, params):
+        observed.append(tuple(values))
+        return float(sum(values)) + params["bias"]
+
+    result = run_purged_wfo(
+        data,
+        [{"bias": 1.0}],
+        evaluator,
+        train_size=5,
+        test_size=3,
+        purge_size=2,
+    )
+
+    expected_train = tuple(range(0, 5))
+    expected_test = tuple(range(7, 10))
+    assert observed == [expected_train, expected_test, tuple(range(10, 15)), tuple(range(17, 20)), tuple(range(20, 25)), tuple(range(27, 30))]
+    assert all(5 not in values and 6 not in values for values in observed)
+    assert result.windows[0].purge_start == 5
+    assert result.windows[0].purge_end == 7
+
+
 def test_purged_wfo_selects_on_train_only():
     data = list(range(30))
 
