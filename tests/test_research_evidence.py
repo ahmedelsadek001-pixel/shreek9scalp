@@ -45,10 +45,15 @@ def test_provenance_tampering_fails_verification():
     assert verify_evidence(evidence) is False
 
 
-def test_metric_tampering_fails_verification():
+def test_metric_tampering_is_blocked_by_immutability():
     evidence = ResearchEvidence.create("gold-2026", "V5.2", 120, {"expectancy": 1.2})
-    evidence.metrics["expectancy"] = 99.0
-    assert verify_evidence(evidence) is False
+    try:
+        evidence.metrics["expectancy"] = 99.0
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("expected immutable metrics mapping")
+    assert verify_evidence(evidence) is True
 
 
 def test_non_finite_metric_is_rejected():
