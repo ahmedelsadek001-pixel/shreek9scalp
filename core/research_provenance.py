@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+from math import isfinite
 from typing import Mapping
 
 
@@ -25,12 +26,34 @@ class ResearchProvenance:
                 raise ValueError(f"{name} must be a non-empty string")
 
 
+def _validate_json_value(value: object, path: str = "value") -> None:
+    """Reject ambiguous objects and non-finite numbers before hashing."""
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise ValueError(f"{path} contains a non-finite number")
+        return
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{path} contains a non-string mapping key")
+            _validate_json_value(nested, f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, nested in enumerate(value):
+            _validate_json_value(nested, f"{path}[{index}]")
+        return
+    raise ValueError(f"{path} contains an unsupported value type")
+
+
 def fingerprint_mapping(values: Mapping[str, object]) -> str:
-    """Create a deterministic SHA-256 fingerprint from JSON-like inputs."""
+    """Create a deterministic SHA-256 fingerprint from strict JSON-like inputs."""
     if not isinstance(values, Mapping):
         raise ValueError("values must be a mapping")
+    _validate_json_value(values)
     try:
-        canonical = json.dumps(values, sort_keys=True, separators=(",", ":"), default=str)
+        canonical = json.dumps(values, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError) as exc:
         raise ValueError("values must be serializable") from exc
     return sha256(canonical.encode("utf-8")).hexdigest()
