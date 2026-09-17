@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from statistics import median
 from typing import Sequence
 
 from core.risk_simulation import RobustnessSummary, monte_carlo
@@ -35,21 +36,13 @@ class RobustnessReport:
 
 
 def _validate_wfo(summary: WalkForwardSummary) -> None:
-    """Reject incomplete or internally inconsistent WFO evidence before gating."""
+    """Reject incomplete, inconsistent, or overlapping WFO evidence before gating."""
     if not isinstance(summary, WalkForwardSummary):
         raise TypeError("wfo must be a WalkForwardSummary")
     if not summary.windows:
         raise ValueError("WFO evidence must contain at least one window")
-    if (
-        not isfinite(float(summary.aggregate_test_score))
-        or not isfinite(float(summary.median_test_score))
-        or not isfinite(float(summary.stability_pct))
-        or not 0 <= summary.stability_pct <= 100
-        or type(summary.positive_test_windows) is not int
-        or not 0 <= summary.positive_test_windows <= len(summary.windows)
-    ):
-        raise ValueError("WFO summary contains invalid aggregate evidence")
 
+    scores = []
     previous_test_end = None
     for result in summary.windows:
         window = result.window
@@ -66,6 +59,33 @@ def _validate_wfo(summary: WalkForwardSummary) -> None:
         if previous_test_end is not None and window.test_start < previous_test_end:
             raise ValueError("WFO window contains overlapping OOS test periods")
         previous_test_end = window.test_end
+        scores.append(float(result.test_score))
+
+    count = len(scores)
+    expected_aggregate = sum(scores) / count
+    expected_median = float(median(scores))
+    expected_positive = sum(score > 0 for score in scores)
+    expected_stability = expected_positive / count * 100.0
+
+    if not (
+        isfinite(float(summary.aggregate_test_score))
+        and isfinite(float(summary.median_test_score))
+        and isfinite(float(summary.stability_pct))
+        and 0 <= summary.stability_pct <= 100
+        and type(summary.positive_test_windows) is int
+        and 0 <= summary.positive_test_windows <= count
+    ):
+        raise ValueError("WFO summary contains invalid aggregate evidence")
+
+    tolerance = 1e-12
+    if abs(float(summary.aggregate_test_score) - expected_aggregate) > tolerance:
+        raise ValueError("WFO aggregate test score is inconsistent with window evidence")
+    if abs(float(summary.median_test_score) - expected_median) > tolerance:
+        raise ValueError("WFO median test score is inconsistent with window evidence")
+    if summary.positive_test_windows != expected_positive:
+        raise ValueError("WFO positive window count is inconsistent with window evidence")
+    if abs(float(summary.stability_pct) - expected_stability) > tolerance:
+        raise ValueError("WFO stability is inconsistent with window evidence")
 
 
 def build_robustness_report(
