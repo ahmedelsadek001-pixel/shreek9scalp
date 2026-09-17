@@ -5,20 +5,62 @@ import pytest
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
 from core.robustness import RobustnessPolicy, build_robustness_report
-from core.walk_forward import WalkForwardSummary
+from core.walk_forward import WalkForwardResult, WalkForwardSummary, WalkForwardWindow
 from research.backtest_wfo import run_backtest_wfo
 from research.robustness import run_oos_monte_carlo
 
 
 def test_robustness_report_passes_clean_inputs():
-    wfo = WalkForwardSummary((), 1.0, 1.0, 1, 100.0)
+    wfo = WalkForwardSummary(
+        (WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, 1.0),),
+        1.0,
+        1.0,
+        1,
+        100.0,
+    )
     report = build_robustness_report(wfo, [10.0, -2.0, 8.0], simulations=50, seed=7)
     assert report.passed
     assert report.failures == ()
 
 
+def test_robustness_report_rejects_empty_wfo_evidence():
+    wfo = WalkForwardSummary((), 1.0, 1.0, 0, 100.0)
+    with pytest.raises(ValueError, match="at least one window"):
+        build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
+
+
+def test_robustness_report_rejects_invalid_wfo_boundaries():
+    wfo = WalkForwardSummary(
+        (WalkForwardResult(WalkForwardWindow(0, 4, 3, 5), {"x": 1}, 1.0, 1.0),),
+        1.0,
+        1.0,
+        1,
+        100.0,
+    )
+    with pytest.raises(ValueError, match="invalid or overlapping"):
+        build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
+
+
+def test_robustness_report_rejects_non_finite_wfo_score():
+    wfo = WalkForwardSummary(
+        (WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, float("nan")),),
+        1.0,
+        1.0,
+        1,
+        100.0,
+    )
+    with pytest.raises(ValueError, match="invalid or overlapping"):
+        build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
+
+
 def test_robustness_report_rejects_low_wfo_stability():
-    wfo = WalkForwardSummary((), -1.0, -1.0, 1, 50.0)
+    wfo = WalkForwardSummary(
+        (WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, -1.0, -1.0),),
+        -1.0,
+        -1.0,
+        0,
+        50.0,
+    )
     policy = RobustnessPolicy(min_wfo_stability_pct=60.0)
     report = build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7, policy=policy)
     assert not report.passed
