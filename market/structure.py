@@ -23,6 +23,17 @@ def _valid(df: pd.DataFrame) -> bool:
     return not df.empty and all(c in df.columns for c in ("high", "low", "close"))
 
 
+def _causal_frame(df: pd.DataFrame, as_of_index: int | None) -> pd.DataFrame:
+    """Return only candles available at the requested closed-bar boundary."""
+    if as_of_index is None:
+        return df
+    if isinstance(as_of_index, bool) or not isinstance(as_of_index, int) or as_of_index < 0:
+        raise ValueError("as_of_index must be a non-negative integer")
+    if as_of_index >= len(df):
+        raise ValueError("as_of_index is outside the data frame")
+    return df.iloc[:as_of_index + 1]
+
+
 def _timeframe(value: str | Timeframe) -> Optional[Timeframe]:
     if isinstance(value, Timeframe):
         return value
@@ -57,18 +68,20 @@ def determine_structure(
     atr: Optional[float] = None,
     threshold_atr: float = 0.10,
     confirmation_bars: int = 2,
+    as_of_index: int | None = None,
 ) -> MarketStructure:
     """Classify the latest closed candle against confirmed swings.
 
-    Invalid timeframe input is rejected instead of silently becoming M15; this
-    prevents a configuration/data-integrity error from changing strategy logic.
+    ``as_of_index`` is the causal boundary for historical research. Invalid
+    timeframe input is rejected instead of silently becoming M15.
     """
     tf = _timeframe(timeframe)
     if tf is None:
         return MarketStructure(Timeframe.M15, Direction.UNKNOWN, StructureEvent.NONE, None, None, True)
-    if not _valid(df):
+    data = _causal_frame(df, as_of_index)
+    if not _valid(data):
         return MarketStructure(tf, Direction.UNKNOWN, StructureEvent.NONE, None, None, True)
-    data = df.reset_index(drop=True)
+    data = data.reset_index(drop=True)
     swings = confirmed_swings(data, confirmation_bars)
     if not swings:
         return MarketStructure(tf, prior_bias, StructureEvent.NONE, None, None, True)
