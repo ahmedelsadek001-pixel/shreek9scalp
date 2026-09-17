@@ -50,6 +50,7 @@ def _validate_wfo(summary: WalkForwardSummary) -> None:
     ):
         raise ValueError("WFO summary contains invalid aggregate evidence")
 
+    previous_test_end = None
     for result in summary.windows:
         window = result.window
         if not (
@@ -62,6 +63,9 @@ def _validate_wfo(summary: WalkForwardSummary) -> None:
             and isfinite(float(result.test_score))
         ):
             raise ValueError("WFO window contains invalid or overlapping train/test boundaries")
+        if previous_test_end is not None and window.test_start < previous_test_end:
+            raise ValueError("WFO window contains overlapping OOS test periods")
+        previous_test_end = window.test_end
 
 
 def build_robustness_report(
