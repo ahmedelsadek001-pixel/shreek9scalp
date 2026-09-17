@@ -30,3 +30,26 @@ def test_invalid_provenance_fails_closed():
 def test_fingerprint_rejects_non_mapping():
     with pytest.raises(ValueError, match="mapping"):
         fingerprint_mapping([("a", 1)])
+
+
+def test_fingerprint_rejects_ambiguous_object_values():
+    with pytest.raises(ValueError, match="unsupported value type"):
+        fingerprint_mapping({"data": object()})
+
+
+def test_fingerprint_rejects_non_string_keys():
+    with pytest.raises(ValueError, match="non-string mapping key"):
+        fingerprint_mapping({1: "bar"})
+
+
+def test_fingerprint_rejects_non_finite_numbers():
+    with pytest.raises(ValueError, match="non-finite"):
+        fingerprint_mapping({"nan": float("nan")})
+    with pytest.raises(ValueError, match="non-finite"):
+        fingerprint_mapping({"inf": float("inf")})
+
+
+def test_nested_json_like_values_are_canonicalized():
+    left = {"bars": [{"close": 1.0, "symbol": "XAUUSD"}, {"close": 2.0}]}
+    right = {"bars": [{"symbol": "XAUUSD", "close": 1.0}, {"close": 2.0}]}
+    assert fingerprint_mapping(left) == fingerprint_mapping(right)
