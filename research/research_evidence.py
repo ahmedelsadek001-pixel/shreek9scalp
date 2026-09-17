@@ -25,8 +25,36 @@ class ResearchEvidence:
 
     @property
     def sample_size(self) -> int:
-        """Compatibility alias for the canonical ``samples`` field."""
         return self.samples
+
+    @staticmethod
+    def _canonical_payload(
+        dataset_id: str,
+        version: str,
+        samples: int,
+        metrics: Mapping[str, float],
+        provenance: ResearchProvenance | None,
+    ) -> str:
+        return json.dumps(
+            {
+                "dataset_id": dataset_id.strip(),
+                "version": version.strip(),
+                "samples": samples,
+                "metrics": dict(sorted(metrics.items())),
+                "provenance": (
+                    {
+                        "data_fingerprint": provenance.data_fingerprint,
+                        "config_fingerprint": provenance.config_fingerprint,
+                        "code_revision": provenance.code_revision,
+                    }
+                    if provenance is not None
+                    else None
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
 
     @classmethod
     def create(
@@ -59,33 +87,13 @@ class ResearchEvidence:
         normalized = dict(sorted(normalized.items()))
 
         provenance: ResearchProvenance | None = None
-        provenance_fields = (data, config, code_revision)
-        if any(value is not None for value in provenance_fields):
-            if not all(value is not None for value in provenance_fields):
+        fields = (data, config, code_revision)
+        if any(value is not None for value in fields):
+            if not all(value is not None for value in fields):
                 raise ValueError("data, config, and code_revision must be supplied together")
             provenance = build_provenance(data=data, config=config, code_revision=code_revision)
-            validate_provenance(provenance)
-
-        canonical = json.dumps(
-            {
-                "dataset_id": dataset_id.strip(),
-                "version": version.strip(),
-                "samples": samples,
-                "metrics": normalized,
-                "provenance": (
-                    {
-                        "data_fingerprint": provenance.data_fingerprint,
-                        "config_fingerprint": provenance.config_fingerprint,
-                        "code_revision": provenance.code_revision,
-                    }
-                    if provenance is not None
-                    else None
-                ),
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        digest = sha256(canonical.encode("utf-8")).hexdigest()
+        payload = cls._canonical_payload(dataset_id, version, samples, normalized, provenance)
+        digest = sha256(payload.encode("utf-8")).hexdigest()
         return cls(dataset_id.strip(), version.strip(), samples, normalized, digest, provenance)
 
 
@@ -93,49 +101,24 @@ def verify_evidence(evidence: ResearchEvidence) -> bool:
     """Recompute the canonical hash and verify evidence-record integrity."""
     if not isinstance(evidence, ResearchEvidence):
         raise TypeError("evidence must be ResearchEvidence")
-    if evidence.provenance is not None:
-        try:
-            validate_provenance(evidence.provenance)
-        except ValueError:
-            return False
     try:
-        rebuilt = ResearchEvidence.create(
+        if evidence.provenance is not None:
+            validate_provenance(evidence.provenance)
+        metrics: dict[str, float] = {}
+        for key, value in evidence.metrics.items():
+            if not isinstance(key, str) or not key.strip():
+                return False
+            numeric = float(value)
+            if not isfinite(numeric):
+                return False
+            metrics[key.strip()] = numeric
+        payload = ResearchEvidence._canonical_payload(
             evidence.dataset_id,
             evidence.version,
             evidence.samples,
-            evidence.metrics,
-            data=(
-                {"fingerprint": evidence.provenance.data_fingerprint}
-                if evidence.provenance is not None
-                else None
-            ),
-            config=(
-                {"fingerprint": evidence.provenance.config_fingerprint}
-                if evidence.provenance is not None
-                else None
-            ),
-            code_revision=(evidence.provenance.code_revision if evidence.provenance is not None else None),
+            dict(sorted(metrics.items())),
+            evidence.provenance,
         )
-    except (TypeError, ValueError):
+        return sha256(payload.encode("utf-8")).hexdigest() == evidence.evidence_hash
+    except (TypeError, ValueError, AttributeError):
         return False
-    if evidence.provenance is not None:
-        # The stored provenance fingerprints are already identities; do not
-        # reinterpret them as source data. Rebuild the hash using the exact
-        # stored provenance fields so verification remains deterministic.
-        canonical = json.dumps(
-            {
-                "dataset_id": evidence.dataset_id.strip(),
-                "version": evidence.version.strip(),
-                "samples": evidence.samples,
-                "metrics": dict(sorted((str(k).strip(), float(v)) for k, v in evidence.metrics.items())),
-                "provenance": {
-                    "data_fingerprint": evidence.provenance.data_fingerprint,
-                    "config_fingerprint": evidence.provenance.config_fingerprint,
-                    "code_revision": evidence.provenance.code_revision,
-                },
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return sha256(canonical.encode("utf-8")).hexdigest() == evidence.evidence_hash
-    return rebuilt.evidence_hash == evidence.evidence_hash
