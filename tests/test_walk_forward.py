@@ -18,6 +18,11 @@ def test_purged_walk_forward_leaves_embargo_between_train_and_test():
     assert all(a.test_end <= b.test_start for a, b in zip(windows, windows[1:]))
 
 
+def test_overlapping_oos_step_is_rejected():
+    with pytest.raises(ValueError, match="overlapping OOS"):
+        rolling_windows(20, 8, 4, step=2)
+
+
 def test_negative_purge_is_rejected():
     with pytest.raises(ValueError, match="purge_size"):
         rolling_windows(20, 8, 4, purge_size=-1)
@@ -54,6 +59,22 @@ def test_walk_forward_applies_purge_before_oos_evaluation():
     )
     assert result.windows[0].window.test_start == 7
     assert result.windows[0].test_score == sum(data[7:10])
+
+
+def test_walk_forward_future_mutation_cannot_change_prior_windows():
+    data = list(range(24))
+    mutated = data.copy()
+    mutated[16:] = [10_000 + i for i in range(8)]
+
+    def evaluator(rows, _):
+        return float(sum(rows))
+
+    baseline = run_walk_forward(data, ({"x": 1},), evaluator, 6, 3, step=3)
+    changed = run_walk_forward(mutated, ({"x": 1},), evaluator, 6, 3, step=3)
+    for before, after in zip(baseline.windows, changed.windows):
+        if before.window.test_end <= 16:
+            assert before.train_score == after.train_score
+            assert before.test_score == after.test_score
 
 
 def test_walk_forward_rejects_non_boolean_maximize():
