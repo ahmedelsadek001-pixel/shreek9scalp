@@ -34,6 +34,36 @@ class RobustnessReport:
     failures: tuple[str, ...]
 
 
+def _validate_wfo(summary: WalkForwardSummary) -> None:
+    """Reject incomplete or internally inconsistent WFO evidence before gating."""
+    if not isinstance(summary, WalkForwardSummary):
+        raise TypeError("wfo must be a WalkForwardSummary")
+    if not summary.windows:
+        raise ValueError("WFO evidence must contain at least one window")
+    if (
+        not isfinite(float(summary.aggregate_test_score))
+        or not isfinite(float(summary.median_test_score))
+        or not isfinite(float(summary.stability_pct))
+        or not 0 <= summary.stability_pct <= 100
+        or type(summary.positive_test_windows) is not int
+        or not 0 <= summary.positive_test_windows <= len(summary.windows)
+    ):
+        raise ValueError("WFO summary contains invalid aggregate evidence")
+
+    for result in summary.windows:
+        window = result.window
+        if not (
+            type(window.train_start) is int
+            and type(window.train_end) is int
+            and type(window.test_start) is int
+            and type(window.test_end) is int
+            and 0 <= window.train_start < window.train_end <= window.test_start < window.test_end
+            and isfinite(float(result.train_score))
+            and isfinite(float(result.test_score))
+        ):
+            raise ValueError("WFO window contains invalid or overlapping train/test boundaries")
+
+
 def build_robustness_report(
     wfo: WalkForwardSummary,
     pnl: Sequence[float],
@@ -43,6 +73,7 @@ def build_robustness_report(
     policy: RobustnessPolicy = RobustnessPolicy(),
 ) -> RobustnessReport:
     """Evaluate WFO stability and Monte Carlo tail-risk gates without execution."""
+    _validate_wfo(wfo)
     policy.validate()
     mc = monte_carlo(pnl, starting_equity, simulations, seed)
     failures = []
