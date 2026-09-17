@@ -50,14 +50,25 @@ def rolling_windows(
     ``purge_size`` removes observations immediately after the training set
     from test evaluation, reducing leakage from labels or features whose
     information horizon crosses the train/test boundary.
+
+    OOS test windows are deliberately non-overlapping. Overlapping OOS
+    windows double-count observations and can make downstream robustness
+    statistics look more independent than they actually are.
     """
-    if length <= 0 or train_size <= 0 or test_size <= 0:
-        raise ValueError("window sizes and length must be positive")
-    if purge_size < 0:
-        raise ValueError("purge_size must be non-negative")
+    if type(length) is not int or length <= 0:
+        raise ValueError("length must be a positive integer")
+    if type(train_size) is not int or train_size <= 0:
+        raise ValueError("train_size must be a positive integer")
+    if type(test_size) is not int or test_size <= 0:
+        raise ValueError("test_size must be a positive integer")
+    if type(purge_size) is not int or purge_size < 0:
+        raise ValueError("purge_size must be a non-negative integer")
     step = test_size if step is None else step
-    if step <= 0:
-        raise ValueError("step must be positive")
+    if type(step) is not int or step <= 0:
+        raise ValueError("step must be a positive integer")
+    if step < test_size:
+        raise ValueError("step must be at least test_size to prevent overlapping OOS windows")
+
     windows = []
     start = 0
     while start + train_size + purge_size + test_size <= length:
