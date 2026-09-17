@@ -26,7 +26,6 @@ class BacktestWFOResult:
 
     @property
     def oos_expectancy(self) -> float:
-        """Trade-weighted expectancy across all OOS trades."""
         trades = sum(metric.trades for metric in self.oos_metrics)
         if trades == 0:
             return 0.0
@@ -34,12 +33,10 @@ class BacktestWFOResult:
 
     @property
     def oos_net_pnl(self) -> float:
-        """Total realized net P&L across OOS windows."""
         return sum(metric.net_pnl for metric in self.oos_metrics)
 
     @property
     def oos_trade_pnl(self) -> tuple[float, ...]:
-        """Flatten realized net P&L from actual OOS trades in window order."""
         pnl = tuple(trade.net_pnl for result in self.oos_results for trade in result.trades)
         if any(not isfinite(float(value)) for value in pnl):
             raise ValueError("OOS trade P&L must be finite")
@@ -67,41 +64,29 @@ def _validate_context_result(
     result: BacktestResult,
     contextual_data: Sequence[Any],
     oos_start_index: int,
+    oos_end_index: int,
 ) -> None:
-    """Reject trades not fully contained in the OOS interval.
-
-    Timestamp containment is mandatory for contextual evaluation. If the boundary
-    cannot be established from the supplied data, validation fails closed rather
-    than silently accepting an unverifiable OOS result.
-    """
-    if not 0 <= oos_start_index < len(contextual_data):
-        raise ValueError("oos_start_index must identify a bar in the contextual slice")
-    if not contextual_data:
-        raise ValueError("contextual_data must be non-empty")
+    """Reject trades that cross either side of the exact OOS interval."""
+    if type(oos_start_index) is not int or type(oos_end_index) is not int:
+        raise ValueError("OOS boundaries must be integers")
+    if not contextual_data or not 0 <= oos_start_index < oos_end_index <= len(contextual_data):
+        raise ValueError("invalid contextual OOS boundaries")
     if not all(hasattr(item, "timestamp") for item in contextual_data):
-        raise ValueError("contextual OOS data must expose timestamp for containment validation")
-
+        raise ValueError("contextual OOS data must expose timestamp")
     try:
-        previous_timestamp = contextual_data[0].timestamp
-        for item in contextual_data[1:]:
-            timestamp = item.timestamp
-            if timestamp <= previous_timestamp:
-                raise ValueError("contextual OOS timestamps must be chronological")
-            previous_timestamp = timestamp
-        oos_start = contextual_data[oos_start_index].timestamp
-        oos_end = contextual_data[-1].timestamp
-        if oos_end < oos_start:
+        timestamps = [item.timestamp for item in contextual_data]
+        if any(a >= b for a, b in zip(timestamps, timestamps[1:])):
             raise ValueError("contextual OOS timestamps must be chronological")
+        oos_start = timestamps[oos_start_index]
+        oos_end = timestamps[oos_end_index - 1]
         for trade in result.trades:
             signal_time = getattr(trade, "signal_time", None)
             entry_time = getattr(trade, "entry_time", None)
             exit_time = getattr(trade, "exit_time", None)
             if signal_time is None or entry_time is None or exit_time is None:
-                raise ValueError(
-                    "OOS backtest trades must expose signal_time, entry_time and exit_time"
-                )
+                raise ValueError("OOS trades must expose signal_time, entry_time and exit_time")
             if signal_time < oos_start or entry_time < oos_start or exit_time > oos_end:
-                raise ValueError("OOS backtest produced a trade outside the OOS boundary")
+                raise ValueError("OOS backtest produced a trade outside the OOS interval")
             if entry_time < signal_time or exit_time < entry_time:
                 raise ValueError("OOS backtest produced non-chronological trade timestamps")
     except TypeError as exc:
@@ -122,22 +107,7 @@ def run_backtest_wfo(
     context_size: int = 0,
     context_evaluator: ContextBacktestEvaluator | None = None,
 ) -> BacktestWFOResult:
-    """Select parameters on train backtests and evaluate each OOS slice once.
-
-    The evaluator must run a causal backtest over the supplied slice. Parameters
-    are selected using only train metrics; the selected parameters are then run
-    once on each embargoed OOS slice. No OOS metric participates in selection,
-    and the same OOS result is retained as the source for all reported metrics.
-
-    When ``context_size`` is positive, the OOS evaluator receives up to that many
-    immediately preceding bars as warm-up context plus the full OOS slice. A
-    three-argument ``context_evaluator`` is mandatory and receives the OOS start
-    index relative to that contextual slice. Timestamped contextual data are
-    mandatory so every returned trade can be fully contained in the OOS interval:
-    signal and entry times cannot precede the OOS boundary, and exit time cannot
-    exceed the final OOS bar. This fail-closed contract prevents context or
-    post-OOS bars from being counted as OOS data.
-    """
+    """Select on train and evaluate each exact OOS interval once, fail-closed."""
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
     if type(maximize) is not bool:
@@ -149,9 +119,7 @@ def run_backtest_wfo(
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
 
-    windows = build_purged_windows(
-        len(data), train_size, test_size, purge_size, step
-    )
+    windows = build_purged_windows(len(data), train_size, test_size, purge_size, step)
     train_scores: list[float] = []
     test_scores: list[float] = []
     selected_parameters: list[Mapping[str, Any]] = []
@@ -161,31 +129,28 @@ def run_backtest_wfo(
 
     for window in windows:
         train = data[window.train_start : window.train_end]
-        scored: list[tuple[float, Mapping[str, Any], BacktestResult, ResearchMetrics]] = []
+        scored: list[tuple[float, Mapping[str, Any], ResearchMetrics]] = []
         for params in parameter_sets:
             train_result = evaluator(train, params)
             if not isinstance(train_result, BacktestResult):
                 raise ValueError("evaluator must return a BacktestResult")
             metrics = calculate_research_metrics(train_result)
-            scored.append((_score_metric(metrics, objective), params, train_result, metrics))
-
+            scored.append((_score_metric(metrics, objective), params, metrics))
         scored.sort(key=lambda item: item[0], reverse=maximize)
-        train_score, params, train_result, selected_train_metrics = scored[0]
+        train_score, params, selected_train_metrics = scored[0]
 
         if context_size:
             context_start = max(0, window.test_start - context_size)
             oos_slice = data[context_start : window.test_end]
             oos_start_index = window.test_start - context_start
-            # context_evaluator is checked above whenever context_size is positive.
+            oos_end_index = window.test_end - context_start
             oos_result = context_evaluator(oos_slice, params, oos_start_index)  # type: ignore[misc]
+            _validate_context_result(oos_result, oos_slice, oos_start_index, oos_end_index)
         else:
             oos_slice = data[window.test_start : window.test_end]
-            oos_start_index = 0
             oos_result = evaluator(oos_slice, params)
         if not isinstance(oos_result, BacktestResult):
             raise ValueError("OOS evaluator must return a BacktestResult")
-        if context_size:
-            _validate_context_result(oos_result, oos_slice, oos_start_index)
         oos_metric = calculate_research_metrics(oos_result)
         test_score = _score_metric(oos_metric, objective)
 
@@ -196,15 +161,5 @@ def run_backtest_wfo(
         oos_metrics.append(oos_metric)
         oos_results.append(oos_result)
 
-    validation = PurgedWFOResult(
-        tuple(windows),
-        tuple(train_scores),
-        tuple(test_scores),
-        tuple(selected_parameters),
-    )
-    return BacktestWFOResult(
-        validation,
-        tuple(train_metrics),
-        tuple(oos_metrics),
-        tuple(oos_results),
-    )
+    validation = PurgedWFOResult(tuple(windows), tuple(train_scores), tuple(test_scores), tuple(selected_parameters))
+    return BacktestWFOResult(validation, tuple(train_metrics), tuple(oos_metrics), tuple(oos_results))
