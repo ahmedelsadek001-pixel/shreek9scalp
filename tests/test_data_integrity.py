@@ -40,6 +40,24 @@ def test_invalid_geometry_is_rejected():
     assert not validate_bars(bars).valid
 
 
+def test_non_finite_ohlc_is_rejected():
+    bars = _bars()
+    bars[1]["close"] = float("nan")
+    assert not validate_bars(bars).valid
+
+
+def test_timeframe_alignment_is_rejected_when_invalid():
+    bars = _bars()
+    bars[1]["timestamp"] += timedelta(minutes=1)
+    assert not validate_bars(bars, timeframe_minutes=5).valid
+
+
+def test_naive_timestamp_is_rejected():
+    bars = _bars()
+    bars[1]["timestamp"] = bars[1]["timestamp"].replace(tzinfo=None)
+    assert not validate_bars(bars).valid
+
+
 def test_future_and_stale_data_are_rejected():
     now = datetime(2026, 9, 12, 12, 10, tzinfo=UTC)
     bars = _bars()
