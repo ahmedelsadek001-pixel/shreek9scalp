@@ -10,13 +10,24 @@ from research.backtest_wfo import run_backtest_wfo
 from research.robustness import run_oos_monte_carlo
 
 
+def _wfo_summary(*results):
+    scores = [result.test_score for result in results]
+    positive = sum(score > 0 for score in scores)
+    ordered = sorted(scores)
+    count = len(ordered)
+    median = ordered[count // 2] if count % 2 else (ordered[count // 2 - 1] + ordered[count // 2]) / 2.0
+    return WalkForwardSummary(
+        tuple(results),
+        sum(scores) / count,
+        median,
+        positive,
+        positive / count * 100.0,
+    )
+
+
 def test_robustness_report_passes_clean_inputs():
-    wfo = WalkForwardSummary(
-        (WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, 1.0),),
-        1.0,
-        1.0,
-        1,
-        100.0,
+    wfo = _wfo_summary(
+        WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, 1.0),
     )
     report = build_robustness_report(wfo, [10.0, -2.0, 8.0], simulations=50, seed=7)
     assert report.passed
@@ -68,14 +79,34 @@ def test_robustness_report_rejects_non_finite_wfo_score():
         build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
 
 
-def test_robustness_report_rejects_low_wfo_stability():
-    wfo = WalkForwardSummary(
-        (WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, -1.0, -1.0),),
-        -1.0,
-        -1.0,
-        0,
-        50.0,
+def test_robustness_report_rejects_inconsistent_aggregate():
+    result = WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, 2.0)
+    wfo = WalkForwardSummary((result,), 999.0, 2.0, 1, 100.0)
+    with pytest.raises(ValueError, match="aggregate test score"):
+        build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
+
+
+def test_robustness_report_rejects_inconsistent_median_and_counts():
+    results = (
+        WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, 2.0),
+        WalkForwardResult(WalkForwardWindow(5, 8, 8, 10), {"x": 1}, 1.0, -1.0),
     )
+    with pytest.raises(ValueError, match="median test score"):
+        build_robustness_report(WalkForwardSummary(results, 0.5, 99.0, 1, 50.0), [10.0, -2.0], simulations=20, seed=7)
+    with pytest.raises(ValueError, match="positive window count"):
+        build_robustness_report(WalkForwardSummary(results, 0.5, 0.5, 0, 50.0), [10.0, -2.0], simulations=20, seed=7)
+
+
+def test_robustness_report_rejects_inconsistent_stability():
+    result = WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, 2.0)
+    wfo = WalkForwardSummary((result,), 2.0, 2.0, 1, 50.0)
+    with pytest.raises(ValueError, match="stability"):
+        build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
+
+
+def test_robustness_report_rejects_low_wfo_stability():
+    result = WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, -1.0, -1.0)
+    wfo = _wfo_summary(result)
     policy = RobustnessPolicy(min_wfo_stability_pct=60.0)
     report = build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7, policy=policy)
     assert not report.passed
