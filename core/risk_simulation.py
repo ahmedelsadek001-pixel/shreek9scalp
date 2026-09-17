@@ -24,6 +24,8 @@ class RobustnessSummary:
     worst_ending_equity: float
     median_max_drawdown: float
     worst_max_drawdown: float
+    p05_ending_equity: float
+    p95_max_drawdown: float
 
 
 def _validate(pnl: Sequence[float], starting_equity: float, simulations: int) -> None:
@@ -33,6 +35,19 @@ def _validate(pnl: Sequence[float], starting_equity: float, simulations: int) ->
         raise ValueError("pnl must be non-empty and finite")
     if type(simulations) is not int or simulations <= 0:
         raise ValueError("simulations must be a positive integer")
+
+
+def _quantile(sorted_values: Sequence[float], probability: float) -> float:
+    """Linearly interpolate a quantile from an already sorted finite sample."""
+    if not sorted_values or not 0.0 <= probability <= 1.0:
+        raise ValueError("quantile probability must be between 0 and 1")
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    index = probability * (len(sorted_values) - 1)
+    lower = int(index)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = index - lower
+    return float(sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight)
 
 
 def simulate_sequence(
@@ -119,4 +134,6 @@ def monte_carlo(
         endings[0],
         median_dd,
         dds[-1],
+        _quantile(endings, 0.05),
+        _quantile(dds, 0.95),
     )
