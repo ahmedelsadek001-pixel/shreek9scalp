@@ -33,6 +33,12 @@ def test_monte_carlo_reports_tail_quantiles():
     assert result.median_max_drawdown <= result.p95_max_drawdown <= result.worst_max_drawdown
 
 
+def test_quantiles_remain_finite_under_normal_inputs():
+    result = monte_carlo([25.0, -10.0, 15.0], 1000, simulations=200, seed=3)
+    assert result.p05_ending_equity == pytest.approx(result.p05_ending_equity)
+    assert result.p95_max_drawdown == pytest.approx(result.p95_max_drawdown)
+
+
 def test_ruin_is_path_dependent_and_stops_after_breach():
     result = simulate_sequence([100.0, -1500.0, 10000.0], 1000, seed=7)
     assert result.ruin is True
