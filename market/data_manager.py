@@ -9,12 +9,13 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 from utils.mt5_compat import mt5
 
 from config.settings import TIMEFRAMES
+from market.data_integrity import require_valid_bars
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -117,7 +118,8 @@ def get_mtf_data(symbol: str, use_cache: bool = True) -> dict | None:
         if rates is None or len(rates) == 0:
             return {"error": f"No data for {symbol} on {tf_name}"}
         df = pd.DataFrame(rates)
-        df["time"] = pd.to_datetime(df["time"], unit="s")
+        df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
+        require_valid_bars(df.to_dict("records"))
         data_pack[tf_name] = _add_base_indicators(df).reset_index(drop=True)
     _DATA_CACHE.set(symbol, data_pack)
     return data_pack
