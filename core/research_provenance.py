@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
-from math import isfinite
+import json
 from typing import Mapping
 
 
@@ -26,10 +26,13 @@ class ResearchProvenance:
 
 
 def fingerprint_mapping(values: Mapping[str, object]) -> str:
-    """Create a deterministic fingerprint from a JSON-like mapping."""
+    """Create a deterministic SHA-256 fingerprint from JSON-like inputs."""
     if not isinstance(values, Mapping):
         raise ValueError("values must be a mapping")
-    canonical = repr(sorted((str(key), repr(value)) for key, value in values.items()))
+    try:
+        canonical = json.dumps(values, sort_keys=True, separators=(",", ":"), default=str)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("values must be serializable") from exc
     return sha256(canonical.encode("utf-8")).hexdigest()
 
 
