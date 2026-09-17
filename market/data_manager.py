@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pandas as pd
 from utils.mt5_compat import mt5
@@ -22,6 +22,7 @@ log = get_logger(__name__)
 _MT5_CALL_LOCK = threading.RLock()
 _DECIMALS_FALLBACK_2 = ("XAU", "BTC", "XBR", "OIL", "US30", "US500", "NAS", "UK100", "GER40")
 _DECIMALS_FALLBACK_3 = ("JPY",)
+_TIMEFRAME_MINUTES = {"D1": 1440, "H4": 240, "H1": 60, "M15": 15, "M5": 5, "M3": 3}
 
 
 def digits_for_symbol(symbol: str) -> int:
@@ -119,7 +120,7 @@ def get_mtf_data(symbol: str, use_cache: bool = True) -> dict | None:
             return {"error": f"No data for {symbol} on {tf_name}"}
         df = pd.DataFrame(rates)
         df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
-        require_valid_bars(df.to_dict("records"))
+        require_valid_bars(df.to_dict("records"), timeframe_minutes=_TIMEFRAME_MINUTES[tf_name])
         data_pack[tf_name] = _add_base_indicators(df).reset_index(drop=True)
     _DATA_CACHE.set(symbol, data_pack)
     return data_pack
