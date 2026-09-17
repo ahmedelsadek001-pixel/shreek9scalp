@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 from math import isfinite
+from types import MappingProxyType
 from typing import Mapping
 
 from core.research_provenance import ResearchProvenance, build_provenance, validate_provenance
@@ -94,7 +95,14 @@ class ResearchEvidence:
             provenance = build_provenance(data=data, config=config, code_revision=code_revision)
         payload = cls._canonical_payload(dataset_id, version, samples, normalized, provenance)
         digest = sha256(payload.encode("utf-8")).hexdigest()
-        return cls(dataset_id.strip(), version.strip(), samples, normalized, digest, provenance)
+        return cls(
+            dataset_id.strip(),
+            version.strip(),
+            samples,
+            MappingProxyType(normalized),
+            digest,
+            provenance,
+        )
 
 
 def verify_evidence(evidence: ResearchEvidence) -> bool:
