@@ -27,6 +27,12 @@ def test_monte_carlo_summary_is_reproducible():
     assert a.simulations == 50
 
 
+def test_monte_carlo_reports_tail_quantiles():
+    result = monte_carlo([100.0, -60.0, 40.0, -20.0], 1000, simulations=50, seed=11)
+    assert result.worst_ending_equity <= result.p05_ending_equity <= result.median_ending_equity
+    assert result.median_max_drawdown <= result.p95_max_drawdown <= result.worst_max_drawdown
+
+
 def test_ruin_is_path_dependent_and_stops_after_breach():
     result = simulate_sequence([100.0, -1500.0, 10000.0], 1000, seed=7)
     assert result.ruin is True
