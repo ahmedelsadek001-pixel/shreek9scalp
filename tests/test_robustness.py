@@ -41,6 +41,21 @@ def test_robustness_report_rejects_invalid_wfo_boundaries():
         build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
 
 
+def test_robustness_report_rejects_overlapping_oos_windows():
+    wfo = WalkForwardSummary(
+        (
+            WalkForwardResult(WalkForwardWindow(0, 3, 3, 6), {"x": 1}, 1.0, 1.0),
+            WalkForwardResult(WalkForwardWindow(3, 6, 5, 8), {"x": 1}, 1.0, 1.0),
+        ),
+        1.0,
+        1.0,
+        2,
+        100.0,
+    )
+    with pytest.raises(ValueError, match="overlapping OOS"):
+        build_robustness_report(wfo, [10.0, -2.0], simulations=20, seed=7)
+
+
 def test_robustness_report_rejects_non_finite_wfo_score():
     wfo = WalkForwardSummary(
         (WalkForwardResult(WalkForwardWindow(0, 3, 3, 5), {"x": 1}, 1.0, float("nan")),),
