@@ -269,7 +269,14 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
                  starting_equity: float = 10000.0, costs: CostModel = CostModel(),
                  force_close_at_end: bool = True, lifecycle_policy: Optional[LifecyclePolicy] = None,
                  trading_window: Optional[TradingWindowPolicy] = None,
-                 intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST) -> BacktestResult:
+                 intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST,
+                 end_index: Optional[int] = None) -> BacktestResult:
+    """Run a backtest over an explicit causal execution horizon.
+
+    ``end_index`` truncates both signal lookup and trade lifecycle evaluation.
+    This prevents an OOS trade from consuming bars belonging to a later
+    walk-forward window.
+    """
     if not isfinite(starting_equity) or starting_equity <= 0 or not costs.valid():
         raise ValueError("invalid backtest configuration")
     try:
@@ -283,6 +290,10 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
         raise ValueError("invalid or empty bar series")
     if any(series[i].timestamp >= series[i + 1].timestamp for i in range(len(series) - 1)):
         raise ValueError("bars must be strictly chronological")
+    if end_index is not None:
+        if type(end_index) is not int or end_index < 0 or end_index >= len(series):
+            raise ValueError("end_index must be an integer within bars")
+        series = series[: end_index + 1]
     by_time = {b.timestamp: i for i, b in enumerate(series)}
     pending = sorted(orders, key=lambda o: o.signal_time)
     for order in pending:
