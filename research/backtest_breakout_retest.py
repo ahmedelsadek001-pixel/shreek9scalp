@@ -101,25 +101,40 @@ def run_breakout_retest_backtest(
     config: BreakoutRetestBacktestConfig,
     *,
     min_signal_index: int = 0,
+    execution_end_index: int | None = None,
 ) -> BacktestResult:
-    """Run the real SHREEK backtest engine with an optional OOS signal boundary.
+    """Run the real backtest engine with explicit signal and execution horizons.
 
-    Warm-up bars may precede ``min_signal_index`` and are available to the signal
-    detector for consolidation and volume context, but no returned order may be
-    confirmed before that boundary.
+    Warm-up bars may precede ``min_signal_index`` for signal context. When
+    ``execution_end_index`` is supplied, both eligible signal bars and the
+    entire trade lifecycle are capped at that index, preventing an OOS trade
+    from consuming bars belonging to a later walk-forward window.
     """
     config.validate()
     if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
         raise ValueError("min_signal_index must be an integer within bars")
+    if execution_end_index is not None:
+        if type(execution_end_index) is not int or execution_end_index < 0 or execution_end_index >= len(bars):
+            raise ValueError("execution_end_index must be an integer within bars")
+        if execution_end_index < min_signal_index:
+            raise ValueError("execution_end_index must not precede min_signal_index")
     execution_bars = to_backtest_bars(bars, spread=config.spread)
     orders = build_breakout_retest_orders(
         bars,
         config,
         min_signal_index=min_signal_index,
     )
+    if execution_end_index is not None:
+        end_time = execution_bars[execution_end_index].timestamp
+        orders = tuple(order for order in orders if order.signal_time <= end_time)
     costs = CostModel(
         slippage=config.slippage,
         point_value=config.point_value,
         commission_per_volume=config.commission_per_volume,
     )
-    return run_backtest(execution_bars, orders, costs=costs)
+    return run_backtest(
+        execution_bars,
+        orders,
+        costs=costs,
+        end_index=execution_end_index,
+    )
