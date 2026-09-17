@@ -66,11 +66,7 @@ def _stop_from_zone(direction, price, ob, fvg, structure, atr):
 
 
 def detect_fvg_failure(df: pd.DataFrame, fvg: Optional[FairValueGap], direction: Direction, lookback: int = 5) -> bool:
-    """Require the latest closed candle to perform the FVG failure.
-
-    Historical failures in older candles are intentionally ignored so a
-    stale event cannot authorize a new M3 trigger.
-    """
+    """Require the latest closed candle to perform the FVG failure."""
     if fvg is None or direction not in (Direction.BUY, Direction.SELL):
         return False
     if df.empty or not {"high", "low", "close"}.issubset(df.columns):
@@ -85,18 +81,26 @@ def detect_fvg_failure(df: pd.DataFrame, fvg: Optional[FairValueGap], direction:
     return high >= float(fvg.top) and close < float(fvg.bottom)
 
 
-def analyze_m15_entry_signal(df_m15: pd.DataFrame, trade_direction: Direction, settings: Settings) -> TradeSignal:
+def analyze_m15_entry_signal(
+    df_m15: pd.DataFrame,
+    trade_direction: Direction,
+    settings: Settings,
+    *,
+    as_of_index: int | None = None,
+) -> TradeSignal:
     frame = Timeframe.M15
     empty = TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, 0.0, 0.0, 0.0, "")
     if trade_direction not in (Direction.BUY, Direction.SELL) or df_m15 is None or df_m15.empty:
         return empty
+    if as_of_index is not None:
+        if isinstance(as_of_index, bool) or not isinstance(as_of_index, int) or as_of_index < 0 or as_of_index >= len(df_m15):
+            return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, 0.0, details="Invalid causal boundary")
+        df_m15 = df_m15.iloc[:as_of_index + 1].copy()
     price, atr = _last_float(df_m15, "close"), _last_float(df_m15, "atr")
     if price is None or atr is None or atr <= 0:
         return empty
     structure = determine_structure(df_m15, frame, atr=atr, threshold_atr=settings.bos_break_threshold_atr, confirmation_bars=settings.swing_window.get("M15", 10))
     bos_confirmed = _matching_event(structure, trade_direction)
-    if settings.m15_bos_required and not bos_confirmed:
-        return TradeSignal(SignalStatus.WAIT, SetupType.NONE, frame, trade_direction, price, details="M15 structure confirmation pending", structure=structure)
     ob = find_order_block(df_m15, trade_direction, price, structure.last_swing_high, structure.last_swing_low, settings.ob_min_body_atr)
     fvg = nearest_fvg(find_fvgs(df_m15, lookback=min(40, settings.fvg_max_age_bars)), price, trade_direction)
     sweep = detect_liquidity_sweep(df_m15, structure)
@@ -130,11 +134,22 @@ def analyze_m15_entry_signal(df_m15: pd.DataFrame, trade_direction: Direction, s
     return TradeSignal(SignalStatus.VALID, setup, frame, trade_direction, price, sl, min(0.99, confidence), "M15 causal entry: structure + liquidity + OB/FVG; downstream risk gate required", candle_confirmation=candle_confirmed, bos_confirmed=bos_confirmed, sweep_confirmed=sweep_confirmed, fvg_failure=fvg_failure, order_block=ob, fvg=fvg, structure=structure)
 
 
-def analyze_execution_frame(df: pd.DataFrame, trade_direction: Direction, frame: Timeframe, settings: Settings) -> TradeSignal:
+def analyze_execution_frame(
+    df: pd.DataFrame,
+    trade_direction: Direction,
+    frame: Timeframe,
+    settings: Settings,
+    *,
+    as_of_index: int | None = None,
+) -> TradeSignal:
     if frame not in (Timeframe.M15, Timeframe.M5, Timeframe.M3):
         return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, 0.0, details="Unsupported execution frame")
     if df is None or df.empty or trade_direction not in (Direction.BUY, Direction.SELL):
         return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, 0.0, details="Invalid execution data")
+    if as_of_index is not None:
+        if isinstance(as_of_index, bool) or not isinstance(as_of_index, int) or as_of_index < 0 or as_of_index >= len(df):
+            return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, 0.0, details="Invalid causal boundary")
+        df = df.iloc[:as_of_index + 1].copy()
     price, atr = _last_float(df, "close"), _last_float(df, "atr")
     if price is None or atr is None or atr <= 0:
         return TradeSignal(SignalStatus.NO_SIGNAL, SetupType.NONE, frame, trade_direction, 0.0, details="Invalid execution price/ATR")
