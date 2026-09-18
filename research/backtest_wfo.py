@@ -93,6 +93,21 @@ def _validate_context_result(
         raise ValueError("OOS timestamps must be mutually comparable") from exc
 
 
+def _validate_timestamped_oos_result(
+    result: BacktestResult,
+    oos_data: Sequence[Any],
+) -> None:
+    """Validate OOS trade containment when the research data carries timestamps.
+
+    Generic sequence inputs remain supported for non-market unit tests, but
+    timestamped research data gets an explicit postcondition so an evaluator
+    cannot return trades outside the exact slice it was given.
+    """
+    if not oos_data or not all(hasattr(item, "timestamp") for item in oos_data):
+        return
+    _validate_context_result(result, oos_data, 0, len(oos_data))
+
+
 def run_backtest_wfo(
     data: Sequence[Any],
     parameter_sets: Sequence[Mapping[str, Any]],
@@ -152,6 +167,8 @@ def run_backtest_wfo(
             raise ValueError("OOS evaluator must return a BacktestResult")
         if context_size:
             _validate_context_result(oos_result, oos_slice, oos_start_index, oos_end_index)
+        else:
+            _validate_timestamped_oos_result(oos_result, oos_slice)
         oos_metric = calculate_research_metrics(oos_result)
         test_score = _score_metric(oos_metric, objective)
 
