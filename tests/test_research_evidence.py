@@ -63,3 +63,20 @@ def test_non_finite_metric_is_rejected():
         assert "finite" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_provenance_fingerprint_changes_when_nested_data_changes():
+    first = ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"expectancy": 1.2},
+        data={"bars": [{"close": 1.0}]},
+        config={"risk": 0.01},
+        code_revision="abc123",
+    )
+    second = ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"expectancy": 1.2},
+        data={"bars": [{"close": 1.1}]},
+        config={"risk": 0.01},
+        code_revision="abc123",
+    )
+    assert first.provenance.data_fingerprint != second.provenance.data_fingerprint
+    assert first.evidence_hash != second.evidence_hash
