@@ -1,4 +1,6 @@
+import json
 import pytest
+from hashlib import sha256
 from datetime import datetime, timedelta
 
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
@@ -46,6 +48,10 @@ def _backtest_result(rows):
 
 
 def _run(**overrides):
+    def fingerprint(rows):
+        payload = json.dumps(list(rows), separators=(",", ":"), sort_keys=True).encode()
+        return sha256(payload).hexdigest()
+
     args = dict(
         data=list(range(1, 9)),
         parameter_sets=({"x": 1},),
@@ -53,6 +59,7 @@ def _run(**overrides):
         data_manifest={"dataset": "fixture", "bars": 8},
         config_manifest={"strategy": "breakout_retest", "version": 1},
         code_revision="test-revision",
+        data_fingerprint_fn=fingerprint,
         dataset_id="fixture",
         version="1",
         train_size=3,
@@ -93,6 +100,13 @@ def test_validation_harness_is_reproducible_with_same_inputs():
 def test_validation_harness_binds_manifest_changes_to_provenance():
     first = _run()
     second = _run(data_manifest={"dataset": "fixture", "bars": 9})
+    with pytest.raises(ValueError, match="provenance"):
+        assert_reproducible(first, second)
+
+
+def test_validation_harness_binds_actual_data_when_manifest_is_unchanged():
+    first = _run()
+    second = _run(data=list(range(1, 9)) + [99])
     with pytest.raises(ValueError, match="provenance"):
         assert_reproducible(first, second)
 
