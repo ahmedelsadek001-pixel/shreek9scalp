@@ -8,7 +8,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
-from research.evidence_report import OOSEvidenceReport
+from research.evidence_report import OOSEvidenceReport, build_oos_evidence_report
+from research.robustness import RobustnessEvidence
+from research.backtest_wfo import BacktestWFOResult
 
 
 @dataclass(frozen=True)
@@ -78,3 +80,27 @@ def evaluate_oos_evidence(
     if report.worst_max_drawdown > policy.max_worst_drawdown:
         failures.append("worst OOS Monte Carlo drawdown above maximum")
     return EvidenceGateResult(not failures, tuple(failures))
+
+
+@dataclass(frozen=True)
+class ResearchReleaseGateResult:
+    """End-to-end research gate output; never a live execution authorization."""
+
+    passed: bool
+    report: OOSEvidenceReport
+    failures: tuple[str, ...]
+
+
+def evaluate_research_release(
+    wfo: BacktestWFOResult,
+    robustness: RobustnessEvidence,
+    policy: EvidenceGatePolicy = EvidenceGatePolicy(),
+) -> ResearchReleaseGateResult:
+    """Build and gate one immutable evidence chain from WFO through robustness."""
+    if not isinstance(wfo, BacktestWFOResult):
+        raise ValueError("wfo must be a BacktestWFOResult")
+    if not isinstance(robustness, RobustnessEvidence):
+        raise ValueError("robustness must be RobustnessEvidence")
+    report = build_oos_evidence_report(wfo, robustness)
+    result = evaluate_oos_evidence(report, policy)
+    return ResearchReleaseGateResult(result.passed, report, result.failures)
