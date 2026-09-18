@@ -118,6 +118,34 @@ def test_validation_harness_binds_actual_data_when_manifest_is_unchanged():
         assert_reproducible(first, second)
 
 
+def test_validation_harness_rejects_tampered_release_metrics():
+    result = _run()
+    tampered_release = type(result.release)(
+        result.release.passed,
+        type(result.release.report)(
+            result.release.report.oos_trade_count,
+            result.release.report.oos_net_pnl + 1.0,
+            result.release.report.oos_expectancy,
+            result.release.report.oos_stability_pct,
+            result.release.report.positive_oos_windows,
+            result.release.report.oos_window_count,
+            result.release.report.ruin_rate_pct,
+            result.release.report.median_ending_equity,
+            result.release.report.worst_ending_equity,
+            result.release.report.median_max_drawdown,
+            result.release.report.worst_max_drawdown,
+            result.release.report.simulations,
+        ),
+        result.release.failures,
+    )
+    tampered = ResearchValidationResult(
+        result.provenance, result.wfo, result.robustness,
+        tampered_release, result.evidence,
+    )
+    with pytest.raises(ValueError, match="net P&L"):
+        tampered.validate()
+
+
 def test_validation_harness_rejects_tampered_evidence():
     result = _run()
     tampered = ResearchValidationResult(
