@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from core.research_provenance import ResearchProvenance, build_provenance, validate_provenance
 from research.backtest_wfo import (
@@ -157,6 +157,7 @@ def run_research_validation(
     data_manifest: Mapping[str, object],
     config_manifest: Mapping[str, object],
     code_revision: str,
+    data_fingerprint_fn: Callable[[Sequence[Any]], str] | None = None,
     dataset_id: str,
     version: str,
     train_size: int,
@@ -175,8 +176,16 @@ def run_research_validation(
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
 ) -> ResearchValidationResult:
     """Run one complete, provenance-bound, fail-closed research validation."""
+    if data_fingerprint_fn is not None and not callable(data_fingerprint_fn):
+        raise ValueError("data_fingerprint_fn must be callable")
+    effective_data_manifest = dict(data_manifest)
+    if data_fingerprint_fn is not None:
+        actual_fingerprint = data_fingerprint_fn(data)
+        if not isinstance(actual_fingerprint, str) or not actual_fingerprint.strip():
+            raise ValueError("data_fingerprint_fn must return a non-empty string")
+        effective_data_manifest["sequence_fingerprint"] = actual_fingerprint
     provenance = build_provenance(
-        data=data_manifest,
+        data=effective_data_manifest,
         config=config_manifest,
         code_revision=code_revision,
     )
@@ -201,7 +210,7 @@ def run_research_validation(
         provenance=provenance,
         dataset_id=dataset_id,
         version=version,
-        data_manifest=data_manifest,
+        data_manifest=effective_data_manifest,
         config_manifest=config_manifest,
     )
 
