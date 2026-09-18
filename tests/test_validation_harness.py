@@ -205,3 +205,8 @@ def test_validation_harness_requires_context_evaluator_identity():
 
     with pytest.raises(ValueError, match="context_evaluator_revision"):
         _run(context_size=1, context_evaluator=context_evaluator)
+
+
+def test_validation_harness_rejects_context_size_without_context_evaluator():
+    with pytest.raises(ValueError, match="context_evaluator"):
+        _run(context_size=1)
