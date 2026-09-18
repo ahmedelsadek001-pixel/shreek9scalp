@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 import pytest
 from core.backtest_engine import BacktestBar, BacktestOrder, CostModel, IntrabarPolicy, run_backtest
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
@@ -193,7 +193,7 @@ def test_backtest_rejects_non_datetime_bar_timestamp():
 def test_backtest_rejects_mixed_bar_timestamp_timezone_awareness():
     series = [
         BacktestBar(datetime(2026, 1, 1), 100, 101, 99, 100, 0),
-        BacktestBar(datetime(2026, 1, 1, 0, 1, tzinfo=__import__("datetime").timezone.utc), 100, 101, 99, 100, 0),
+        BacktestBar(datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc), 100, 101, 99, 100, 0),
     ]
     with pytest.raises(ValueError, match="timezone awareness"):
         run_backtest(series, [])
