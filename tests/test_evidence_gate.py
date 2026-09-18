@@ -1,6 +1,10 @@
 import pytest
 
-from research.evidence_gate import EvidenceGatePolicy, evaluate_oos_evidence
+from research.evidence_gate import (
+    EvidenceGatePolicy,
+    evaluate_oos_evidence,
+    evaluate_research_release,
+)
 from research.evidence_report import OOSEvidenceReport
 
 
@@ -79,3 +83,61 @@ def test_policy_allows_unbounded_drawdown_explicitly():
 def test_policy_rejects_negative_drawdown_limit():
     with pytest.raises(ValueError, match="drawdown"):
         EvidenceGatePolicy(max_worst_drawdown=-1.0).validate()
+
+
+def test_end_to_end_research_release_gate_binds_wfo_and_robustness():
+    from datetime import datetime, timedelta
+    from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
+    from core.enums import Direction
+    from research.backtest_wfo import run_backtest_wfo
+    from research.robustness import run_oos_monte_carlo
+
+    def result(rows):
+        now = datetime(2026, 1, 1)
+        pnl = float(sum(rows))
+        trade = BacktestTrade(now, now + timedelta(minutes=1), now + timedelta(minutes=2),
+                              Direction.BUY, 100.0, 100.0 + pnl, 1.0, pnl, 0.0, pnl,
+                              "TP3" if pnl > 0 else "SL")
+        stats = BacktestStats(10000.0, 10000.0 + pnl, pnl, pnl / 100.0,
+                              1, int(pnl > 0), int(pnl < 0), 100.0 if pnl > 0 else 0.0,
+                              float("inf") if pnl > 0 else 0.0, pnl, max(-pnl, 0.0),
+                              max(-pnl, 0.0) / 100.0, 0.0)
+        return BacktestResult((trade,), (10000.0, 10000.0 + pnl), stats)
+
+    data = [1, 2, 3, 4, 5, 6, 7, 8]
+    wfo = run_backtest_wfo(data, ({"x": 1},), lambda rows, params: result(rows),
+                           train_size=3, test_size=2, purge_size=1, step=2)
+    robustness = run_oos_monte_carlo(wfo, starting_equity=10000.0, simulations=20, seed=3)
+    gate = evaluate_research_release(
+        wfo, robustness,
+        EvidenceGatePolicy(min_oos_trades=1, min_expectancy=0.0, min_oos_stability_pct=0.0,
+                           max_ruin_rate_pct=100.0, max_worst_drawdown=10000.0),
+    )
+    assert gate.passed
+    assert gate.failures == ()
+    assert gate.report.oos_trade_count == robustness.oos_trade_count
+
+
+def test_end_to_end_research_release_gate_rejects_mismatched_robustness():
+    from datetime import datetime, timedelta
+    from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
+    from core.enums import Direction
+    from research.backtest_wfo import run_backtest_wfo
+    from research.robustness import run_oos_monte_carlo
+
+    def result(rows):
+        now = datetime(2026, 1, 1)
+        pnl = float(sum(rows))
+        trade = BacktestTrade(now, now + timedelta(minutes=1), now + timedelta(minutes=2),
+                              Direction.BUY, 100.0, 100.0 + pnl, 1.0, pnl, 0.0, pnl, "TP3")
+        stats = BacktestStats(10000.0, 10000.0 + pnl, pnl, 0.0, 1, 1, 0, 100.0,
+                              float("inf"), pnl, 0.0, 0.0, 0.0)
+        return BacktestResult((trade,), (10000.0, 10000.0 + pnl), stats)
+
+    wfo = run_backtest_wfo([1,2,3,4,5,6,7,8], ({"x":1},), lambda rows, params: result(rows),
+                           train_size=3, test_size=2, purge_size=1, step=2)
+    robustness = run_oos_monte_carlo(wfo, starting_equity=10000.0, simulations=10, seed=4)
+    tampered = type(robustness)(tuple(x + 1.0 for x in robustness.oos_trade_pnl),
+                                robustness.starting_equity, robustness.summary)
+    with pytest.raises(ValueError, match="does not match WFO"):
+        evaluate_research_release(wfo, tampered)
