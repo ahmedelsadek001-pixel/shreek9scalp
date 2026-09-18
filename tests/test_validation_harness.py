@@ -60,6 +60,8 @@ def _run(**overrides):
         config_manifest={"strategy": "breakout_retest", "version": 1},
         code_revision="test-revision",
         data_fingerprint_fn=fingerprint,
+        evaluator_revision="fixture-evaluator-v1",
+        objective_revision="fixture-objective-v1",
         dataset_id="fixture",
         version="1",
         train_size=3,
@@ -113,7 +115,7 @@ def test_validation_harness_binds_manifest_changes_to_provenance():
 
 def test_validation_harness_binds_actual_data_when_manifest_is_unchanged():
     first = _run()
-    second = _run(data=list(range(1, 9)) + [99])
+    second = _run(data=[1, 2, 3, 4, 5, 6, 7, 99])
     with pytest.raises(ValueError, match="provenance"):
         assert_reproducible(first, second)
 
@@ -164,3 +166,42 @@ def test_validation_harness_rejects_tampered_evidence():
     )
     with pytest.raises(ValueError, match="integrity"):
         tampered.validate()
+
+
+@pytest.mark.parametrize(
+    "override, label",
+    [
+        ({"evaluator_revision": "fixture-evaluator-v2"}, "provenance"),
+        ({"objective_revision": "fixture-objective-v2"}, "provenance"),
+        ({"code_revision": "test-revision-v2"}, "provenance"),
+        ({"parameter_sets": ({"x": 2},)}, "provenance"),
+        ({"train_size": 2}, "provenance"),
+        ({"test_size": 1}, "provenance"),
+        ({"purge_size": 0}, "provenance"),
+        ({"step": 1}, "provenance"),
+        ({"policy": EvidenceGatePolicy(min_oos_trades=1, min_expectancy=0.0, min_oos_stability_pct=0.0, max_ruin_rate_pct=100.0, max_worst_drawdown=10000.0, )}, "provenance"),
+    ],
+)
+def test_validation_harness_identity_changes_when_validation_contract_changes(override, label):
+    first = _run()
+    second = _run(**override)
+    with pytest.raises(ValueError, match=label):
+        assert_reproducible(first, second)
+
+
+def test_validation_harness_rejects_invalid_evaluator_revision():
+    with pytest.raises(ValueError, match="evaluator_revision"):
+        _run(evaluator_revision="")
+
+
+def test_validation_harness_rejects_objective_revision_without_identity():
+    with pytest.raises(ValueError, match="objective_revision"):
+        _run(objective_revision="")
+
+
+def test_validation_harness_requires_context_evaluator_identity():
+    def context_evaluator(rows, params, start_index):
+        return _backtest_result(rows)
+
+    with pytest.raises(ValueError, match="context_evaluator_revision"):
+        _run(context_size=1, context_evaluator=context_evaluator)
