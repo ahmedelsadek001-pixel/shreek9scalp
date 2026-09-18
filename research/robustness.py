@@ -21,6 +21,35 @@ class RobustnessEvidence:
     def oos_trade_count(self) -> int:
         return len(self.oos_trade_pnl)
 
+    def validate(self) -> None:
+        """Fail closed on malformed or internally inconsistent robustness evidence."""
+        if not self.oos_trade_pnl:
+            raise ValueError("robustness evidence requires OOS trades")
+        if any(not isfinite(float(value)) for value in self.oos_trade_pnl):
+            raise ValueError("robustness OOS trade P&L must be finite")
+        if not isfinite(float(self.starting_equity)) or self.starting_equity <= 0:
+            raise ValueError("robustness starting equity must be positive and finite")
+        summary = self.summary
+        if type(summary.simulations) is not int or summary.simulations <= 0:
+            raise ValueError("robustness simulations must be a positive integer")
+        numeric = (
+            summary.ruin_rate_pct,
+            summary.median_ending_equity,
+            summary.worst_ending_equity,
+            summary.median_max_drawdown,
+            summary.worst_max_drawdown,
+            summary.p05_ending_equity,
+            summary.p95_max_drawdown,
+        )
+        if any(not isfinite(float(value)) for value in numeric):
+            raise ValueError("robustness summary metrics must be finite")
+        if not 0.0 <= summary.ruin_rate_pct <= 100.0:
+            raise ValueError("robustness ruin rate must be between 0 and 100")
+        if summary.worst_ending_equity > summary.median_ending_equity:
+            raise ValueError("worst ending equity cannot exceed median ending equity")
+        if summary.worst_max_drawdown < summary.median_max_drawdown:
+            raise ValueError("worst drawdown cannot be below median drawdown")
+
 
 def _extract_oos_trade_pnl(result: BacktestWFOResult) -> tuple[float, ...]:
     pnl: list[float] = []
@@ -61,4 +90,6 @@ def run_oos_monte_carlo(
         slippage_multiplier=slippage_multiplier,
         spread_multiplier=spread_multiplier,
     )
-    return RobustnessEvidence(pnl, float(starting_equity), summary)
+    evidence = RobustnessEvidence(pnl, float(starting_equity), summary)
+    evidence.validate()
+    return evidence
