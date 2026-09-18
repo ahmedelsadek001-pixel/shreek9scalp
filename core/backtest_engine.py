@@ -106,6 +106,18 @@ class CostModel:
         )
 
 
+def _validate_timestamp(value: object, name: str) -> None:
+    if not isinstance(value, datetime):
+        raise ValueError(f"{name} must be a datetime")
+
+
+def _validate_timestamp_compatibility(series: Sequence[BacktestBar], timestamp: datetime, name: str) -> None:
+    _validate_timestamp(timestamp, name)
+    reference = series[0].timestamp
+    if (reference.tzinfo is None) != (timestamp.tzinfo is None):
+        raise ValueError(f"{name} timezone awareness must match bar timestamps")
+
+
 def _validate_levels(direction: Direction, levels: ExecutionLevels) -> None:
     values = (levels.entry, levels.sl, levels.tp1, levels.tp2, levels.tp3, levels.risk)
     if not all(isfinite(float(x)) and float(x) > 0 for x in values):
@@ -288,6 +300,11 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
     series = list(bars)
     if not series or any(not b.valid() for b in series):
         raise ValueError("invalid or empty bar series")
+    for bar in series:
+        _validate_timestamp(bar.timestamp, "bar timestamp")
+    awareness = {bar.timestamp.tzinfo is None for bar in series}
+    if len(awareness) != 1:
+        raise ValueError("bar timestamp timezone awareness must be consistent")
     if any(series[i].timestamp >= series[i + 1].timestamp for i in range(len(series) - 1)):
         raise ValueError("bars must be strictly chronological")
     if end_index is not None:
@@ -297,6 +314,7 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
     by_time = {b.timestamp: i for i, b in enumerate(series)}
     pending = sorted(orders, key=lambda o: o.signal_time)
     for order in pending:
+        _validate_timestamp_compatibility(series, order.signal_time, "order signal_time")
         if order.signal_time not in by_time:
             raise ValueError("every order must reference an existing signal bar")
         if order.direction not in (Direction.BUY, Direction.SELL):
