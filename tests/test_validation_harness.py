@@ -178,8 +178,8 @@ def test_validation_harness_rejects_tampered_evidence():
         ({"train_size": 2}, "provenance"),
         ({"test_size": 1}, "provenance"),
         ({"purge_size": 0}, "provenance"),
-        ({"step": 1}, "provenance"),
-        ({"policy": EvidenceGatePolicy(min_oos_trades=1, min_expectancy=0.0, min_oos_stability_pct=0.0, max_ruin_rate_pct=100.0, max_worst_drawdown=10000.0, )}, "provenance"),
+        ({"step": 3}, "provenance"),
+        ({"policy": EvidenceGatePolicy(min_oos_trades=2, min_expectancy=0.0, min_oos_stability_pct=0.0, max_ruin_rate_pct=100.0, max_worst_drawdown=10000.0)}, "provenance"),
     ],
 )
 def test_validation_harness_identity_changes_when_validation_contract_changes(override, label):
