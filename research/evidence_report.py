@@ -66,6 +66,9 @@ def build_oos_evidence_report(
         raise ValueError("wfo must be a BacktestWFOResult")
     if not isinstance(robustness, RobustnessEvidence):
         raise ValueError("robustness must be RobustnessEvidence")
+    robustness.validate()
+    if robustness.oos_trade_pnl != wfo.oos_trade_pnl:
+        raise ValueError("robustness OOS trade P&L does not match WFO OOS evidence")
     report = OOSEvidenceReport(
         oos_trade_count=robustness.oos_trade_count,
         oos_net_pnl=wfo.oos_net_pnl,
