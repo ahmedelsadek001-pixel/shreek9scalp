@@ -176,17 +176,42 @@ def run_research_validation(
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
 ) -> ResearchValidationResult:
     """Run one complete, provenance-bound, fail-closed research validation."""
-    if data_fingerprint_fn is not None and not callable(data_fingerprint_fn):
-        raise ValueError("data_fingerprint_fn must be callable")
+    if not callable(data_fingerprint_fn):
+        raise ValueError("data_fingerprint_fn is required and must be callable")
+    actual_fingerprint = data_fingerprint_fn(data)
+    if not isinstance(actual_fingerprint, str) or not actual_fingerprint.strip():
+        raise ValueError("data_fingerprint_fn must return a non-empty string")
     effective_data_manifest = dict(data_manifest)
-    if data_fingerprint_fn is not None:
-        actual_fingerprint = data_fingerprint_fn(data)
-        if not isinstance(actual_fingerprint, str) or not actual_fingerprint.strip():
-            raise ValueError("data_fingerprint_fn must return a non-empty string")
-        effective_data_manifest["sequence_fingerprint"] = actual_fingerprint
+    effective_data_manifest["sequence_fingerprint"] = actual_fingerprint
+
+    # Bind every deterministic execution control to provenance. A caller cannot
+    # silently reuse the same dataset/config identity while changing WFO or MC
+    # controls and still obtain the same research identity.
+    effective_config_manifest = dict(config_manifest)
+    effective_config_manifest["validation_controls"] = {
+        "train_size": train_size,
+        "test_size": test_size,
+        "purge_size": purge_size,
+        "step": step,
+        "maximize": maximize,
+        "context_size": context_size,
+        "starting_equity": starting_equity,
+        "simulations": simulations,
+        "seed": seed,
+        "slippage_multiplier": slippage_multiplier,
+        "spread_multiplier": spread_multiplier,
+        "parameter_sets": [dict(params) for params in parameter_sets],
+        "policy": {
+            "min_oos_trades": policy.min_oos_trades,
+            "min_expectancy": policy.min_expectancy,
+            "min_oos_stability_pct": policy.min_oos_stability_pct,
+            "max_ruin_rate_pct": policy.max_ruin_rate_pct,
+            "max_worst_drawdown": policy.max_worst_drawdown,
+        },
+    }
     provenance = build_provenance(
         data=effective_data_manifest,
-        config=config_manifest,
+        config=effective_config_manifest,
         code_revision=code_revision,
     )
     return _run_once(
@@ -211,7 +236,7 @@ def run_research_validation(
         dataset_id=dataset_id,
         version=version,
         data_manifest=effective_data_manifest,
-        config_manifest=config_manifest,
+        config_manifest=effective_config_manifest,
     )
 
 
