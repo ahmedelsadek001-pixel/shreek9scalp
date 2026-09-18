@@ -105,6 +105,8 @@ def _run_once(
     provenance: ResearchProvenance,
     dataset_id: str,
     version: str,
+    data_manifest: Mapping[str, object],
+    config_manifest: Mapping[str, object],
 ) -> ResearchValidationResult:
     wfo = run_backtest_wfo(
         data,
@@ -133,8 +135,8 @@ def _run_once(
         version,
         samples=len(data),
         metrics=_metric_payload(wfo, robustness),
-        data=provenance_data := {"fingerprint": provenance.data_fingerprint},
-        config=provenance_config := {"fingerprint": provenance.config_fingerprint},
+        data=data_manifest,
+        config=config_manifest,
         code_revision=provenance.code_revision,
     )
     # The evidence constructor fingerprints the supplied manifests. Requiring
@@ -199,6 +201,8 @@ def run_research_validation(
         provenance=provenance,
         dataset_id=dataset_id,
         version=version,
+        data_manifest=data_manifest,
+        config_manifest=config_manifest,
     )
 
 
