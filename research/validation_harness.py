@@ -75,7 +75,7 @@ def _metric_payload(
 ) -> dict[str, float]:
     """Build deterministic evidence metrics from the actual validation chain."""
     values = {
-        "oos_trade_count": float(wfo.oos_trade_count if hasattr(wfo, "oos_trade_count") else robustness.oos_trade_count),
+        "oos_trade_count": float(len(wfo.oos_trade_pnl)),
         "oos_net_pnl": float(wfo.oos_net_pnl),
         "oos_expectancy": float(wfo.oos_expectancy),
         "oos_stability_pct": float(wfo.oos_stability_pct),
@@ -168,6 +168,9 @@ def run_research_validation(
     config_manifest: Mapping[str, object],
     code_revision: str,
     data_fingerprint_fn: Callable[[Sequence[Any]], str] | None = None,
+    evaluator_revision: str = "evaluator-v1",
+    objective_revision: str = "objective-expectancy-v1",
+    context_evaluator_revision: str | None = None,
     dataset_id: str,
     version: str,
     train_size: int,
@@ -188,6 +191,13 @@ def run_research_validation(
     """Run one complete, provenance-bound, fail-closed research validation."""
     if not callable(data_fingerprint_fn):
         raise ValueError("data_fingerprint_fn is required and must be callable")
+    for value, name in ((evaluator_revision, "evaluator_revision"), (objective_revision, "objective_revision")):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{name} must be a non-empty string")
+    if context_evaluator is not None and (not isinstance(context_evaluator_revision, str) or not context_evaluator_revision.strip()):
+        raise ValueError("context_evaluator_revision is required when context_evaluator is supplied")
+    if context_evaluator is None and context_evaluator_revision is not None:
+        raise ValueError("context_evaluator_revision requires context_evaluator")
     actual_fingerprint = data_fingerprint_fn(data)
     if not isinstance(actual_fingerprint, str) or not actual_fingerprint.strip():
         raise ValueError("data_fingerprint_fn must return a non-empty string")
@@ -211,6 +221,9 @@ def run_research_validation(
         "slippage_multiplier": slippage_multiplier,
         "spread_multiplier": spread_multiplier,
         "parameter_sets": [dict(params) for params in parameter_sets],
+        "evaluator_revision": evaluator_revision,
+        "objective_revision": objective_revision,
+        "context_evaluator_revision": context_evaluator_revision,
         "policy": {
             "min_oos_trades": policy.min_oos_trades,
             "min_expectancy": policy.min_expectancy,
