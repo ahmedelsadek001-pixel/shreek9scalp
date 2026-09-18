@@ -93,3 +93,21 @@ def test_wfo_context_rejects_missing_timestamps_fail_closed():
 def test_wfo_requires_context_evaluator_when_warmup_is_requested():
     with pytest.raises(ValueError, match="context_evaluator is required"):
         run_backtest_wfo(list(range(8)), ({"x": 1},), lambda rows, selected: _result(1.0), train_size=3, test_size=2, purge_size=1, context_size=1)
+
+
+def test_wfo_context_rejects_malformed_result_before_boundary_access():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(8)]
+    def evaluator(rows, selected): return _result(1.0)
+    def malformed(rows, selected, index): return object()
+    with pytest.raises(ValueError, match="OOS evaluator must return a BacktestResult"):
+        run_backtest_wfo(
+            data,
+            ({"x": 1},),
+            evaluator,
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            context_size=1,
+            context_evaluator=malformed,
+        )
