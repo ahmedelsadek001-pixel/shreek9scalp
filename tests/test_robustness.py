@@ -210,3 +210,23 @@ def test_monte_carlo_is_reproducible_for_same_oos_evidence():
     first = run_oos_monte_carlo(result, starting_equity=10000.0, simulations=50, seed=11)
     second = run_oos_monte_carlo(result, starting_equity=10000.0, simulations=50, seed=11)
     assert first.summary == second.summary
+
+
+def test_robustness_evidence_rejects_inconsistent_tail_summary():
+    evidence = run_oos_monte_carlo(_wfo_result(), starting_equity=10000.0, simulations=20, seed=7)
+    tampered = type(evidence)(
+        evidence.oos_trade_pnl,
+        evidence.starting_equity,
+        type(evidence.summary)(
+            evidence.summary.simulations,
+            evidence.summary.ruin_rate_pct,
+            evidence.summary.worst_ending_equity + 1.0,
+            evidence.summary.worst_ending_equity,
+            evidence.summary.median_max_drawdown,
+            evidence.summary.worst_max_drawdown,
+            evidence.summary.p05_ending_equity,
+            evidence.summary.p95_max_drawdown,
+        ),
+    )
+    with pytest.raises(ValueError, match="worst ending equity"):
+        tampered.validate()
