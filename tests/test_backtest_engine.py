@@ -179,3 +179,28 @@ def test_max_holding_exits_at_bar_open_without_lookahead():
     assert trade.exit_reason == "TIME"
     assert trade.exit_time == series[2].timestamp
     assert trade.exit == 105.0
+
+
+def test_backtest_rejects_non_datetime_bar_timestamp():
+    series = [
+        BacktestBar("2026-01-01", 100, 101, 99, 100, 0),
+        BacktestBar(datetime(2026, 1, 1, 0, 1), 100, 101, 99, 100, 0),
+    ]
+    with pytest.raises(ValueError, match="bar timestamp"):
+        run_backtest(series, [])
+
+
+def test_backtest_rejects_mixed_bar_timestamp_timezone_awareness():
+    series = [
+        BacktestBar(datetime(2026, 1, 1), 100, 101, 99, 100, 0),
+        BacktestBar(datetime(2026, 1, 1, 0, 1, tzinfo=__import__("datetime").timezone.utc), 100, 101, 99, 100, 0),
+    ]
+    with pytest.raises(ValueError, match="timezone awareness"):
+        run_backtest(series, [])
+
+
+def test_backtest_rejects_order_timestamp_timezone_mismatch():
+    series = bars([(100, 101, 99, 100, 0), (100, 101, 99, 100, 0)])
+    aware_signal = datetime(2026, 1, 1, tzinfo=__import__("datetime").timezone.utc)
+    with pytest.raises(ValueError, match="timezone awareness"):
+        run_backtest(series, [BacktestOrder(aware_signal, Direction.BUY, levels())])
