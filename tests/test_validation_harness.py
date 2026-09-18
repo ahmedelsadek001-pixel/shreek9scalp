@@ -97,6 +97,13 @@ def test_validation_harness_is_reproducible_with_same_inputs():
     assert first.evidence.evidence_hash == second.evidence.evidence_hash
 
 
+def test_validation_harness_binds_runtime_controls_to_provenance():
+    first = _run()
+    second = _run(seed=8)
+    with pytest.raises(ValueError, match="provenance"):
+        assert_reproducible(first, second)
+
+
 def test_validation_harness_binds_manifest_changes_to_provenance():
     first = _run()
     second = _run(data_manifest={"dataset": "fixture", "bars": 9})
