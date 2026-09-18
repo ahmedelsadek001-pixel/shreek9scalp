@@ -111,3 +111,34 @@ def test_wfo_context_rejects_malformed_result_before_boundary_access():
             context_size=1,
             context_evaluator=malformed,
         )
+
+
+def test_wfo_oos_result_is_invariant_to_future_data_mutation():
+    data = list(range(12))
+
+    def evaluator(rows, selected):
+        return _result(sum(rows) * selected["mult"])
+
+    baseline = run_backtest_wfo(
+        data,
+        ({"mult": 1.0},),
+        evaluator,
+        train_size=4,
+        test_size=2,
+        purge_size=1,
+        step=2,
+    )
+    mutated = list(data)
+    first_oos_end = baseline.validation.windows[0].test_end
+    mutated[first_oos_end:] = [value + 1000000 for value in mutated[first_oos_end:]]
+    replay = run_backtest_wfo(
+        mutated,
+        ({"mult": 1.0},),
+        evaluator,
+        train_size=4,
+        test_size=2,
+        purge_size=1,
+        step=2,
+    )
+    assert baseline.oos_results[0] == replay.oos_results[0]
+    assert baseline.oos_metrics[0] == replay.oos_metrics[0]
