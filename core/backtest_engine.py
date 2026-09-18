@@ -312,7 +312,12 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
             raise ValueError("end_index must be an integer within bars")
         series = series[: end_index + 1]
     by_time = {b.timestamp: i for i, b in enumerate(series)}
-    pending = sorted(orders, key=lambda o: o.signal_time)
+    pending = list(orders)
+    for previous, current in zip(pending, pending[1:]):
+        _validate_timestamp_compatibility(series, previous.signal_time, "order signal_time")
+        _validate_timestamp_compatibility(series, current.signal_time, "order signal_time")
+        if previous.signal_time > current.signal_time:
+            raise ValueError("orders must be strictly chronological")
     for order in pending:
         _validate_timestamp_compatibility(series, order.signal_time, "order signal_time")
         if order.signal_time not in by_time:
