@@ -204,3 +204,17 @@ def test_backtest_rejects_order_timestamp_timezone_mismatch():
     aware_signal = datetime(2026, 1, 1, tzinfo=__import__("datetime").timezone.utc)
     with pytest.raises(ValueError, match="timezone awareness"):
         run_backtest(series, [BacktestOrder(aware_signal, Direction.BUY, levels())])
+
+
+def test_backtest_rejects_out_of_order_orders_instead_of_repairing():
+    series = bars([
+        (100, 101, 99, 100, 0),
+        (100, 101, 99, 100, 0),
+        (100, 101, 99, 100, 0),
+    ])
+    orders = [
+        BacktestOrder(series[1].timestamp, Direction.BUY, levels()),
+        BacktestOrder(series[0].timestamp, Direction.BUY, levels()),
+    ]
+    with pytest.raises(ValueError, match="orders must be strictly chronological"):
+        run_backtest(series, orders)
