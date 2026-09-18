@@ -189,6 +189,16 @@ def run_research_validation(
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
 ) -> ResearchValidationResult:
     """Run one complete, provenance-bound, fail-closed research validation."""
+    if not isinstance(data_manifest, Mapping) or not isinstance(config_manifest, Mapping):
+        raise ValueError("data_manifest and config_manifest must be mappings")
+    if not isinstance(parameter_sets, Sequence) or isinstance(parameter_sets, (str, bytes)) or not parameter_sets:
+        raise ValueError("parameter_sets must be a non-empty sequence")
+    if any(not isinstance(params, Mapping) for params in parameter_sets):
+        raise ValueError("parameter_sets must contain mappings")
+    if not callable(evaluator):
+        raise ValueError("evaluator must be callable")
+    if not callable(objective):
+        raise ValueError("objective must be callable")
     if not callable(data_fingerprint_fn):
         raise ValueError("data_fingerprint_fn is required and must be callable")
     for value, name in ((evaluator_revision, "evaluator_revision"), (objective_revision, "objective_revision")):
