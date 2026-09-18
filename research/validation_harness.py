@@ -194,6 +194,8 @@ def run_research_validation(
     for value, name in ((evaluator_revision, "evaluator_revision"), (objective_revision, "objective_revision")):
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{name} must be a non-empty string")
+    if context_size > 0 and context_evaluator is None:
+        raise ValueError("context_evaluator is required when context_size is positive")
     if context_evaluator is not None and (not isinstance(context_evaluator_revision, str) or not context_evaluator_revision.strip()):
         raise ValueError("context_evaluator_revision is required when context_evaluator is supplied")
     if context_evaluator is None and context_evaluator_revision is not None:
