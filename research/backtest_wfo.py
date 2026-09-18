@@ -145,12 +145,13 @@ def run_backtest_wfo(
             oos_start_index = window.test_start - context_start
             oos_end_index = window.test_end - context_start
             oos_result = context_evaluator(oos_slice, params, oos_start_index)  # type: ignore[misc]
-            _validate_context_result(oos_result, oos_slice, oos_start_index, oos_end_index)
         else:
             oos_slice = data[window.test_start : window.test_end]
             oos_result = evaluator(oos_slice, params)
         if not isinstance(oos_result, BacktestResult):
             raise ValueError("OOS evaluator must return a BacktestResult")
+        if context_size:
+            _validate_context_result(oos_result, oos_slice, oos_start_index, oos_end_index)
         oos_metric = calculate_research_metrics(oos_result)
         test_score = _score_metric(oos_metric, objective)
 
