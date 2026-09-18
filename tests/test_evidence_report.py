@@ -95,3 +95,14 @@ def test_report_rejects_inconsistent_robustness_type():
     wfo, _ = _evidence()
     with pytest.raises(ValueError, match="RobustnessEvidence"):
         build_oos_evidence_report(wfo, object())
+
+
+def test_report_rejects_robustness_trade_pnl_tampering():
+    wfo, robustness = _evidence()
+    tampered = type(robustness)(
+        tuple(value + 0.01 for value in robustness.oos_trade_pnl),
+        robustness.starting_equity,
+        robustness.summary,
+    )
+    with pytest.raises(ValueError, match="does not match WFO"):
+        build_oos_evidence_report(wfo, tampered)
