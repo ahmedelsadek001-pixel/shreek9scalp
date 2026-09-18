@@ -56,6 +56,16 @@ class ResearchValidationResult:
             raise ValueError("evidence provenance does not match validation provenance")
         if self.release.report.oos_trade_count != self.robustness.oos_trade_count:
             raise ValueError("release report trade count does not match robustness evidence")
+        if self.release.report.oos_net_pnl != self.wfo.oos_net_pnl:
+            raise ValueError("release report net P&L does not match WFO evidence")
+        if self.release.report.oos_expectancy != self.wfo.oos_expectancy:
+            raise ValueError("release report expectancy does not match WFO evidence")
+        if self.release.report.oos_stability_pct != self.wfo.oos_stability_pct:
+            raise ValueError("release report stability does not match WFO evidence")
+        if self.release.report.ruin_rate_pct != self.robustness.summary.ruin_rate_pct:
+            raise ValueError("release report ruin rate does not match robustness evidence")
+        if self.release.report.worst_max_drawdown != self.robustness.summary.worst_max_drawdown:
+            raise ValueError("release report drawdown does not match robustness evidence")
         self.robustness.validate()
 
 
