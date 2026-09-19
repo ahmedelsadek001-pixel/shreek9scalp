@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -69,3 +69,20 @@ def test_invalid_constructor_values_raise_value_error():
     for equity, pct in [(None, 0.05), ("bad", 0.05), (1000, 1.1), (1000, float("nan"))]:
         with pytest.raises(ValueError):
             DailyRiskLedger(equity, pct)
+
+
+@pytest.mark.parametrize("method", ["record", "realized", "loss_used", "loss_remaining"])
+def test_datetime_is_rejected_where_trading_date_is_required(method):
+    ledger = DailyRiskLedger(1000, 0.05)
+    timestamp = datetime(2026, 9, 12, 12, 30)
+    if method == "record":
+        with pytest.raises(TypeError, match="not a datetime"):
+            ledger.record(timestamp, -1)
+    else:
+        with pytest.raises(TypeError, match="not a datetime"):
+            getattr(ledger, method)(timestamp)
+
+
+def test_can_open_fails_closed_for_datetime():
+    ledger = DailyRiskLedger(1000, 0.05)
+    assert not ledger.can_open(datetime(2026, 9, 12, 12, 30), 1)
