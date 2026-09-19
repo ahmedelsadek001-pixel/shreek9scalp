@@ -18,10 +18,16 @@ class RiskStateMachine:
     max_consecutive_losses: int = 3
 
     def __post_init__(self) -> None:
-        if isinstance(self.max_consecutive_losses, bool) or self.max_consecutive_losses <= 0:
-            raise ValueError("max_consecutive_losses must be positive")
-        if self.consecutive_losses < 0:
-            raise ValueError("consecutive_losses must be non-negative")
+        if not isinstance(self.state, RiskState):
+            raise ValueError("state must be a RiskState")
+        if (isinstance(self.max_consecutive_losses, bool)
+                or not isinstance(self.max_consecutive_losses, int)
+                or self.max_consecutive_losses <= 0):
+            raise ValueError("max_consecutive_losses must be a positive integer")
+        if (isinstance(self.consecutive_losses, bool)
+                or not isinstance(self.consecutive_losses, int)
+                or self.consecutive_losses < 0):
+            raise ValueError("consecutive_losses must be a non-negative integer")
 
     def can_open(self) -> bool:
         return self.state is RiskState.ARMED
