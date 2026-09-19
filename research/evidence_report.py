@@ -66,9 +66,12 @@ def build_oos_evidence_report(
         raise ValueError("wfo must be a BacktestWFOResult")
     if not isinstance(robustness, RobustnessEvidence):
         raise ValueError("robustness must be RobustnessEvidence")
-    robustness.validate()
+    # Bind the robustness trade stream to its originating WFO evidence first.
+    # This produces the domain-specific mismatch error even when a tampered
+    # stream also makes its independently reproducible Monte Carlo summary fail.
     if robustness.oos_trade_pnl != wfo.oos_trade_pnl:
         raise ValueError("robustness OOS trade P&L does not match WFO OOS evidence")
+    robustness.validate()
     report = OOSEvidenceReport(
         oos_trade_count=robustness.oos_trade_count,
         oos_net_pnl=wfo.oos_net_pnl,
