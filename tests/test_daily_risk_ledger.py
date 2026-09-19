@@ -35,8 +35,8 @@ def test_invalid_modeled_loss_fails_closed():
 
 @pytest.mark.parametrize(
     "value",
-    [None, "bad", float("nan"), float("inf"), 0, -1, 10**10000],
-    ids=["none", "nonnumeric", "nan", "infinity", "zero", "negative", "huge-int"],
+    [None, "bad", float("nan"), float("inf"), 10**10000],
+    ids=["none", "nonnumeric", "nan", "infinity", "huge-int"],
 )
 def test_invalid_pnl_is_rejected_without_mutating_ledger(value):
     ledger = DailyRiskLedger(1000, 0.05)
@@ -44,6 +44,16 @@ def test_invalid_pnl_is_rejected_without_mutating_ledger(value):
     with pytest.raises(ValueError):
         ledger.record(day, value)
     assert ledger.realized(day) == 0
+
+
+def test_zero_and_negative_pnl_are_valid_and_recorded():
+    ledger = DailyRiskLedger(1000, 0.05)
+    day = date(2026, 9, 12)
+    ledger.record(day, 0)
+    assert ledger.realized(day) == 0
+    ledger.record(day, -1)
+    assert ledger.realized(day) == -1
+    assert ledger.loss_used(day) == 1
 
 
 def test_overflowing_cumulative_pnl_is_rejected_without_mutation():
@@ -56,6 +66,6 @@ def test_overflowing_cumulative_pnl_is_rejected_without_mutation():
 
 
 def test_invalid_constructor_values_raise_value_error():
-    for equity, pct in [(None, 0.05), ("bad", 0.05), (1e308, 1.0), (1000, float("nan"))]:
+    for equity, pct in [(None, 0.05), ("bad", 0.05), (1000, 1.1), (1000, float("nan"))]:
         with pytest.raises(ValueError):
             DailyRiskLedger(equity, pct)
