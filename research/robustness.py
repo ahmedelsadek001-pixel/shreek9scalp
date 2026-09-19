@@ -8,6 +8,16 @@ from core.risk_simulation import RobustnessSummary, monte_carlo
 from research.backtest_wfo import BacktestWFOResult
 
 
+def _is_finite_real(value: object) -> bool:
+    """Accept finite ints/floats, but reject bools and numeric coercions."""
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
+
+
 @dataclass(frozen=True)
 class RobustnessEvidence:
     """Monte Carlo evidence derived only from realized OOS trades."""
@@ -27,19 +37,19 @@ class RobustnessEvidence:
         """Fail closed on malformed or inconsistent reproducible evidence."""
         if not self.oos_trade_pnl:
             raise ValueError("robustness evidence requires OOS trades")
-        if any(not isfinite(float(value)) for value in self.oos_trade_pnl):
-            raise ValueError("robustness OOS trade P&L must be finite")
-        if not isfinite(float(self.starting_equity)) or self.starting_equity <= 0:
+        if any(not _is_finite_real(value) for value in self.oos_trade_pnl):
+            raise ValueError("robustness OOS trade P&L must be finite real numbers")
+        if not _is_finite_real(self.starting_equity) or self.starting_equity <= 0:
             raise ValueError("robustness starting equity must be positive and finite")
         if self.seed is not None and type(self.seed) is not int:
             raise ValueError("robustness seed must be an integer or None")
         if (
-            not isfinite(float(self.slippage_multiplier))
-            or not isfinite(float(self.spread_multiplier))
+            not _is_finite_real(self.slippage_multiplier)
+            or not _is_finite_real(self.spread_multiplier)
             or self.slippage_multiplier < 1
             or self.spread_multiplier < 1
         ):
-            raise ValueError("robustness cost multipliers must be finite and >= 1")
+            raise ValueError("robustness cost multipliers must be finite real numbers >= 1")
         summary = self.summary
         if type(summary.simulations) is not int or summary.simulations <= 0:
             raise ValueError("robustness simulations must be a positive integer")
@@ -52,8 +62,8 @@ class RobustnessEvidence:
             summary.p05_ending_equity,
             summary.p95_max_drawdown,
         )
-        if any(not isfinite(float(value)) for value in numeric):
-            raise ValueError("robustness summary metrics must be finite")
+        if any(not _is_finite_real(value) for value in numeric):
+            raise ValueError("robustness summary metrics must be finite real numbers")
         if not 0.0 <= summary.ruin_rate_pct <= 100.0:
             raise ValueError("robustness ruin rate must be between 0 and 100")
         if summary.worst_ending_equity > summary.median_ending_equity:
@@ -115,6 +125,19 @@ def run_oos_monte_carlo(
     """
     if not isinstance(result, BacktestWFOResult):
         raise ValueError("result must be a BacktestWFOResult")
+    if not _is_finite_real(starting_equity) or starting_equity <= 0:
+        raise ValueError("starting_equity must be a positive finite real number")
+    if type(simulations) is not int or simulations <= 0:
+        raise ValueError("simulations must be a positive integer")
+    if seed is not None and type(seed) is not int:
+        raise ValueError("seed must be an integer or None")
+    if (
+        not _is_finite_real(slippage_multiplier)
+        or not _is_finite_real(spread_multiplier)
+        or slippage_multiplier < 1
+        or spread_multiplier < 1
+    ):
+        raise ValueError("cost multipliers must be finite real numbers >= 1")
     pnl = _extract_oos_trade_pnl(result)
     summary = monte_carlo(
         pnl,
