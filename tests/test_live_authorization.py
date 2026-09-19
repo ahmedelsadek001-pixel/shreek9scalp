@@ -52,3 +52,15 @@ def test_missing_key_blocks():
 def test_non_mapping_input_is_rejected():
     with pytest.raises(TypeError):
         evaluate_live_authorization(None)
+
+
+def test_every_required_evidence_item_is_mandatory():
+    for key in full_evidence():
+        evidence = full_evidence()
+        del evidence[key]
+
+        result = evaluate_live_authorization(evidence)
+        assert result.authorized is False, f"authorization unexpectedly passed without {key}"
+        assert key in result.missing
+        with pytest.raises(RuntimeError):
+            require_live_authorization(evidence)
