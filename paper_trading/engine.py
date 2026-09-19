@@ -51,17 +51,24 @@ class PaperTradingEngine:
                 raise ValueError("order timestamp must be timezone-aware")
             if order.direction not in (Direction.BUY, Direction.SELL):
                 raise ValueError("order direction must be BUY or SELL")
-            if not all(isfinite(float(x)) and x > 0 for x in (order.entry, order.sl, order.volume)):
+            try:
+                entry, sl, volume = float(order.entry), float(order.sl), float(order.volume)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("order prices and volume must be positive and finite") from exc
+            if not all(isfinite(value) and value > 0 for value in (entry, sl, volume)):
                 raise ValueError("order prices and volume must be positive and finite")
-            if order.direction is Direction.BUY and order.sl >= order.entry:
+            if order.direction is Direction.BUY and sl >= entry:
                 raise ValueError("BUY stop must be below entry")
-            if order.direction is Direction.SELL and order.sl <= order.entry:
+            if order.direction is Direction.SELL and sl <= entry:
                 raise ValueError("SELL stop must be above entry")
-            modeled_loss = abs(order.entry - order.sl) * order.volume
+            modeled_loss = abs(entry - sl) * volume
+            if not isfinite(modeled_loss) or modeled_loss <= 0:
+                raise ValueError("modeled loss must be positive and finite")
+            normalized_order = PaperOrder(order.symbol, order.direction, entry, sl, volume, order.timestamp)
             self.ledger.require_can_open(order.timestamp.date(), modeled_loss)
             if not self.risk_state.can_open():
                 raise RuntimeError("risk state blocks new paper order")
-            self.open_order = order
+            self.open_order = normalized_order
 
     def close(self, exit_price: float, timestamp: datetime, reason: str = "MANUAL") -> PaperFill:
         """Atomically close the current paper position and record its result."""
