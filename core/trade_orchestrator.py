@@ -128,7 +128,9 @@ class TradeOrchestrator:
 
         try:
             self.engine.submit(PaperOrder(symbol, signal.direction, entry, stop, volume, timestamp))
-        except (RuntimeError, ValueError, TypeError, OverflowError) as exc:
+        except Exception as exc:
+            # Always release the reservation when submission fails, including
+            # unexpected adapter exceptions, so a failed attempt cannot poison retries.
             self.duplicate_guard.discard(fingerprint)
             return OrchestrationDecision(False, "paper_execution", str(exc), volume, fingerprint)
         return OrchestrationDecision(True, "paper_execution", "paper order accepted", volume, fingerprint)
