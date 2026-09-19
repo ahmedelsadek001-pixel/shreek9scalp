@@ -10,6 +10,11 @@ from math import isfinite
 from typing import Optional
 
 
+def _is_finite_real(value: object) -> bool:
+    """Accept finite built-in real numbers, but never bool or coercible strings."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and isfinite(value)
+
+
 @dataclass(frozen=True)
 class RiskBudget:
     equity: float
@@ -17,12 +22,12 @@ class RiskBudget:
     max_risk_amount: Optional[float] = None
 
     def __post_init__(self) -> None:
-        if not isfinite(self.equity) or self.equity <= 0:
+        if not _is_finite_real(self.equity) or self.equity <= 0:
             raise ValueError("equity must be positive and finite")
-        if not isfinite(self.risk_pct) or not 0 < self.risk_pct <= 1:
+        if not _is_finite_real(self.risk_pct) or not 0 < self.risk_pct <= 1:
             raise ValueError("risk_pct must be in (0, 1]")
         if self.max_risk_amount is not None and (
-            not isfinite(self.max_risk_amount) or self.max_risk_amount <= 0
+            not _is_finite_real(self.max_risk_amount) or self.max_risk_amount <= 0
         ):
             raise ValueError("max_risk_amount must be positive and finite")
 
@@ -39,10 +44,10 @@ class RiskBudget:
         return self.modeled_loss(entry, stop, volume, point_value) <= self.risk_amount + 1e-12
 
     def size_for_stop(self, entry: float, stop: float, point_value: float = 1.0) -> float:
-        if not isfinite(float(entry)) or not isfinite(float(stop)) or entry <= 0 or stop <= 0:
+        if not all(_is_finite_real(value) for value in (entry, stop, point_value)):
+            raise ValueError("entry, stop, and point_value must be numeric")
+        if entry <= 0 or stop <= 0 or point_value <= 0:
             raise ValueError("entry and stop must be positive and finite")
-        if not isfinite(float(point_value)) or point_value <= 0:
-            raise ValueError("point_value must be positive and finite")
         distance = abs(float(entry) - float(stop))
         if distance <= 0:
             raise ValueError("entry and stop must differ")
@@ -51,8 +56,8 @@ class RiskBudget:
     @staticmethod
     def _validate_trade_values(entry: float, stop: float, volume: float, point_value: float) -> None:
         values = (entry, stop, volume, point_value)
-        if not all(isfinite(float(value)) for value in values):
-            raise ValueError("trade risk inputs must be finite")
+        if not all(_is_finite_real(value) for value in values):
+            raise ValueError("trade risk inputs must be finite numeric values")
         if entry <= 0 or stop <= 0 or volume <= 0 or point_value <= 0:
             raise ValueError("trade risk inputs must be positive")
         if entry == stop:
