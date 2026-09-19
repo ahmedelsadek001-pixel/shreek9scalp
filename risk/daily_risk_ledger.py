@@ -8,6 +8,8 @@ from typing import Dict
 
 
 def _finite_float(value: object, field_name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be finite")
     try:
         result = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
