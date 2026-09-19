@@ -1,5 +1,7 @@
 from datetime import date
 
+import pytest
+
 from risk.daily_risk_ledger import DailyRiskLedger
 from risk.pre_trade_risk_gate import evaluate_risk
 from risk.risk_state import RiskState, RiskStateMachine
@@ -35,5 +37,14 @@ def test_risk_gate_rejects_invalid_modeled_loss():
     ledger = DailyRiskLedger(1000.0, 0.05)
     state = RiskStateMachine()
     result = evaluate_risk(date(2026, 9, 12), -1.0, ledger, state)
+    assert not result.allowed
+    assert result.reason == "invalid modeled loss"
+
+
+@pytest.mark.parametrize("modeled_loss", [None, "not-a-number", 10**10000])
+def test_risk_gate_fails_closed_on_unconvertible_loss(modeled_loss):
+    ledger = DailyRiskLedger(1000.0, 0.05)
+    state = RiskStateMachine()
+    result = evaluate_risk(date(2026, 9, 12), modeled_loss, ledger, state)
     assert not result.allowed
     assert result.reason == "invalid modeled loss"
