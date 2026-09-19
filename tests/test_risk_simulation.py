@@ -89,3 +89,21 @@ def test_invalid_inputs_fail_closed():
         simulate_sequence([1], 1000, slippage_multiplier=0.9)
     with pytest.raises(ValueError):
         monte_carlo([1], 1000, simulations=0)
+
+
+@pytest.mark.parametrize("sample", [[], [2.0, 1.0], [1.0, float("inf")], [float("nan")]])
+def test_median_rejects_empty_unsorted_or_nonfinite_samples(sample):
+    with pytest.raises(ValueError):
+        _median(sample)
+
+
+@pytest.mark.parametrize("sample", [[], [2.0, 1.0], [1.0, float("inf")], [float("nan")]])
+def test_quantile_rejects_empty_unsorted_or_nonfinite_samples(sample):
+    with pytest.raises(ValueError):
+        _quantile(sample, 0.5)
+
+
+@pytest.mark.parametrize("probability", [float("nan"), float("inf"), -0.1, 1.1])
+def test_quantile_rejects_invalid_probability(probability):
+    with pytest.raises(ValueError, match="quantile probability"):
+        _quantile([1.0, 2.0], probability)
