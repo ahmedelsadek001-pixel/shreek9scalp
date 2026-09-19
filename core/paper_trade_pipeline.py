@@ -61,6 +61,14 @@ def admit_and_submit_paper(
         return PipelineDecision(False, "order_validation", "order price and volume must be finite and positive")
     if normalized_entry == normalized_sl:
         return PipelineDecision(False, "order_validation", "entry and stop loss must differ")
+    if direction not in (Direction.BUY, Direction.SELL):
+        return PipelineDecision(False, "order_validation", "direction must be BUY or SELL")
+    if direction is Direction.BUY and normalized_sl >= normalized_entry:
+        return PipelineDecision(False, "order_validation", "BUY stop must be below entry")
+    if direction is Direction.SELL and normalized_sl <= normalized_entry:
+        return PipelineDecision(False, "order_validation", "SELL stop must be above entry")
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return PipelineDecision(False, "order_validation", "timestamp must be timezone-aware")
 
     modeled_loss = abs(normalized_entry - normalized_sl) * normalized_volume
     if not math.isfinite(modeled_loss) or modeled_loss <= 0:
