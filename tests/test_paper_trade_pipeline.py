@@ -24,10 +24,10 @@ def _setup():
     )
 
 
-def _call(engine, setup=None, entry=100.0, sl=99.0, volume=1.0):
+def _call(engine, setup=None, entry=100.0, sl=99.0, volume=1.0, direction=Direction.BUY, timestamp=None):
     return admit_and_submit_paper(
-        engine, _bars(), setup or _setup(), timestamp=datetime(2026, 9, 12, 10, 2, tzinfo=timezone.utc),
-        symbol="XAUUSD", direction=Direction.BUY, entry=entry, sl=sl, volume=volume,
+        engine, _bars(), setup or _setup(), timestamp=timestamp or datetime(2026, 9, 12, 10, 2, tzinfo=timezone.utc),
+        symbol="XAUUSD", direction=direction, entry=entry, sl=sl, volume=volume,
         setup_min_score=70, news_events=[], currencies=[], news_policy=NewsFirewallPolicy(),
     )
 
@@ -76,6 +76,41 @@ def test_pipeline_blocks_on_daily_risk_before_execution():
 def test_pipeline_rejects_invalid_order_inputs_without_submission(entry, sl, volume):
     engine = PaperTradingEngine(1000, 0.05)
     result = _call(engine, entry=entry, sl=sl, volume=volume)
+    assert not result.allowed
+    assert result.stage == "order_validation"
+    assert engine.open_order is None
+
+
+@pytest.mark.parametrize(
+    ("direction", "entry", "sl"),
+    [
+        (Direction.BUY, 100.0, 100.0),
+        (Direction.BUY, 100.0, 101.0),
+        (Direction.SELL, 100.0, 99.0),
+        (Direction.RANGE, 100.0, 99.0),
+        (Direction.UNKNOWN, 100.0, 99.0),
+    ],
+    ids=["buy-equal", "buy-stop-above", "sell-stop-below", "range-direction", "unknown-direction"],
+)
+def test_pipeline_rejects_invalid_direction_or_stop_orientation(direction, entry, sl):
+    engine = PaperTradingEngine(1000, 0.05)
+    result = _call(engine, direction=direction, entry=entry, sl=sl)
+    assert not result.allowed
+    assert result.stage == "order_validation"
+    assert engine.open_order is None
+
+
+def test_pipeline_accepts_sell_with_stop_above_entry():
+    engine = PaperTradingEngine(1000, 0.05)
+    result = _call(engine, direction=Direction.SELL, entry=100.0, sl=101.0)
+    assert result.allowed
+    assert engine.open_order is not None
+    assert engine.open_order.direction is Direction.SELL
+
+
+def test_pipeline_rejects_naive_timestamp_without_submission():
+    engine = PaperTradingEngine(1000, 0.05)
+    result = _call(engine, timestamp=datetime(2026, 9, 12, 10, 2))
     assert not result.allowed
     assert result.stage == "order_validation"
     assert engine.open_order is None
