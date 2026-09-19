@@ -37,6 +37,23 @@ def _validate(pnl: Sequence[float], starting_equity: float, simulations: int) ->
         raise ValueError("simulations must be a positive integer")
 
 
+def _validate_seed(seed: Optional[int]) -> None:
+    if seed is not None and type(seed) is not int:
+        raise ValueError("seed must be an integer or None")
+
+
+def _validate_cost_multipliers(slippage_multiplier: float, spread_multiplier: float) -> None:
+    if (
+        not isfinite(slippage_multiplier)
+        or not isfinite(spread_multiplier)
+        or slippage_multiplier < 1
+        or spread_multiplier < 1
+    ):
+        raise ValueError("cost multipliers must be finite and >= 1")
+    if not isfinite(slippage_multiplier * spread_multiplier):
+        raise ValueError("combined cost multiplier must be finite")
+
+
 def _quantile(sorted_values: Sequence[float], probability: float) -> float:
     """Linearly interpolate a quantile from an already sorted finite sample."""
     if not sorted_values or not 0.0 <= probability <= 1.0:
@@ -64,13 +81,8 @@ def simulate_sequence(
     recover the account.
     """
     _validate(pnl, starting_equity, 1)
-    if (
-        not isfinite(slippage_multiplier)
-        or not isfinite(spread_multiplier)
-        or slippage_multiplier < 1
-        or spread_multiplier < 1
-    ):
-        raise ValueError("cost multipliers must be finite and >= 1")
+    _validate_seed(seed)
+    _validate_cost_multipliers(slippage_multiplier, spread_multiplier)
     rng = random.Random(seed)
     sampled = [rng.choice(list(pnl)) for _ in pnl]
     multiplier = 1.0 / (slippage_multiplier * spread_multiplier)
@@ -82,10 +94,16 @@ def simulate_sequence(
 
     for x in sampled:
         stressed = x * multiplier if x >= 0 else x * slippage_multiplier * spread_multiplier
+        if not isfinite(stressed):
+            raise ValueError("stressed trade P&L must remain finite")
         adjusted.append(stressed)
         equity += stressed
+        if not isfinite(equity):
+            raise ValueError("simulated equity must remain finite")
         peak = max(peak, equity)
         max_dd = max(max_dd, peak - equity)
+        if not isfinite(max_dd):
+            raise ValueError("simulated drawdown must remain finite")
         if equity <= 0:
             ruined = True
             break
@@ -110,6 +128,8 @@ def monte_carlo(
 ) -> RobustnessSummary:
     """Run reproducible bootstrap stress tests and summarize tail risk."""
     _validate(pnl, starting_equity, simulations)
+    _validate_seed(seed)
+    _validate_cost_multipliers(slippage_multiplier, spread_multiplier)
     rng = random.Random(seed)
     results = [
         simulate_sequence(
