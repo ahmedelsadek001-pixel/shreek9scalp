@@ -29,6 +29,8 @@ class RiskStateMachine:
                 or not isinstance(self.consecutive_losses, int)
                 or self.consecutive_losses < 0):
             raise ValueError("consecutive_losses must be a non-negative integer")
+        if self.consecutive_losses > self.max_consecutive_losses:
+            raise ValueError("consecutive_losses cannot exceed max_consecutive_losses")
 
     def can_open(self) -> bool:
         return self.state is RiskState.ARMED
