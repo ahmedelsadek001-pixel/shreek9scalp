@@ -37,3 +37,44 @@ def test_invalid_risk_inputs_fail_closed():
             pass
         else:
             raise AssertionError("invalid trade risk inputs must fail")
+
+
+def test_boolean_budget_values_are_rejected():
+    for args, kwargs in (
+        ((True, 0.01), {}),
+        ((10000, True), {}),
+        ((10000, 0.01), {"max_risk_amount": True}),
+    ):
+        try:
+            RiskBudget(*args, **kwargs)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("boolean budget values must fail")
+
+
+def test_boolean_trade_values_are_rejected():
+    budget = RiskBudget(10000, 0.01)
+    for values in (
+        (True, 2490, 1),
+        (2500, True, 1),
+        (2500, 2490, True),
+    ):
+        try:
+            budget.modeled_loss(*values)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("boolean modeled-loss values must fail")
+
+    for values in (
+        (True, 2490),
+        (2500, True),
+        (2500, 2490, True),
+    ):
+        try:
+            budget.size_for_stop(*values)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("boolean sizing values must fail")
