@@ -37,10 +37,8 @@ def test_daily_budget_blocks_excessive_stop_risk():
 def test_close_rejects_invalid_exit_without_mutating_position():
     engine = PaperTradingEngine()
     engine.submit(order())
-
     with pytest.raises(ValueError, match="exit price must be positive and finite"):
         engine.close("not-a-number", datetime(2026, 9, 12, 11, tzinfo=timezone.utc))
-
     assert engine.open_order == order()
     assert engine.fills == []
     assert engine.ledger.realized(datetime(2026, 9, 12, tzinfo=timezone.utc).date()) == 0.0
@@ -88,3 +86,25 @@ def test_close_rejects_non_datetime_timestamp_without_mutation():
         engine.close(101.0, "2026-09-12T11:00:00Z")
     assert engine.open_order == order()
     assert engine.fills == []
+
+
+def test_close_rolls_back_ledger_if_risk_state_update_raises(monkeypatch):
+    engine = PaperTradingEngine()
+    position = order()
+    engine.submit(position)
+    day = datetime(2026, 9, 12, tzinfo=timezone.utc).date()
+    initial_state = engine.risk_state.state
+    initial_losses = engine.risk_state.consecutive_losses
+
+    def fail_record_result(_pnl):
+        raise RuntimeError("simulated risk-state failure")
+
+    monkeypatch.setattr(engine.risk_state, "record_result", fail_record_result)
+    with pytest.raises(RuntimeError, match="simulated risk-state failure"):
+        engine.close(98.0, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), "SL")
+
+    assert engine.open_order == position
+    assert engine.fills == []
+    assert engine.ledger.realized(day) == 0.0
+    assert engine.risk_state.state is initial_state
+    assert engine.risk_state.consecutive_losses == initial_losses
