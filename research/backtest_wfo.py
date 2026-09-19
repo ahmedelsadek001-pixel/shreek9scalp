@@ -84,7 +84,7 @@ def _validate_context_result(
         for trade in result.trades:
             signal_time = getattr(trade, "signal_time", None)
             entry_time = getattr(trade, "entry_time", None)
-            exit_time = getattr(trade, "exit_time", None)
+            exit_time = getattr(trade, "exit_time', None)")
             if signal_time is None or entry_time is None or exit_time is None:
                 raise ValueError("OOS trades must expose signal_time, entry_time and exit_time")
             if signal_time < oos_start or entry_time < oos_start or exit_time > oos_end:
@@ -101,10 +101,14 @@ def _validate_context_result(
 
 
 def _validate_timestamped_oos_result(result: BacktestResult, oos_data: Sequence[Any]) -> None:
-    """Apply strict OOS timestamp checks to timestamped inputs."""
-    if not oos_data or not all(hasattr(item, "timestamp") for item in oos_data):
+    """Validate timestamped inputs, rejecting mixed timestamp availability."""
+    if not oos_data:
         return
-    _validate_context_result(result, oos_data, 0, len(oos_data))
+    timestamp_flags = [hasattr(item, "timestamp") for item in oos_data]
+    if any(timestamp_flags) and not all(timestamp_flags):
+        raise ValueError("OOS data must expose timestamps consistently")
+    if all(timestamp_flags):
+        _validate_context_result(result, oos_data, 0, len(oos_data))
 
 
 def run_backtest_wfo(
