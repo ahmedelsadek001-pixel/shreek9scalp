@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from core.enums import Direction, SetupType, SignalStatus, Timeframe
 from core.models import TradeSignal
 from core.setup_quality import SetupQualityInput
@@ -8,10 +10,21 @@ from paper_trading.engine import PaperTradingEngine
 from risk.risk_budget import RiskBudget
 
 
-def test_reservation_is_released_when_submit_raises_type_error(monkeypatch):
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("engine unavailable"),
+        ValueError("invalid order"),
+        TypeError("invalid order payload"),
+        OverflowError("numeric overflow"),
+    ],
+)
+def test_reservation_is_released_when_submit_raises(monkeypatch, failure):
     engine = PaperTradingEngine(1000, 0.05)
+
     def fail_submit(order):
-        raise TypeError("invalid order payload")
+        raise failure
+
     monkeypatch.setattr(engine, "submit", fail_submit)
     orchestrator = TradeOrchestrator(engine, RiskBudget(1000, risk_pct=0.01))
     signal = TradeSignal(
