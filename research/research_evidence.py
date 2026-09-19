@@ -81,7 +81,10 @@ class ResearchEvidence:
         for key, value in metrics.items():
             if not isinstance(key, str) or not key.strip():
                 raise ValueError("metric names must be non-empty strings")
-            numeric = float(value)
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("metric values must be finite numbers") from exc
             if not isfinite(numeric):
                 raise ValueError("metric values must be finite")
             normalized[key.strip()] = numeric
@@ -128,5 +131,5 @@ def verify_evidence(evidence: ResearchEvidence) -> bool:
             evidence.provenance,
         )
         return sha256(payload.encode("utf-8")).hexdigest() == evidence.evidence_hash
-    except (TypeError, ValueError, AttributeError):
+    except (TypeError, ValueError, AttributeError, OverflowError):
         return False
