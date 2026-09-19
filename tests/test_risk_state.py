@@ -56,8 +56,9 @@ def test_invalid_initial_state_is_rejected(kwargs):
 
 @pytest.mark.parametrize(
     "pnl",
-    [None, "1", True, float("nan"), float("inf"), float("-inf")],
-    ids=["none", "numeric-string", "boolean", "nan", "positive-infinity", "negative-infinity"],
+    [None, "1", True, float("nan"), float("inf"), float("-inf"), 10**10000],
+    ids=["none", "numeric-string", "boolean", "nan", "positive-infinity",
+         "negative-infinity", "oversized-integer"],
 )
 def test_invalid_result_is_rejected_without_mutating_state(pnl):
     machine = RiskStateMachine(state=RiskState.COOLDOWN, consecutive_losses=1)
