@@ -29,6 +29,21 @@ def test_fingerprint_rejects_non_finite_prices(entry, stop):
         signal_fingerprint("XAUUSD", _signal(entry, stop))
 
 
+@pytest.mark.parametrize(
+    "field,value,message",
+    [
+        ("setup_type", "COMBINED", "setup_type"),
+        ("frame", "M15", "frame"),
+        ("direction", "BUY", "direction"),
+    ],
+)
+def test_fingerprint_rejects_invalid_enum_fields(field, value, message):
+    signal = _signal()
+    setattr(signal, field, value)
+    with pytest.raises(ValueError, match=message):
+        signal_fingerprint("XAUUSD", signal)
+
+
 def test_guard_reserves_once_and_blocks_duplicate():
     guard = DuplicateSignalGuard()
     fingerprint = signal_fingerprint("XAUUSD", _signal())
