@@ -47,6 +47,10 @@ class PaperTradingEngine:
         with self._position_lock:
             if self.open_order is not None:
                 raise RuntimeError("paper engine already has an open position")
+            if not isinstance(order, PaperOrder):
+                raise ValueError("order must be a PaperOrder")
+            if not isinstance(order.timestamp, datetime):
+                raise ValueError("order timestamp must be a datetime")
             if order.timestamp.tzinfo is None or order.timestamp.utcoffset() is None:
                 raise ValueError("order timestamp must be timezone-aware")
             if order.direction not in (Direction.BUY, Direction.SELL):
@@ -76,6 +80,8 @@ class PaperTradingEngine:
             order = self.open_order
             if order is None:
                 raise RuntimeError("no open paper position")
+            if not isinstance(timestamp, datetime):
+                raise ValueError("fill timestamp must be a datetime")
             if timestamp.tzinfo is None or timestamp.utcoffset() is None:
                 raise ValueError("fill timestamp must be timezone-aware")
             try:
