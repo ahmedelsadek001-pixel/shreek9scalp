@@ -29,14 +29,14 @@ def test_modeled_loss_cannot_exceed_remaining_budget():
 def test_invalid_modeled_loss_fails_closed():
     ledger = DailyRiskLedger(1000, 0.05)
     day = date(2026, 9, 12)
-    for value in (-1, float("nan"), float("inf"), None, "bad", 10**10000):
+    for value in (-1, float("nan"), float("inf"), None, "bad", 10**10000, True):
         assert not ledger.can_open(day, value)
 
 
 @pytest.mark.parametrize(
     "value",
-    [None, "bad", float("nan"), float("inf"), 10**10000],
-    ids=["none", "nonnumeric", "nan", "infinity", "huge-int"],
+    [None, "bad", float("nan"), float("inf"), 10**10000, True],
+    ids=["none", "nonnumeric", "nan", "infinity", "huge-int", "boolean"],
 )
 def test_invalid_pnl_is_rejected_without_mutating_ledger(value):
     ledger = DailyRiskLedger(1000, 0.05)
@@ -66,7 +66,7 @@ def test_overflowing_cumulative_pnl_is_rejected_without_mutation():
 
 
 def test_invalid_constructor_values_raise_value_error():
-    for equity, pct in [(None, 0.05), ("bad", 0.05), (1000, 1.1), (1000, float("nan"))]:
+    for equity, pct in [(None, 0.05), ("bad", 0.05), (1000, 1.1), (1000, float("nan")), (True, 0.05), (1000, True)]:
         with pytest.raises(ValueError):
             DailyRiskLedger(equity, pct)
 
