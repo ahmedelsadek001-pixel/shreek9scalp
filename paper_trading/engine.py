@@ -75,7 +75,7 @@ class PaperTradingEngine:
             self.open_order = normalized_order
 
     def close(self, exit_price: float, timestamp: datetime, reason: str = "MANUAL") -> PaperFill:
-        """Atomically close the current paper position and record its result."""
+        """Close a position and atomically record both risk views or roll back."""
         with self._position_lock:
             order = self.open_order
             if order is None:
@@ -94,9 +94,23 @@ class PaperTradingEngine:
             pnl = pnl_per_unit * order.volume
             if not isfinite(pnl):
                 raise ValueError("calculated PnL must be finite")
+
+            day = timestamp.date()
+            previous_realized = self.ledger._realized_by_day.get(day)
+            previous_state = self.risk_state.state
+            previous_losses = self.risk_state.consecutive_losses
             fill = PaperFill(order, normalized_exit, pnl, timestamp, reason)
-            self.ledger.record(timestamp.date(), pnl)
-            self.risk_state.record_result(pnl)
+            try:
+                self.ledger.record(day, pnl)
+                self.risk_state.record_result(pnl)
+            except Exception:
+                if previous_realized is None:
+                    self.ledger._realized_by_day.pop(day, None)
+                else:
+                    self.ledger._realized_by_day[day] = previous_realized
+                self.risk_state.state = previous_state
+                self.risk_state.consecutive_losses = previous_losses
+                raise
             self.fills.append(fill)
             self.open_order = None
             return fill
