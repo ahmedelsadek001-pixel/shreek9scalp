@@ -52,3 +52,16 @@ def test_killed_state_requires_explicit_reset():
 def test_invalid_initial_state_is_rejected(kwargs):
     with pytest.raises(ValueError):
         RiskStateMachine(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "pnl",
+    [None, "1", True, float("nan"), float("inf"), float("-inf")],
+    ids=["none", "numeric-string", "boolean", "nan", "positive-infinity", "negative-infinity"],
+)
+def test_invalid_result_is_rejected_without_mutating_state(pnl):
+    machine = RiskStateMachine(state=RiskState.COOLDOWN, consecutive_losses=1)
+    with pytest.raises(ValueError, match="finite number"):
+        machine.record_result(pnl)
+    assert machine.state is RiskState.COOLDOWN
+    assert machine.consecutive_losses == 1
