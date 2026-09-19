@@ -10,6 +10,7 @@ from hashlib import sha256
 from math import isfinite
 from threading import Lock
 
+from core.enums import Direction, SetupType, Timeframe
 from core.models import TradeSignal
 
 
@@ -26,15 +27,25 @@ def signal_fingerprint(symbol: str, signal: TradeSignal) -> str:
         raise ValueError("symbol is required")
     if not isinstance(signal, TradeSignal):
         raise TypeError("signal must be TradeSignal")
-    if not all(isfinite(float(value)) for value in (signal.entry_price, signal.sl_price)):
+    if not isinstance(signal.setup_type, SetupType):
+        raise ValueError("signal setup_type is invalid")
+    if not isinstance(signal.frame, Timeframe):
+        raise ValueError("signal frame is invalid")
+    if not isinstance(signal.direction, Direction):
+        raise ValueError("signal direction is invalid")
+    try:
+        prices = (float(signal.entry_price), float(signal.sl_price))
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("signal prices must be finite") from exc
+    if not all(isfinite(value) for value in prices):
         raise ValueError("signal prices must be finite")
     values = (
         symbol.strip().upper(),
         signal.setup_type.value,
         signal.frame.value,
         signal.direction.value,
-        repr(float(signal.entry_price)),
-        repr(float(signal.sl_price)),
+        repr(prices[0]),
+        repr(prices[1]),
     )
     return sha256("|".join(values).encode("utf-8")).hexdigest()
 
