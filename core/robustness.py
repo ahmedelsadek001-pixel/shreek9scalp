@@ -10,6 +10,11 @@ from core.risk_simulation import RobustnessSummary, monte_carlo
 from core.walk_forward import WalkForwardSummary
 
 
+def _is_real_number(value: object) -> bool:
+    """Accept finite real-valued ints/floats but reject booleans and coercions."""
+    return type(value) in (int, float) and isfinite(value)
+
+
 @dataclass(frozen=True)
 class RobustnessPolicy:
     min_wfo_stability_pct: float = 60.0
@@ -17,13 +22,14 @@ class RobustnessPolicy:
     max_monte_carlo_drawdown: float = float("inf")
 
     def validate(self) -> None:
-        if not isfinite(self.min_wfo_stability_pct) or not 0 <= self.min_wfo_stability_pct <= 100:
-            raise ValueError("min_wfo_stability_pct must be between 0 and 100")
-        if not isfinite(self.max_ruin_rate_pct) or self.max_ruin_rate_pct < 0:
+        if not _is_real_number(self.min_wfo_stability_pct) or not 0 <= self.min_wfo_stability_pct <= 100:
+            raise ValueError("min_wfo_stability_pct must be a finite number between 0 and 100")
+        if not _is_real_number(self.max_ruin_rate_pct) or self.max_ruin_rate_pct < 0:
             raise ValueError("max_ruin_rate_pct must be finite and non-negative")
-        if self.max_monte_carlo_drawdown < 0 or not (
-            isfinite(self.max_monte_carlo_drawdown) or self.max_monte_carlo_drawdown == float("inf")
-        ):
+        if type(self.max_monte_carlo_drawdown) not in (int, float) or (
+            not isfinite(self.max_monte_carlo_drawdown)
+            and self.max_monte_carlo_drawdown != float("inf")
+        ) or self.max_monte_carlo_drawdown < 0:
             raise ValueError("max_monte_carlo_drawdown must be non-negative")
 
 
@@ -53,8 +59,6 @@ def _validate_wfo(summary: WalkForwardSummary) -> None:
             and type(window.test_end) is int
         ):
             raise ValueError("WFO window contains invalid or overlapping train/test boundaries")
-        # Check OOS overlap before general boundary validity so overlapping test
-        # periods consistently fail with the dedicated, actionable error.
         if previous_test_end is not None and window.test_start < previous_test_end:
             raise ValueError("WFO window contains overlapping OOS test periods")
         if not (
