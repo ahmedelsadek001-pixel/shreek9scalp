@@ -32,3 +32,23 @@ def test_killed_state_requires_explicit_reset():
         machine.arm()
     machine.reset()
     assert machine.can_open()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"state": "ARMED"},
+        {"consecutive_losses": True},
+        {"consecutive_losses": -1},
+        {"consecutive_losses": 1.5},
+        {"max_consecutive_losses": True},
+        {"max_consecutive_losses": 0},
+        {"max_consecutive_losses": -1},
+        {"max_consecutive_losses": 2.5},
+    ],
+    ids=["string-state", "bool-loss-count", "negative-loss-count", "float-loss-count",
+         "bool-limit", "zero-limit", "negative-limit", "float-limit"],
+)
+def test_invalid_initial_state_is_rejected(kwargs):
+    with pytest.raises(ValueError):
+        RiskStateMachine(**kwargs)
