@@ -89,6 +89,8 @@ class TradeOrchestrator:
         if not strategy.allowed:
             return OrchestrationDecision(False, "admission", "; ".join(strategy.reasons))
 
+        if isinstance(signal.entry_price, bool) or isinstance(signal.sl_price, bool) or isinstance(point_value, bool):
+            return OrchestrationDecision(False, "risk", "risk inputs must be numeric")
         try:
             entry = float(signal.entry_price)
             stop = float(signal.sl_price)
@@ -104,6 +106,8 @@ class TradeOrchestrator:
             except (TypeError, ValueError, OverflowError):
                 return OrchestrationDecision(False, "risk", "position sizing failed")
         else:
+            if isinstance(volume, bool):
+                return OrchestrationDecision(False, "risk", "volume must be numeric")
             try:
                 volume = float(volume)
             except (TypeError, ValueError, OverflowError):
