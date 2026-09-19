@@ -3,14 +3,14 @@ import pytest
 from core.risk_simulation import _median, _quantile, monte_carlo, simulate_sequence
 
 
-@pytest.mark.parametrize("equity", [True, False, "1000"])
+@pytest.mark.parametrize("equity", [True, False, "1000", 10**1000])
 def test_simulation_rejects_non_numeric_equity_types(equity):
     with pytest.raises(ValueError, match="starting equity"):
         simulate_sequence([1.0], starting_equity=equity)
 
 
-@pytest.mark.parametrize("pnl", [[True], [False], ["1.0"]])
-def test_simulation_rejects_boolean_and_string_pnl(pnl):
+@pytest.mark.parametrize("pnl", [[True], [False], ["1.0"], [10**1000]])
+def test_simulation_rejects_boolean_string_and_overflowing_pnl(pnl):
     with pytest.raises(ValueError, match="pnl"):
         simulate_sequence(pnl)
 
@@ -27,8 +27,8 @@ def test_quantile_rejects_boolean_and_string_probability(probability):
         _quantile([1.0, 2.0], probability)
 
 
-@pytest.mark.parametrize("sample", [[True], [False], ["1.0"]])
-def test_aggregators_reject_boolean_and_string_samples(sample):
+@pytest.mark.parametrize("sample", [[True], [False], ["1.0"], [10**1000]])
+def test_aggregators_reject_boolean_string_and_overflowing_samples(sample):
     with pytest.raises(ValueError, match="sample"):
         _median(sample)
     with pytest.raises(ValueError, match="sample"):
