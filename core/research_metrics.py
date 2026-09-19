@@ -86,9 +86,16 @@ def calculate_research_metrics(result: BacktestResult) -> ResearchMetrics:
     average_loss = -mean(losses) if losses else 0.0
     payoff = average_win / average_loss if average_loss else (float("inf") if average_win else 0.0)
     max_dd, max_dd_pct = _drawdown(result.equity_curve, result.stats.starting_equity)
+
+    # The equity curve begins with the starting balance. It is a baseline,
+    # not a realized return observation; including it adds a spurious zero
+    # return and biases the sample Sharpe ratio toward zero.
+    equity = tuple(result.equity_curve)
+    if equity and abs(float(equity[0]) - float(result.stats.starting_equity)) > 1e-12:
+        raise ValueError("equity curve must begin at starting equity")
     returns = []
     previous = result.stats.starting_equity
-    for value in result.equity_curve:
+    for value in equity[1:]:
         if not isfinite(float(value)):
             raise ValueError("equity curve must be finite")
         if not isfinite(float(previous)) or previous <= 0:
