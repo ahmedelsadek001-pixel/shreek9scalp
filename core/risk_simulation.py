@@ -64,7 +64,21 @@ def _quantile(sorted_values: Sequence[float], probability: float) -> float:
     lower = int(index)
     upper = min(lower + 1, len(sorted_values) - 1)
     weight = index - lower
-    return float(sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight)
+    value = float(sorted_values[lower] * (1.0 - weight) + sorted_values[upper] * weight)
+    if not isfinite(value):
+        raise ValueError("quantile result must remain finite")
+    return value
+
+
+def _median(sorted_values: Sequence[float]) -> float:
+    """Return a finite median without overflowing an intermediate sum."""
+    middle = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return float(sorted_values[middle])
+    value = float(sorted_values[middle - 1] / 2.0 + sorted_values[middle] / 2.0)
+    if not isfinite(value):
+        raise ValueError("median result must remain finite")
+    return value
 
 
 def simulate_sequence(
@@ -112,13 +126,7 @@ def simulate_sequence(
     if not isfinite(drawdown_pct):
         raise ValueError("simulated drawdown percentage must remain finite")
     realized = tuple(adjusted)
-    return SimulationResult(
-        realized,
-        equity,
-        max_dd,
-        drawdown_pct,
-        ruined,
-    )
+    return SimulationResult(realized, equity, max_dd, drawdown_pct, ruined)
 
 
 def monte_carlo(
@@ -147,10 +155,9 @@ def monte_carlo(
     endings = sorted(r.ending_equity for r in results)
     dds = sorted(r.max_drawdown for r in results)
     ruin = sum(r.ruin for r in results)
-    mid = simulations // 2
-    median_end = endings[mid] if simulations % 2 else (endings[mid - 1] + endings[mid]) / 2
-    median_dd = dds[mid] if simulations % 2 else (dds[mid - 1] + dds[mid]) / 2
-    return RobustnessSummary(
+    median_end = _median(endings)
+    median_dd = _median(dds)
+    summary = RobustnessSummary(
         simulations,
         ruin / simulations * 100.0,
         median_end,
@@ -160,3 +167,11 @@ def monte_carlo(
         _quantile(endings, 0.05),
         _quantile(dds, 0.95),
     )
+    if any(not isfinite(float(value)) for value in (
+        summary.ruin_rate_pct, summary.median_ending_equity,
+        summary.worst_ending_equity, summary.median_max_drawdown,
+        summary.worst_max_drawdown, summary.p05_ending_equity,
+        summary.p95_max_drawdown,
+    )):
+        raise ValueError("Monte Carlo summary metrics must remain finite")
+    return summary
