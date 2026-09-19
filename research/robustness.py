@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isclose, isfinite
-from typing import Sequence
 
 from core.risk_simulation import RobustnessSummary, monte_carlo
 from research.backtest_wfo import BacktestWFOResult
@@ -70,12 +69,14 @@ class RobustnessEvidence:
             slippage_multiplier=self.slippage_multiplier,
             spread_multiplier=self.spread_multiplier,
         )
+        # Validate extrema before central tendency so a corrupted worst-tail
+        # field reports the specific failure rather than a downstream median.
         comparisons = (
+            (summary.worst_ending_equity, expected.worst_ending_equity, "worst ending equity"),
+            (summary.worst_max_drawdown, expected.worst_max_drawdown, "worst drawdown"),
             (summary.ruin_rate_pct, expected.ruin_rate_pct, "ruin rate"),
             (summary.median_ending_equity, expected.median_ending_equity, "median ending equity"),
-            (summary.worst_ending_equity, expected.worst_ending_equity, "worst ending equity"),
             (summary.median_max_drawdown, expected.median_max_drawdown, "median drawdown"),
-            (summary.worst_max_drawdown, expected.worst_max_drawdown, "worst drawdown"),
             (summary.p05_ending_equity, expected.p05_ending_equity, "p05 ending equity"),
             (summary.p95_max_drawdown, expected.p95_max_drawdown, "p95 drawdown"),
         )
