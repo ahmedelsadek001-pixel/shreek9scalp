@@ -106,9 +106,13 @@ class TradeOrchestrator:
                 volume = float(volume)
             except (TypeError, ValueError, OverflowError):
                 return OrchestrationDecision(False, "risk", "volume must be numeric")
-            if not isfinite(volume) or volume <= 0:
-                return OrchestrationDecision(False, "risk", "volume must be positive and finite")
-        volume = float(volume)
+
+        try:
+            volume = float(volume)
+        except (TypeError, ValueError, OverflowError):
+            return OrchestrationDecision(False, "risk", "position sizing returned a non-numeric volume")
+        if not isfinite(volume) or volume <= 0:
+            return OrchestrationDecision(False, "risk", "position volume must be positive and finite")
         if not self.risk_budget.allows(entry, stop, volume, numeric_point_value):
             return OrchestrationDecision(False, "risk", "risk budget exceeded", volume)
 
