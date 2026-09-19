@@ -12,10 +12,16 @@ START = datetime(2026, 1, 1)
 
 
 def _result(signal_minute=5, entry_minute=5, exit_minute=6):
-    trade = BacktestTrade(
+    return _result_at(
         START + timedelta(minutes=signal_minute),
         START + timedelta(minutes=entry_minute),
         START + timedelta(minutes=exit_minute),
+    )
+
+
+def _result_at(signal_time, entry_time, exit_time):
+    trade = BacktestTrade(
+        signal_time, entry_time, exit_time,
         Direction.BUY, 100.0, 101.0, 1.0, 1.0, 0.0, 1.0, "TP3",
     )
     stats = BacktestStats(
@@ -42,14 +48,16 @@ def test_wfo_rejects_trade_timestamps_not_present_in_oos_bars(signal, entry, exi
         )
 
 
-def test_wfo_accepts_trade_timestamps_present_in_oos_bars():
+def test_wfo_accepts_trade_timestamps_present_in_each_oos_window():
     data = [SimpleNamespace(timestamp=START + timedelta(minutes=i)) for i in range(9)]
 
     def evaluator(rows, params):
-        return _result(5, 5, 6)
+        return _result_at(rows[0].timestamp, rows[0].timestamp, rows[-1].timestamp)
 
     result = run_backtest_wfo(
         data, ({"x": 1},), evaluator,
         train_size=4, test_size=2, purge_size=1, step=2,
     )
+    assert len(result.oos_results) == 2
     assert result.oos_results[0].trades[0].exit_time == START + timedelta(minutes=6)
+    assert result.oos_results[1].trades[0].exit_time == START + timedelta(minutes=8)
