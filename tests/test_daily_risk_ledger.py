@@ -33,7 +33,11 @@ def test_invalid_modeled_loss_fails_closed():
         assert not ledger.can_open(day, value)
 
 
-@pytest.mark.parametrize("value", [None, "bad", float("nan"), float("inf"), 0, -1, 10**10000])
+@pytest.mark.parametrize(
+    "value",
+    [None, "bad", float("nan"), float("inf"), 0, -1, 10**10000],
+    ids=["none", "nonnumeric", "nan", "infinity", "zero", "negative", "huge-int"],
+)
 def test_invalid_pnl_is_rejected_without_mutating_ledger(value):
     ledger = DailyRiskLedger(1000, 0.05)
     day = date(2026, 9, 12)
