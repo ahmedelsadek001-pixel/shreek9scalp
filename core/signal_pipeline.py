@@ -41,13 +41,17 @@ def admit_signal(
         return AdmissionDecision(False, "signal is not aligned with higher-timeframe bias", signal, "alignment")
     if signal.direction not in (Direction.BUY, Direction.SELL):
         return AdmissionDecision(False, "direction is not executable")
-    if not all(isfinite(float(x)) for x in (signal.entry_price, signal.sl_price)):
+    try:
+        entry, stop = float(signal.entry_price), float(signal.sl_price)
+    except (TypeError, ValueError, OverflowError):
+        return AdmissionDecision(False, "entry/stop price must be numeric")
+    if not all(isfinite(value) for value in (entry, stop)):
         return AdmissionDecision(False, "entry/stop price is not finite")
-    if signal.entry_price <= 0 or signal.sl_price <= 0:
+    if entry <= 0 or stop <= 0:
         return AdmissionDecision(False, "invalid entry/stop price")
-    if signal.direction == Direction.BUY and signal.sl_price >= signal.entry_price:
+    if signal.direction == Direction.BUY and stop >= entry:
         return AdmissionDecision(False, "BUY stop must be below entry")
-    if signal.direction == Direction.SELL and signal.sl_price <= signal.entry_price:
+    if signal.direction == Direction.SELL and stop <= entry:
         return AdmissionDecision(False, "SELL stop must be above entry")
 
     for name, gate in gates:
