@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 
 
 class RiskState(str, Enum):
@@ -33,6 +34,10 @@ class RiskStateMachine:
         return self.state is RiskState.ARMED
 
     def record_result(self, pnl: float) -> None:
+        """Record a finite numeric result without accepting bool or coercions."""
+        if (isinstance(pnl, bool) or not isinstance(pnl, (int, float))
+                or not isfinite(pnl)):
+            raise ValueError("pnl must be a finite number")
         if pnl == 0:
             return
         if pnl < 0:
