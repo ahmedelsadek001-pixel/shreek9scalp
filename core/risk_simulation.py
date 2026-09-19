@@ -54,10 +54,21 @@ def _validate_cost_multipliers(slippage_multiplier: float, spread_multiplier: fl
         raise ValueError("combined cost multiplier must be finite")
 
 
+def _validate_sorted_sample(values: Sequence[float]) -> None:
+    if not values:
+        raise ValueError("sample must be non-empty")
+    converted = [float(value) for value in values]
+    if any(not isfinite(value) for value in converted):
+        raise ValueError("sample values must be finite")
+    if any(left > right for left, right in zip(converted, converted[1:])):
+        raise ValueError("sample values must be sorted")
+
+
 def _quantile(sorted_values: Sequence[float], probability: float) -> float:
     """Linearly interpolate a quantile from an already sorted finite sample."""
-    if not sorted_values or not 0.0 <= probability <= 1.0:
-        raise ValueError("quantile probability must be between 0 and 1")
+    _validate_sorted_sample(sorted_values)
+    if not isfinite(float(probability)) or not 0.0 <= probability <= 1.0:
+        raise ValueError("quantile probability must be finite and between 0 and 1")
     if len(sorted_values) == 1:
         return float(sorted_values[0])
     index = probability * (len(sorted_values) - 1)
@@ -72,6 +83,7 @@ def _quantile(sorted_values: Sequence[float], probability: float) -> float:
 
 def _median(sorted_values: Sequence[float]) -> float:
     """Return a finite median without overflowing an intermediate sum."""
+    _validate_sorted_sample(sorted_values)
     middle = len(sorted_values) // 2
     if len(sorted_values) % 2:
         return float(sorted_values[middle])
