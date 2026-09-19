@@ -71,13 +71,19 @@ class PaperTradingEngine:
                 raise RuntimeError("no open paper position")
             if timestamp.tzinfo is None or timestamp.utcoffset() is None:
                 raise ValueError("fill timestamp must be timezone-aware")
-            if not isfinite(float(exit_price)) or exit_price <= 0:
+            try:
+                normalized_exit = float(exit_price)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("exit price must be positive and finite") from exc
+            if not isfinite(normalized_exit) or normalized_exit <= 0:
                 raise ValueError("exit price must be positive and finite")
-            pnl_per_unit = (exit_price - order.entry) if order.direction is Direction.BUY else (order.entry - exit_price)
+            pnl_per_unit = (normalized_exit - order.entry) if order.direction is Direction.BUY else (order.entry - normalized_exit)
             pnl = pnl_per_unit * order.volume
-            fill = PaperFill(order, float(exit_price), pnl, timestamp, reason)
-            self.fills.append(fill)
+            if not isfinite(pnl):
+                raise ValueError("calculated PnL must be finite")
+            fill = PaperFill(order, normalized_exit, pnl, timestamp, reason)
             self.ledger.record(timestamp.date(), pnl)
             self.risk_state.record_result(pnl)
+            self.fills.append(fill)
             self.open_order = None
             return fill
