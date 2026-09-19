@@ -66,7 +66,7 @@ def _validate_context_result(
     oos_start_index: int,
     oos_end_index: int,
 ) -> None:
-    """Reject trades that cross either side of the exact OOS interval."""
+    """Reject trades outside OOS and timestamps not represented by its bars."""
     if type(oos_start_index) is not int or type(oos_end_index) is not int:
         raise ValueError("OOS boundaries must be integers")
     if not contextual_data or not 0 <= oos_start_index < oos_end_index <= len(contextual_data):
@@ -77,8 +77,10 @@ def _validate_context_result(
         timestamps = [item.timestamp for item in contextual_data]
         if any(a >= b for a, b in zip(timestamps, timestamps[1:])):
             raise ValueError("contextual OOS timestamps must be chronological")
-        oos_start = timestamps[oos_start_index]
-        oos_end = timestamps[oos_end_index - 1]
+        oos_timestamps = timestamps[oos_start_index:oos_end_index]
+        oos_start, oos_end = oos_timestamps[0], oos_timestamps[-1]
+        valid_times = set(oos_timestamps)
+        previous_signal = None
         for trade in result.trades:
             signal_time = getattr(trade, "signal_time", None)
             entry_time = getattr(trade, "entry_time", None)
@@ -87,22 +89,19 @@ def _validate_context_result(
                 raise ValueError("OOS trades must expose signal_time, entry_time and exit_time")
             if signal_time < oos_start or entry_time < oos_start or exit_time > oos_end:
                 raise ValueError("OOS backtest produced a trade outside the OOS interval")
+            if any(value not in valid_times for value in (signal_time, entry_time, exit_time)):
+                raise ValueError("OOS trade timestamps must match observed OOS bars")
             if entry_time < signal_time or exit_time < entry_time:
                 raise ValueError("OOS backtest produced non-chronological trade timestamps")
+            if previous_signal is not None and signal_time < previous_signal:
+                raise ValueError("OOS trades must be chronologically ordered")
+            previous_signal = signal_time
     except TypeError as exc:
         raise ValueError("OOS timestamps must be mutually comparable") from exc
 
 
-def _validate_timestamped_oos_result(
-    result: BacktestResult,
-    oos_data: Sequence[Any],
-) -> None:
-    """Validate OOS trade containment when the research data carries timestamps.
-
-    Generic sequence inputs remain supported for non-market unit tests, but
-    timestamped research data gets an explicit postcondition so an evaluator
-    cannot return trades outside the exact slice it was given.
-    """
+def _validate_timestamped_oos_result(result: BacktestResult, oos_data: Sequence[Any]) -> None:
+    """Apply strict OOS timestamp checks to timestamped inputs."""
     if not oos_data or not all(hasattr(item, "timestamp") for item in oos_data):
         return
     _validate_context_result(result, oos_data, 0, len(oos_data))
