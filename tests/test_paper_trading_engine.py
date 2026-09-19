@@ -32,3 +32,15 @@ def test_daily_budget_blocks_excessive_stop_risk():
     engine.close(99, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), "SL")
     with pytest.raises(RuntimeError):
         engine.submit(order(entry=100, sl=49))
+
+
+def test_close_rejects_invalid_exit_without_mutating_position():
+    engine = PaperTradingEngine()
+    engine.submit(order())
+
+    with pytest.raises(ValueError, match="exit price must be positive and finite"):
+        engine.close("not-a-number", datetime(2026, 9, 12, 11, tzinfo=timezone.utc))
+
+    assert engine.open_order == order()
+    assert engine.fills == []
+    assert engine.ledger.realized(datetime(2026, 9, 12, tzinfo=timezone.utc).date()) == 0.0
