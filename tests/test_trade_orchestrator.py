@@ -176,3 +176,20 @@ def test_orchestrator_rejects_non_numeric_volume_without_raising():
     assert result.stage == "risk"
     assert result.reason == "volume must be numeric"
     assert engine.open_order is None
+
+
+def test_orchestrator_rejects_non_finite_computed_volume(monkeypatch):
+    engine = PaperTradingEngine(1000, 0.05)
+    budget = RiskBudget(1000, risk_pct=0.01)
+    monkeypatch.setattr(budget, "size_for_stop", lambda *args: float("inf"))
+    orchestrator = TradeOrchestrator(engine, budget)
+
+    result = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP,
+        symbol="XAUUSD", setup_min_score=70,
+    )
+
+    assert not result.allowed
+    assert result.stage == "risk"
+    assert result.reason == "position volume must be positive and finite"
+    assert engine.open_order is None
