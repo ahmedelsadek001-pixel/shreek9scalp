@@ -220,8 +220,8 @@ def test_robustness_evidence_rejects_inconsistent_tail_summary():
         type(evidence.summary)(
             evidence.summary.simulations,
             evidence.summary.ruin_rate_pct,
+            evidence.summary.median_ending_equity,
             evidence.summary.worst_ending_equity + 1.0,
-            evidence.summary.worst_ending_equity,
             evidence.summary.median_max_drawdown,
             evidence.summary.worst_max_drawdown,
             evidence.summary.p05_ending_equity,
