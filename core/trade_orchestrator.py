@@ -115,7 +115,7 @@ class TradeOrchestrator:
         try:
             fingerprint = signal_fingerprint(symbol, signal)
             duplicate = self.duplicate_guard.reserve(fingerprint)
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, OverflowError) as exc:
             return OrchestrationDecision(False, "duplicate", str(exc), volume)
         if not duplicate.allowed:
             return OrchestrationDecision(False, "duplicate", duplicate.reason, volume, fingerprint)
