@@ -108,3 +108,38 @@ def test_close_rolls_back_ledger_if_risk_state_update_raises(monkeypatch):
     assert engine.ledger.realized(day) == 0.0
     assert engine.risk_state.state is initial_state
     assert engine.risk_state.consecutive_losses == initial_losses
+
+
+@pytest.mark.parametrize("symbol", [None, "", "   "])
+def test_submit_rejects_empty_or_invalid_symbol(symbol):
+    engine = PaperTradingEngine()
+    valid = order()
+    malformed = PaperOrder(symbol, valid.direction, valid.entry, valid.sl, valid.volume, valid.timestamp)
+    with pytest.raises(ValueError, match="order symbol must be a non-empty string"):
+        engine.submit(malformed)
+    assert engine.open_order is None
+
+
+def test_submit_strips_symbol_whitespace():
+    engine = PaperTradingEngine()
+    valid = order()
+    engine.submit(PaperOrder(" XAUUSD ", valid.direction, valid.entry, valid.sl, valid.volume, valid.timestamp))
+    assert engine.open_order.symbol == "XAUUSD"
+
+
+@pytest.mark.parametrize("reason", [None, "", "   "])
+def test_close_rejects_empty_or_invalid_reason_without_mutation(reason):
+    engine = PaperTradingEngine()
+    position = order()
+    engine.submit(position)
+    with pytest.raises(ValueError, match="close reason must be a non-empty string"):
+        engine.close(101.0, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), reason)
+    assert engine.open_order == position
+    assert engine.fills == []
+
+
+def test_close_strips_reason_whitespace():
+    engine = PaperTradingEngine()
+    engine.submit(order())
+    fill = engine.close(101.0, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), " TP ")
+    assert fill.reason == "TP"
