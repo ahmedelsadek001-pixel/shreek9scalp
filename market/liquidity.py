@@ -22,9 +22,11 @@ def detect_liquidity_sweep(
     as_of_index: int | None = None,
 ) -> LiquiditySweep:
     """Detect sweeps using only candles available at the evaluation boundary."""
+    # Validate the requested causal boundary before any early return; invalid
+    # inputs must fail closed even when structure has no confirmed swing levels.
+    data = _causal_frame(df, as_of_index)
     if structure.last_swing_high is None or structure.last_swing_low is None:
         return LiquiditySweep(swept_high=False, swept_low=False, details="")
-    data = _causal_frame(df, as_of_index)
     s = data.iloc[-lookback:]
     if s.empty:
         return LiquiditySweep(swept_high=False, swept_low=False, details="")
