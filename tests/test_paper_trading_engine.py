@@ -62,3 +62,29 @@ def test_submit_normalizes_numeric_strings():
     assert engine.open_order.entry == 100.0
     assert engine.open_order.sl == 99.0
     assert engine.open_order.volume == 1.5
+
+
+@pytest.mark.parametrize("malformed", [None, object()])
+def test_submit_rejects_non_paper_order(malformed):
+    engine = PaperTradingEngine()
+    with pytest.raises(ValueError, match="order must be a PaperOrder"):
+        engine.submit(malformed)
+    assert engine.open_order is None
+
+
+def test_submit_rejects_non_datetime_timestamp_without_mutation():
+    engine = PaperTradingEngine()
+    valid = order()
+    malformed = PaperOrder(valid.symbol, valid.direction, valid.entry, valid.sl, valid.volume, "2026-09-12T10:00:00Z")
+    with pytest.raises(ValueError, match="order timestamp must be a datetime"):
+        engine.submit(malformed)
+    assert engine.open_order is None
+
+
+def test_close_rejects_non_datetime_timestamp_without_mutation():
+    engine = PaperTradingEngine()
+    engine.submit(order())
+    with pytest.raises(ValueError, match="fill timestamp must be a datetime"):
+        engine.close(101.0, "2026-09-12T11:00:00Z")
+    assert engine.open_order == order()
+    assert engine.fills == []
