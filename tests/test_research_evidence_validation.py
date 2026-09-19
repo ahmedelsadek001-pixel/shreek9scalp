@@ -17,7 +17,11 @@ def test_evidence_freezes_metrics_and_verifies_hash():
         evidence.metrics["return"] = 2.0
 
 
-@pytest.mark.parametrize("value", [True, False, "1", None, float("inf"), float("nan"), -float("inf"), 10**10000])
+@pytest.mark.parametrize(
+    "value",
+    [True, False, "1", None, float("inf"), float("nan"), -float("inf"), 10**10000],
+    ids=["true", "false", "string", "none", "positive-inf", "nan", "negative-inf", "huge-int"],
+)
 def test_rejects_invalid_metric_values(value):
     with pytest.raises(ValueError):
         ResearchEvidence.create("dataset-A", "strategy-1", 1, {"metric": value})
