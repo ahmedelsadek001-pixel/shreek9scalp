@@ -46,7 +46,11 @@ class RiskStateMachine:
         if normalized_pnl == 0:
             return
         if normalized_pnl < 0:
-            self.consecutive_losses += 1
+            # Saturate at the kill threshold; the counter carries no useful
+            # additional information beyond that point and stays bounded.
+            self.consecutive_losses = min(
+                self.consecutive_losses + 1, self.max_consecutive_losses
+            )
             self.state = (
                 RiskState.KILLED
                 if self.consecutive_losses >= self.max_consecutive_losses
