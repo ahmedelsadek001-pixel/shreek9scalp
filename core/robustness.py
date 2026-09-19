@@ -51,13 +51,18 @@ def _validate_wfo(summary: WalkForwardSummary) -> None:
             and type(window.train_end) is int
             and type(window.test_start) is int
             and type(window.test_end) is int
-            and 0 <= window.train_start < window.train_end <= window.test_start < window.test_end
+        ):
+            raise ValueError("WFO window contains invalid or overlapping train/test boundaries")
+        # Check OOS overlap before general boundary validity so overlapping test
+        # periods consistently fail with the dedicated, actionable error.
+        if previous_test_end is not None and window.test_start < previous_test_end:
+            raise ValueError("WFO window contains overlapping OOS test periods")
+        if not (
+            0 <= window.train_start < window.train_end <= window.test_start < window.test_end
             and isfinite(float(result.train_score))
             and isfinite(float(result.test_score))
         ):
             raise ValueError("WFO window contains invalid or overlapping train/test boundaries")
-        if previous_test_end is not None and window.test_start < previous_test_end:
-            raise ValueError("WFO window contains overlapping OOS test periods")
         previous_test_end = window.test_end
         scores.append(float(result.test_score))
 
