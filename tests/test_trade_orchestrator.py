@@ -146,3 +146,33 @@ def test_orchestrator_blocks_timezone_naive_timestamp():
     assert not result.allowed
     assert result.stage == "input"
     assert engine.open_order is None
+
+
+def test_orchestrator_rejects_non_numeric_signal_prices_without_raising():
+    engine = PaperTradingEngine(1000, 0.05)
+    orchestrator = TradeOrchestrator(engine, RiskBudget(1000))
+
+    result = orchestrator.evaluate_and_submit(
+        _signal(entry="not-a-price"), _bars(), _setup(), timestamp=TIMESTAMP,
+        symbol="XAUUSD", setup_min_score=70,
+    )
+
+    assert not result.allowed
+    assert result.stage == "risk"
+    assert result.reason == "risk inputs must be numeric"
+    assert engine.open_order is None
+
+
+def test_orchestrator_rejects_non_numeric_volume_without_raising():
+    engine = PaperTradingEngine(1000, 0.05)
+    orchestrator = TradeOrchestrator(engine, RiskBudget(1000))
+
+    result = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP,
+        symbol="XAUUSD", setup_min_score=70, volume="invalid",
+    )
+
+    assert not result.allowed
+    assert result.stage == "risk"
+    assert result.reason == "volume must be numeric"
+    assert engine.open_order is None
