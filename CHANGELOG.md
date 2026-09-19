@@ -12,6 +12,10 @@ All notable changes to SHREEK AI Trading System are documented here.
 - Added validation for spread, slippage, commission and timeframe inputs.
 - Added explicit OOS-boundary checks when warm-up context is supplied to the backtest WFO evaluator.
 - Preserved the rule that parameter selection uses train data only and each selected OOS slice is evaluated once.
+- Validate causal liquidity boundaries before any early return.
+- Align the Sharpe unit test with the unannualized sample-statistic definition and exclude initial equity baseline from returns.
+- Strengthen robustness evidence validation and correct the tampering test to alter the intended worst-tail field.
+- Reorder OOS overlap validation to report the targeted overlap error before unrelated boundary checks.
 
 ### Backtest economics
 
@@ -25,6 +29,7 @@ All notable changes to SHREEK AI Trading System are documented here.
 - CI validates Python 3.9, 3.10 and 3.11.
 - CI runs import validation, static release security checks, flake8 and pytest.
 - Release evidence is generated only after the build matrix succeeds and binds provenance to the GitHub Actions run and commit.
+- CI run `35440718877` passed the build matrix and release-evidence job for commit `62761a4a5ec375ff7d696804b4107de932d61180` (Python 3.9, 3.10 and 3.11).
 
 ### Safety
 
