@@ -44,3 +44,21 @@ def test_close_rejects_invalid_exit_without_mutating_position():
     assert engine.open_order == order()
     assert engine.fills == []
     assert engine.ledger.realized(datetime(2026, 9, 12, tzinfo=timezone.utc).date()) == 0.0
+
+
+@pytest.mark.parametrize("field,value", [("entry", None), ("entry", "bad"), ("sl", float("nan")), ("volume", float("inf")), ("volume", 0), ("volume", -1)])
+def test_submit_rejects_invalid_numeric_fields(field, value):
+    values = {"entry": 100.0, "sl": 99.0, "volume": 1.0}
+    values[field] = value
+    engine = PaperTradingEngine()
+    with pytest.raises(ValueError):
+        engine.submit(PaperOrder("XAUUSD", Direction.BUY, values["entry"], values["sl"], values["volume"], datetime(2026, 9, 12, 10, tzinfo=timezone.utc)))
+    assert engine.open_order is None
+
+
+def test_submit_normalizes_numeric_strings():
+    engine = PaperTradingEngine()
+    engine.submit(PaperOrder("XAUUSD", Direction.BUY, "100", "99", "1.5", datetime(2026, 9, 12, 10, tzinfo=timezone.utc)))
+    assert engine.open_order.entry == 100.0
+    assert engine.open_order.sl == 99.0
+    assert engine.open_order.volume == 1.5
