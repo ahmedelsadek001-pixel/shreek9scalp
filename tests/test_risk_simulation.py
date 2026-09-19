@@ -69,6 +69,11 @@ def test_stressed_trade_pnl_overflow_fails_closed():
         simulate_sequence([-1e308], 1000, slippage_multiplier=2.0)
 
 
+def test_drawdown_percentage_overflow_fails_closed():
+    with pytest.raises(ValueError, match="drawdown percentage must remain finite"):
+        simulate_sequence([-1e308], starting_equity=1e-308, seed=0)
+
+
 def test_invalid_inputs_fail_closed():
     with pytest.raises(ValueError):
         simulate_sequence([], 1000)
