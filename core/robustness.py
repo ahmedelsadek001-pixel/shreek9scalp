@@ -11,8 +11,18 @@ from core.walk_forward import WalkForwardSummary
 
 
 def _is_real_number(value: object) -> bool:
-    """Accept finite real-valued ints/floats but reject booleans and coercions."""
-    return type(value) in (int, float) and isfinite(value)
+    """Accept finite real-valued ints/floats but reject booleans and coercions.
+
+    ``math.isfinite`` converts integers to float. Very large integers can
+    overflow during conversion, so treat those as invalid policy numbers
+    rather than leaking an implementation exception from validation.
+    """
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
 
 
 @dataclass(frozen=True)
