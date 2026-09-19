@@ -65,8 +65,9 @@ def test_sharpe_is_not_falsely_annualized():
     trades = (BacktestTrade(start, start, start, Direction.BUY, 100, 101, 1, 1, 0, 1, "TP"), BacktestTrade(start, start, start, Direction.BUY, 100, 99, 1, -1, 0, -1, "SL"), BacktestTrade(start, start, start, Direction.BUY, 100, 101, 1, 1, 0, 1, "TP"))
     result = BacktestResult(trades, (10000.0, 10001.0, 10000.0, 10001.0), BacktestStats(10000.0, 10001.0, 1.0, 0.01, 3, 2, 1, 2.0, 2.0, 0.3333333333, 1.0, 0.01, 1.0))
     metrics = calculate_research_metrics(result)
-    assert metrics.sharpe == pytest.approx(0.5773502692)
-    assert metrics.sharpe < 0.5773502692 * 2
+    # Sample-standard-deviation Sharpe at observed trade-return frequency.
+    assert metrics.sharpe == pytest.approx(0.2887184337)
+    assert metrics.sharpe < 0.2887184337 * 2
 
 
 def test_invalid_result_type_fails_closed():
