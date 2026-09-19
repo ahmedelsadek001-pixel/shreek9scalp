@@ -38,17 +38,8 @@ def admit_and_submit_paper(
     news_policy: NewsFirewallPolicy = NewsFirewallPolicy(),
 ) -> PipelineDecision:
     """Require strategy admission and risk admission before paper submission."""
-    admission: IntegrationDecision = evaluate_pre_trade(
-        bars,
-        setup,
-        timestamp=timestamp,
-        setup_min_score=setup_min_score,
-        news_events=news_events,
-        currencies=currencies,
-        news_policy=news_policy,
-    )
-    if not admission.allowed:
-        return PipelineDecision(False, "admission", "; ".join(admission.reasons))
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        return PipelineDecision(False, "order_validation", "timestamp must be timezone-aware")
 
     try:
         normalized_entry = float(entry)
@@ -67,12 +58,22 @@ def admit_and_submit_paper(
         return PipelineDecision(False, "order_validation", "BUY stop must be below entry")
     if direction is Direction.SELL and normalized_sl <= normalized_entry:
         return PipelineDecision(False, "order_validation", "SELL stop must be above entry")
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-        return PipelineDecision(False, "order_validation", "timestamp must be timezone-aware")
 
     modeled_loss = abs(normalized_entry - normalized_sl) * normalized_volume
     if not math.isfinite(modeled_loss) or modeled_loss <= 0:
         return PipelineDecision(False, "order_validation", "invalid modeled loss")
+
+    admission: IntegrationDecision = evaluate_pre_trade(
+        bars,
+        setup,
+        timestamp=timestamp,
+        setup_min_score=setup_min_score,
+        news_events=news_events,
+        currencies=currencies,
+        news_policy=news_policy,
+    )
+    if not admission.allowed:
+        return PipelineDecision(False, "admission", "; ".join(admission.reasons))
 
     risk: RiskAdmission = evaluate_risk(timestamp.date(), modeled_loss, engine.ledger, engine.risk_state)
     if not risk.allowed:
