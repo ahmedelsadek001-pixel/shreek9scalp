@@ -41,13 +41,14 @@ def test_killed_state_requires_explicit_reset():
         {"consecutive_losses": True},
         {"consecutive_losses": -1},
         {"consecutive_losses": 1.5},
+        {"consecutive_losses": 4, "max_consecutive_losses": 3},
         {"max_consecutive_losses": True},
         {"max_consecutive_losses": 0},
         {"max_consecutive_losses": -1},
         {"max_consecutive_losses": 2.5},
     ],
     ids=["string-state", "bool-loss-count", "negative-loss-count", "float-loss-count",
-         "bool-limit", "zero-limit", "negative-limit", "float-limit"],
+         "loss-count-over-limit", "bool-limit", "zero-limit", "negative-limit", "float-limit"],
 )
 def test_invalid_initial_state_is_rejected(kwargs):
     with pytest.raises(ValueError):
