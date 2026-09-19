@@ -213,3 +213,24 @@ def test_orchestrator_rejects_boolean_risk_values_before_paper_submission():
         assert not result.allowed
         assert result.stage == "risk"
         assert engine.open_order is None
+
+
+def test_failed_paper_submission_releases_duplicate_reservation(monkeypatch):
+    engine = PaperTradingEngine(1000, 0.05)
+    orchestrator = TradeOrchestrator(engine, RiskBudget(1000, risk_pct=0.01))
+
+    def fail_submit(order):
+        raise RuntimeError("simulated paper adapter failure")
+
+    monkeypatch.setattr(engine, "submit", fail_submit)
+    failed = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD", setup_min_score=70
+    )
+    assert not failed.allowed
+    assert failed.stage == "paper_execution"
+
+    monkeypatch.undo()
+    retried = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD", setup_min_score=70
+    )
+    assert retried.allowed
