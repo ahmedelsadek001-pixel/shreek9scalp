@@ -108,12 +108,15 @@ def simulate_sequence(
             ruined = True
             break
 
+    drawdown_pct = max_dd / starting_equity * 100.0
+    if not isfinite(drawdown_pct):
+        raise ValueError("simulated drawdown percentage must remain finite")
     realized = tuple(adjusted)
     return SimulationResult(
         realized,
         equity,
         max_dd,
-        max_dd / starting_equity * 100.0,
+        drawdown_pct,
         ruined,
     )
 
