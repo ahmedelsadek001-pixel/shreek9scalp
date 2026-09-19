@@ -66,3 +66,17 @@ def test_invalid_result_is_rejected_without_mutating_state(pnl):
         machine.record_result(pnl)
     assert machine.state is RiskState.COOLDOWN
     assert machine.consecutive_losses == 1
+
+
+def test_loss_counter_saturates_at_kill_threshold():
+    machine = RiskStateMachine(max_consecutive_losses=2)
+    machine.record_result(-1)
+    assert machine.consecutive_losses == 1
+    assert machine.state is RiskState.COOLDOWN
+    machine.record_result(-1)
+    assert machine.consecutive_losses == 2
+    assert machine.state is RiskState.KILLED
+    machine.record_result(-1)
+    assert machine.consecutive_losses == 2
+    assert machine.state is RiskState.KILLED
+    assert not machine.can_open()
