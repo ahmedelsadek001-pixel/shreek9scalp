@@ -51,6 +51,24 @@ def test_invalid_simulation_count_rejects_boolean():
         monte_carlo([1], 1000, simulations=True)
 
 
+def test_invalid_seed_rejects_boolean_and_non_integer_values():
+    for seed in (True, 1.5, "42"):
+        with pytest.raises(ValueError, match="seed must be an integer or None"):
+            simulate_sequence([1.0], 1000, seed=seed)
+        with pytest.raises(ValueError, match="seed must be an integer or None"):
+            monte_carlo([1.0], 1000, seed=seed)
+
+
+def test_combined_cost_multiplier_overflow_fails_closed():
+    with pytest.raises(ValueError, match="combined cost multiplier must be finite"):
+        simulate_sequence([1.0], 1000, slippage_multiplier=1e308, spread_multiplier=1e308)
+
+
+def test_stressed_trade_pnl_overflow_fails_closed():
+    with pytest.raises(ValueError, match="stressed trade P&L must remain finite"):
+        simulate_sequence([-1e308], 1000, slippage_multiplier=2.0)
+
+
 def test_invalid_inputs_fail_closed():
     with pytest.raises(ValueError):
         simulate_sequence([], 1000)
