@@ -4,7 +4,7 @@ import pytest
 
 from risk.daily_risk_ledger import DailyRiskLedger
 from risk.pre_trade_risk_gate import evaluate_risk
-from risk.risk_state import RiskState, RiskStateMachine
+from risk.risk_state import RiskStateMachine
 
 
 def test_risk_gate_allows_when_armed_and_budget_available():
@@ -41,7 +41,11 @@ def test_risk_gate_rejects_invalid_modeled_loss():
     assert result.reason == "invalid modeled loss"
 
 
-@pytest.mark.parametrize("modeled_loss", [None, "not-a-number", 10**10000])
+@pytest.mark.parametrize(
+    "modeled_loss",
+    [None, "not-a-number", 10**10000],
+    ids=["none", "non-numeric-text", "oversized-integer"],
+)
 def test_risk_gate_fails_closed_on_unconvertible_loss(modeled_loss):
     ledger = DailyRiskLedger(1000.0, 0.05)
     state = RiskStateMachine()
