@@ -9,7 +9,14 @@ from typing import Optional, Sequence
 
 def _is_number(value: object) -> bool:
     """Return whether value is an actual finite int/float, excluding bool."""
-    return type(value) in (int, float) and isfinite(value)
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        # ``math.isfinite`` converts integers to float; enormous integers can
+        # overflow during that conversion and must fail validation cleanly.
+        return False
 
 
 @dataclass(frozen=True)
