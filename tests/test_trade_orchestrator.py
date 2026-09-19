@@ -158,8 +158,8 @@ def test_orchestrator_rejects_non_numeric_signal_prices_without_raising():
     )
 
     assert not result.allowed
-    assert result.stage == "risk"
-    assert result.reason == "risk inputs must be numeric"
+    assert result.stage == "signal"
+    assert result.reason == "entry/stop price must be numeric"
     assert engine.open_order is None
 
 
