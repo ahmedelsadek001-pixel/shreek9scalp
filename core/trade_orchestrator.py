@@ -64,7 +64,7 @@ class TradeOrchestrator:
         """Run signal, strategy, risk, and idempotency admission before paper submission."""
         if not isinstance(timestamp, datetime) or timestamp.tzinfo is None or timestamp.utcoffset() is None:
             return OrchestrationDecision(False, "input", "timestamp must be timezone-aware")
-        if not symbol:
+        if not isinstance(symbol, str) or not symbol.strip():
             return OrchestrationDecision(False, "input", "symbol is required")
         if signal is None:
             return OrchestrationDecision(False, "signal", "signal unavailable")
@@ -87,16 +87,29 @@ class TradeOrchestrator:
         if not strategy.allowed:
             return OrchestrationDecision(False, "admission", "; ".join(strategy.reasons))
 
-        entry = float(signal.entry_price)
-        stop = float(signal.sl_price)
-        if not all(isfinite(value) and value > 0 for value in (entry, stop, point_value)):
+        try:
+            entry = float(signal.entry_price)
+            stop = float(signal.sl_price)
+            numeric_point_value = float(point_value)
+        except (TypeError, ValueError, OverflowError):
+            return OrchestrationDecision(False, "risk", "risk inputs must be numeric")
+        if not all(isfinite(value) and value > 0 for value in (entry, stop, numeric_point_value)):
             return OrchestrationDecision(False, "risk", "invalid risk inputs")
+
         if volume is None:
-            volume = self.risk_budget.size_for_stop(entry, stop, point_value)
-        elif not isfinite(float(volume)) or float(volume) <= 0:
-            return OrchestrationDecision(False, "risk", "volume must be positive and finite")
+            try:
+                volume = self.risk_budget.size_for_stop(entry, stop, numeric_point_value)
+            except (TypeError, ValueError, OverflowError):
+                return OrchestrationDecision(False, "risk", "position sizing failed")
+        else:
+            try:
+                volume = float(volume)
+            except (TypeError, ValueError, OverflowError):
+                return OrchestrationDecision(False, "risk", "volume must be numeric")
+            if not isfinite(volume) or volume <= 0:
+                return OrchestrationDecision(False, "risk", "volume must be positive and finite")
         volume = float(volume)
-        if not self.risk_budget.allows(entry, stop, volume, point_value):
+        if not self.risk_budget.allows(entry, stop, volume, numeric_point_value):
             return OrchestrationDecision(False, "risk", "risk budget exceeded", volume)
 
         try:
