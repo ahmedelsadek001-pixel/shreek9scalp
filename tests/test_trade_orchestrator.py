@@ -193,3 +193,23 @@ def test_orchestrator_rejects_non_finite_computed_volume(monkeypatch):
     assert result.stage == "risk"
     assert result.reason == "position volume must be positive and finite"
     assert engine.open_order is None
+
+
+def test_orchestrator_rejects_boolean_risk_values_before_paper_submission():
+    cases = (
+        (_signal(entry=True), {}),
+        (_signal(stop=True), {}),
+        (_signal(), {"point_value": True}),
+        (_signal(), {"volume": True}),
+    )
+
+    for signal, kwargs in cases:
+        engine = PaperTradingEngine(1000, 0.05)
+        orchestrator = TradeOrchestrator(engine, RiskBudget(1000, risk_pct=0.01))
+        result = orchestrator.evaluate_and_submit(
+            signal, _bars(), _setup(), timestamp=TIMESTAMP, symbol="XAUUSD",
+            setup_min_score=70, **kwargs,
+        )
+        assert not result.allowed
+        assert result.stage == "risk"
+        assert engine.open_order is None
