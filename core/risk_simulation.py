@@ -7,6 +7,11 @@ import random
 from typing import Optional, Sequence
 
 
+def _is_number(value: object) -> bool:
+    """Return whether value is an actual finite int/float, excluding bool."""
+    return type(value) in (int, float) and isfinite(value)
+
+
 @dataclass(frozen=True)
 class SimulationResult:
     pnl: tuple[float, ...]
@@ -29,10 +34,10 @@ class RobustnessSummary:
 
 
 def _validate(pnl: Sequence[float], starting_equity: float, simulations: int) -> None:
-    if not isfinite(starting_equity) or starting_equity <= 0:
+    if not _is_number(starting_equity) or starting_equity <= 0:
         raise ValueError("starting equity must be positive and finite")
-    if not pnl or any(not isfinite(float(x)) for x in pnl):
-        raise ValueError("pnl must be non-empty and finite")
+    if not pnl or any(not _is_number(x) for x in pnl):
+        raise ValueError("pnl must be non-empty and finite numeric values")
     if type(simulations) is not int or simulations <= 0:
         raise ValueError("simulations must be a positive integer")
 
@@ -44,8 +49,8 @@ def _validate_seed(seed: Optional[int]) -> None:
 
 def _validate_cost_multipliers(slippage_multiplier: float, spread_multiplier: float) -> None:
     if (
-        not isfinite(slippage_multiplier)
-        or not isfinite(spread_multiplier)
+        not _is_number(slippage_multiplier)
+        or not _is_number(spread_multiplier)
         or slippage_multiplier < 1
         or spread_multiplier < 1
     ):
@@ -57,17 +62,16 @@ def _validate_cost_multipliers(slippage_multiplier: float, spread_multiplier: fl
 def _validate_sorted_sample(values: Sequence[float]) -> None:
     if not values:
         raise ValueError("sample must be non-empty")
-    converted = [float(value) for value in values]
-    if any(not isfinite(value) for value in converted):
-        raise ValueError("sample values must be finite")
-    if any(left > right for left, right in zip(converted, converted[1:])):
+    if any(not _is_number(value) for value in values):
+        raise ValueError("sample values must be finite numbers")
+    if any(left > right for left, right in zip(values, values[1:])):
         raise ValueError("sample values must be sorted")
 
 
 def _quantile(sorted_values: Sequence[float], probability: float) -> float:
     """Linearly interpolate a quantile from an already sorted finite sample."""
     _validate_sorted_sample(sorted_values)
-    if not isfinite(float(probability)) or not 0.0 <= probability <= 1.0:
+    if not _is_number(probability) or not 0.0 <= probability <= 1.0:
         raise ValueError("quantile probability must be finite and between 0 and 1")
     if len(sorted_values) == 1:
         return float(sorted_values[0])
