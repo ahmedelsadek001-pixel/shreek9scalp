@@ -35,12 +35,17 @@ class RiskStateMachine:
 
     def record_result(self, pnl: float) -> None:
         """Record a finite numeric result without accepting bool or coercions."""
-        if (isinstance(pnl, bool) or not isinstance(pnl, (int, float))
-                or not isfinite(pnl)):
+        if isinstance(pnl, bool) or not isinstance(pnl, (int, float)):
             raise ValueError("pnl must be a finite number")
-        if pnl == 0:
+        try:
+            normalized_pnl = float(pnl)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("pnl must be a finite number") from exc
+        if not isfinite(normalized_pnl):
+            raise ValueError("pnl must be a finite number")
+        if normalized_pnl == 0:
             return
-        if pnl < 0:
+        if normalized_pnl < 0:
             self.consecutive_losses += 1
             self.state = (
                 RiskState.KILLED
