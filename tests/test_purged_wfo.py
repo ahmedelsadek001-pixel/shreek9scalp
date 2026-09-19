@@ -93,3 +93,24 @@ def test_invalid_inputs_fail_closed():
         build_purged_windows(30, 10, 5, 2, step=4.0)
     with pytest.raises(ValueError):
         run_purged_wfo([1, 2, 3], [], lambda values, params: 1.0, train_size=1, test_size=1, purge_size=0)
+
+
+def test_purged_wfo_rejects_boolean_maximize_and_non_mapping_params():
+    args = dict(train_size=2, test_size=1, purge_size=0)
+    with pytest.raises(ValueError, match="maximize must be a boolean"):
+        run_purged_wfo([1, 2, 3], [{"x": 1}], lambda values, params: 1.0, maximize=1, **args)
+    with pytest.raises(ValueError, match="each parameter set must be a mapping"):
+        run_purged_wfo([1, 2, 3], [None], lambda values, params: 1.0, **args)
+
+
+@pytest.mark.parametrize("bad_score", [True, "1.0", float("nan"), float("inf")])
+def test_purged_wfo_rejects_invalid_evaluator_scores(bad_score):
+    with pytest.raises(ValueError, match="evaluator scores"):
+        run_purged_wfo(
+            [1, 2, 3],
+            [{"x": 1}],
+            lambda values, params: bad_score,
+            train_size=2,
+            test_size=1,
+            purge_size=0,
+        )
