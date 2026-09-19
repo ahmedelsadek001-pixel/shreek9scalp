@@ -68,6 +68,8 @@ class TradeOrchestrator:
             return OrchestrationDecision(False, "input", "symbol is required")
         if signal is None:
             return OrchestrationDecision(False, "signal", "signal unavailable")
+        if not isinstance(signal, TradeSignal):
+            return OrchestrationDecision(False, "signal", "signal must be TradeSignal")
         if signal.direction not in (Direction.BUY, Direction.SELL):
             return OrchestrationDecision(False, "signal", "direction is not executable")
 
