@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from math import isfinite
 from typing import Dict
 
@@ -39,12 +39,18 @@ class DailyRiskLedger:
     def max_daily_loss(self) -> float:
         return self.starting_equity * self.max_daily_loss_pct
 
+    @staticmethod
+    def _valid_day(day: object) -> bool:
+        return isinstance(day, date) and not isinstance(day, datetime)
+
     def realized(self, day: date) -> float:
+        if not self._valid_day(day):
+            raise TypeError("day must be a date, not a datetime")
         return self._realized_by_day.get(day, 0.0)
 
     def record(self, day: date, pnl: float) -> None:
-        if not isinstance(day, date):
-            raise TypeError("day must be a date")
+        if not self._valid_day(day):
+            raise TypeError("day must be a date, not a datetime")
         normalized_pnl = _finite_float(pnl, "pnl")
         updated = self.realized(day) + normalized_pnl
         if not isfinite(updated):
@@ -58,7 +64,7 @@ class DailyRiskLedger:
         return max(0.0, self.max_daily_loss - self.loss_used(day))
 
     def can_open(self, day: date, modeled_loss: float = 0.0) -> bool:
-        if not isinstance(day, date):
+        if not self._valid_day(day):
             return False
         try:
             normalized_loss = _finite_float(modeled_loss, "modeled_loss")
