@@ -49,6 +49,8 @@ class PaperTradingEngine:
                 raise RuntimeError("paper engine already has an open position")
             if not isinstance(order, PaperOrder):
                 raise ValueError("order must be a PaperOrder")
+            if not isinstance(order.symbol, str) or not order.symbol.strip():
+                raise ValueError("order symbol must be a non-empty string")
             if not isinstance(order.timestamp, datetime):
                 raise ValueError("order timestamp must be a datetime")
             if order.timestamp.tzinfo is None or order.timestamp.utcoffset() is None:
@@ -68,7 +70,7 @@ class PaperTradingEngine:
             modeled_loss = abs(entry - sl) * volume
             if not isfinite(modeled_loss) or modeled_loss <= 0:
                 raise ValueError("modeled loss must be positive and finite")
-            normalized_order = PaperOrder(order.symbol, order.direction, entry, sl, volume, order.timestamp)
+            normalized_order = PaperOrder(order.symbol.strip(), order.direction, entry, sl, volume, order.timestamp)
             self.ledger.require_can_open(order.timestamp.date(), modeled_loss)
             if not self.risk_state.can_open():
                 raise RuntimeError("risk state blocks new paper order")
@@ -84,6 +86,8 @@ class PaperTradingEngine:
                 raise ValueError("fill timestamp must be a datetime")
             if timestamp.tzinfo is None or timestamp.utcoffset() is None:
                 raise ValueError("fill timestamp must be timezone-aware")
+            if not isinstance(reason, str) or not reason.strip():
+                raise ValueError("close reason must be a non-empty string")
             try:
                 normalized_exit = float(exit_price)
             except (TypeError, ValueError, OverflowError) as exc:
@@ -99,7 +103,7 @@ class PaperTradingEngine:
             previous_realized = self.ledger._realized_by_day.get(day)
             previous_state = self.risk_state.state
             previous_losses = self.risk_state.consecutive_losses
-            fill = PaperFill(order, normalized_exit, pnl, timestamp, reason)
+            fill = PaperFill(order, normalized_exit, pnl, timestamp, reason.strip())
             try:
                 self.ledger.record(day, pnl)
                 self.risk_state.record_result(pnl)
