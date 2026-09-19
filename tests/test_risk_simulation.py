@@ -1,6 +1,6 @@
 import pytest
 
-from core.risk_simulation import monte_carlo, simulate_sequence
+from core.risk_simulation import _median, _quantile, monte_carlo, simulate_sequence
 
 
 def test_simulation_is_reproducible():
@@ -12,11 +12,8 @@ def test_simulation_is_reproducible():
 def test_cost_stress_is_more_conservative():
     base = simulate_sequence([100.0, -50.0, 80.0], 1000, seed=1)
     stressed = simulate_sequence(
-        [100.0, -50.0, 80.0],
-        1000,
-        seed=1,
-        slippage_multiplier=1.2,
-        spread_multiplier=1.1,
+        [100.0, -50.0, 80.0], 1000, seed=1,
+        slippage_multiplier=1.2, spread_multiplier=1.1,
     )
     assert stressed.ending_equity < base.ending_equity
 
@@ -37,6 +34,15 @@ def test_quantiles_remain_finite_under_normal_inputs():
     result = monte_carlo([25.0, -10.0, 15.0], 1000, simulations=200, seed=3)
     assert result.p05_ending_equity == pytest.approx(result.p05_ending_equity)
     assert result.p95_max_drawdown == pytest.approx(result.p95_max_drawdown)
+
+
+def test_median_avoids_intermediate_overflow():
+    assert _median([1.7e308, 1.7e308]) == pytest.approx(1.7e308)
+    assert _median([-1.7e308, 1.7e308]) == pytest.approx(0.0)
+
+
+def test_quantile_avoids_overflow_for_opposite_extremes():
+    assert _quantile([-1.7e308, 1.7e308], 0.5) == pytest.approx(0.0)
 
 
 def test_ruin_is_path_dependent_and_stops_after_breach():
