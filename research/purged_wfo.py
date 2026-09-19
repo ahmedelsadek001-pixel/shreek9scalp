@@ -33,10 +33,9 @@ def build_purged_windows(
 ) -> tuple[PurgedWindow, ...]:
     """Build chronological windows with an explicit purge/embargo gap.
 
-    ``purge_size`` is a caller-supplied research contract: it must cover the
-    strategy's maximum information/label overlap horizon. This primitive
-    enforces the requested gap mechanically, but cannot infer that horizon
-    from an arbitrary evaluator.
+    ``purge_size`` is caller-supplied and must cover the strategy's maximum
+    information/label-overlap horizon. This primitive enforces the gap, but
+    cannot infer that horizon from an arbitrary evaluator.
     """
     if any(type(value) is not int for value in (length, train_size, test_size, purge_size)):
         raise ValueError("length, train_size, test_size and purge_size must be integers")
@@ -66,6 +65,15 @@ def build_purged_windows(
     return tuple(windows)
 
 
+def _validated_score(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("evaluator scores must be numeric and not boolean")
+    score = float(value)
+    if not isfinite(score):
+        raise ValueError("evaluator scores must be finite")
+    return score
+
+
 def run_purged_wfo(
     data: Sequence[Any],
     parameter_sets: Sequence[Mapping[str, Any]],
@@ -82,6 +90,11 @@ def run_purged_wfo(
         raise ValueError("parameter_sets must be non-empty")
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
+    if type(maximize) is not bool:
+        raise ValueError("maximize must be a boolean")
+    if any(not isinstance(params, Mapping) for params in parameter_sets):
+        raise ValueError("each parameter set must be a mapping")
+
     windows = build_purged_windows(len(data), train_size, test_size, purge_size, step)
     train_scores: list[float] = []
     test_scores: list[float] = []
@@ -91,15 +104,11 @@ def run_purged_wfo(
         test = data[window.test_start : window.test_end]
         scored = []
         for params in parameter_sets:
-            score = float(evaluator(train, params))
-            if not isfinite(score):
-                raise ValueError("evaluator scores must be finite")
+            score = _validated_score(evaluator(train, params))
             scored.append((score, params))
         scored.sort(key=lambda item: item[0], reverse=maximize)
         train_score, params = scored[0]
-        test_score = float(evaluator(test, params))
-        if not isfinite(test_score):
-            raise ValueError("evaluator scores must be finite")
+        test_score = _validated_score(evaluator(test, params))
         train_scores.append(train_score)
         test_scores.append(test_score)
         selected.append(dict(params))
