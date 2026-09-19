@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import math
 from typing import Sequence
 
 from core.enums import Direction
@@ -49,10 +50,25 @@ def admit_and_submit_paper(
     if not admission.allowed:
         return PipelineDecision(False, "admission", "; ".join(admission.reasons))
 
-    modeled_loss = abs(float(entry) - float(sl)) * float(volume)
+    try:
+        normalized_entry = float(entry)
+        normalized_sl = float(sl)
+        normalized_volume = float(volume)
+    except (TypeError, ValueError, OverflowError):
+        return PipelineDecision(False, "order_validation", "invalid order price or volume")
+
+    if not all(math.isfinite(value) and value > 0 for value in (normalized_entry, normalized_sl, normalized_volume)):
+        return PipelineDecision(False, "order_validation", "order price and volume must be finite and positive")
+    if normalized_entry == normalized_sl:
+        return PipelineDecision(False, "order_validation", "entry and stop loss must differ")
+
+    modeled_loss = abs(normalized_entry - normalized_sl) * normalized_volume
+    if not math.isfinite(modeled_loss) or modeled_loss <= 0:
+        return PipelineDecision(False, "order_validation", "invalid modeled loss")
+
     risk: RiskAdmission = evaluate_risk(timestamp.date(), modeled_loss, engine.ledger, engine.risk_state)
     if not risk.allowed:
         return PipelineDecision(False, "risk", risk.reason)
 
-    engine.submit(PaperOrder(symbol, direction, entry, sl, volume, timestamp))
+    engine.submit(PaperOrder(symbol, direction, normalized_entry, normalized_sl, normalized_volume, timestamp))
     return PipelineDecision(True, "paper_execution", "paper order accepted")
