@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from core.enums import Direction
 from core.paper_trade_pipeline import admit_and_submit_paper
 from core.setup_quality import SetupQualityInput
@@ -22,10 +24,10 @@ def _setup():
     )
 
 
-def _call(engine, setup=None, entry=100.0, sl=99.0):
+def _call(engine, setup=None, entry=100.0, sl=99.0, volume=1.0):
     return admit_and_submit_paper(
         engine, _bars(), setup or _setup(), timestamp=datetime(2026, 9, 12, 10, 2, tzinfo=timezone.utc),
-        symbol="XAUUSD", direction=Direction.BUY, entry=entry, sl=sl, volume=1.0,
+        symbol="XAUUSD", direction=Direction.BUY, entry=entry, sl=sl, volume=volume,
         setup_min_score=70, news_events=[], currencies=[], news_policy=NewsFirewallPolicy(),
     )
 
@@ -52,4 +54,28 @@ def test_pipeline_blocks_on_daily_risk_before_execution():
     result = _call(engine, entry=100.0, sl=99.0)
     assert not result.allowed
     assert result.stage == "risk"
+    assert engine.open_order is None
+
+
+@pytest.mark.parametrize(
+    ("entry", "sl", "volume"),
+    [
+        (None, 99.0, 1.0),
+        (100.0, "bad-stop", 1.0),
+        (100.0, 99.0, None),
+        (float("nan"), 99.0, 1.0),
+        (100.0, float("inf"), 1.0),
+        (100.0, 99.0, float("inf")),
+        (0.0, 99.0, 1.0),
+        (100.0, 99.0, -1.0),
+        (100.0, 100.0, 1.0),
+        (10**10000, 99.0, 1.0),
+    ],
+    ids=["missing-entry", "invalid-stop-text", "missing-volume", "nan-entry", "infinite-stop", "infinite-volume", "zero-entry", "negative-volume", "equal-prices", "oversized-entry"],
+)
+def test_pipeline_rejects_invalid_order_inputs_without_submission(entry, sl, volume):
+    engine = PaperTradingEngine(1000, 0.05)
+    result = _call(engine, entry=entry, sl=sl, volume=volume)
+    assert not result.allowed
+    assert result.stage == "order_validation"
     assert engine.open_order is None
