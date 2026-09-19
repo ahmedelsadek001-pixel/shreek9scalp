@@ -181,7 +181,7 @@ def test_orchestrator_rejects_non_numeric_volume_without_raising():
 def test_orchestrator_rejects_non_finite_computed_volume(monkeypatch):
     engine = PaperTradingEngine(1000, 0.05)
     budget = RiskBudget(1000, risk_pct=0.01)
-    monkeypatch.setattr(budget, "size_for_stop", lambda *args: float("inf"))
+    monkeypatch.setattr(RiskBudget, "size_for_stop", lambda self, *args: float("inf"))
     orchestrator = TradeOrchestrator(engine, budget)
 
     result = orchestrator.evaluate_and_submit(
