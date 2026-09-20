@@ -106,3 +106,20 @@ def test_verify_rejects_invalid_metadata(field, value):
     altered[field] = value
     tampered = ResearchEvidence(**altered)
     assert not verify_evidence(tampered)
+
+
+def test_create_rejects_metric_names_colliding_after_whitespace_normalization():
+    with pytest.raises(ValueError, match="unique after normalization"):
+        ResearchEvidence.create("dataset-A", "strategy-1", 1, {"score": 1.0, " score ": 2.0})
+
+
+def test_verify_rejects_metric_names_colliding_after_whitespace_normalization():
+    evidence = ResearchEvidence.create("dataset-A", "strategy-1", 1, {"score": 1.0})
+    tampered = ResearchEvidence(
+        evidence.dataset_id,
+        evidence.version,
+        evidence.samples,
+        {"score": 1.0, " score ": 2.0},
+        evidence.evidence_hash,
+    )
+    assert not verify_evidence(tampered)
