@@ -57,3 +57,12 @@ def test_verify_evidence_fails_closed_for_wrong_type_and_tampered_record():
         evidence.evidence_hash,
     )
     assert not verify_evidence(tampered)
+
+    boolean_tampered = ResearchEvidence(
+        evidence.dataset_id,
+        evidence.strategy_version,
+        evidence.sample_size,
+        {"score": True},
+        evidence.evidence_hash,
+    )
+    assert not verify_evidence(boolean_tampered)
