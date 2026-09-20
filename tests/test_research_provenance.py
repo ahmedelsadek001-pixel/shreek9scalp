@@ -65,3 +65,14 @@ def test_fingerprint_preserves_sequence_order():
 def test_fingerprint_accepts_json_boolean_and_null_values():
     values = {"enabled": True, "optional": None}
     assert fingerprint_mapping(values) == fingerprint_mapping({"optional": None, "enabled": True})
+
+
+def test_fingerprint_distinguishes_boolean_from_integer():
+    """JSON true/false must not collide with numeric 1/0 in provenance."""
+    assert fingerprint_mapping({"flag": True}) != fingerprint_mapping({"flag": 1})
+    assert fingerprint_mapping({"flag": False}) != fingerprint_mapping({"flag": 0})
+
+
+def test_fingerprint_treats_tuples_as_json_arrays():
+    """Tuple inputs serialize as arrays, matching equivalent list inputs."""
+    assert fingerprint_mapping({"levels": (1, 2, 3)}) == fingerprint_mapping({"levels": [1, 2, 3]})
