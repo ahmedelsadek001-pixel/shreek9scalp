@@ -115,6 +115,19 @@ def verify_evidence(evidence: ResearchEvidence) -> bool:
     if not isinstance(evidence, ResearchEvidence):
         raise TypeError("evidence must be ResearchEvidence")
     try:
+        if (
+            not isinstance(evidence.dataset_id, str)
+            or not evidence.dataset_id.strip()
+            or not isinstance(evidence.version, str)
+            or not evidence.version.strip()
+            or type(evidence.samples) is not int
+            or evidence.samples <= 0
+            or not isinstance(evidence.evidence_hash, str)
+            or not evidence.evidence_hash
+            or not isinstance(evidence.metrics, Mapping)
+            or not evidence.metrics
+        ):
+            return False
         if evidence.provenance is not None:
             validate_provenance(evidence.provenance)
         metrics: dict[str, float] = {}
