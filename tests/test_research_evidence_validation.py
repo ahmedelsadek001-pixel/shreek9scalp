@@ -75,3 +75,34 @@ def test_verify_evidence_fails_closed_for_wrong_type_and_tampered_record():
         evidence.evidence_hash,
     )
     assert not verify_evidence(string_tampered)
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("dataset_id", ""),
+        ("dataset_id", None),
+        ("version", " "),
+        ("version", None),
+        ("samples", True),
+        ("samples", 0),
+        ("samples", 1.5),
+        ("evidence_hash", ""),
+        ("metrics", {}),
+        ("metrics", None),
+    ],
+    ids=["empty-dataset", "none-dataset", "blank-version", "none-version", "bool-samples", "zero-samples", "float-samples", "empty-hash", "empty-metrics", "none-metrics"],
+)
+def test_verify_rejects_invalid_metadata(field, value):
+    evidence = ResearchEvidence.create("dataset-A", "strategy-1", 2, {"score": 1.0})
+    altered = {
+        "dataset_id": evidence.dataset_id,
+        "version": evidence.version,
+        "samples": evidence.samples,
+        "metrics": evidence.metrics,
+        "evidence_hash": evidence.evidence_hash,
+        "provenance": evidence.provenance,
+    }
+    altered[field] = value
+    tampered = ResearchEvidence(**altered)
+    assert not verify_evidence(tampered)
