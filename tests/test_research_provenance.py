@@ -53,3 +53,15 @@ def test_nested_json_like_values_are_canonicalized():
     left = {"bars": [{"close": 1.0, "symbol": "XAUUSD"}, {"close": 2.0}]}
     right = {"bars": [{"symbol": "XAUUSD", "close": 1.0}, {"close": 2.0}]}
     assert fingerprint_mapping(left) == fingerprint_mapping(right)
+
+
+def test_fingerprint_preserves_sequence_order():
+    """Changing chronological order must change the dataset fingerprint."""
+    chronological = {"closes": [2300.0, 2301.5, 2299.0]}
+    reordered = {"closes": [2301.5, 2300.0, 2299.0]}
+    assert fingerprint_mapping(chronological) != fingerprint_mapping(reordered)
+
+
+def test_fingerprint_accepts_json_boolean_and_null_values():
+    values = {"enabled": True, "optional": None}
+    assert fingerprint_mapping(values) == fingerprint_mapping({"optional": None, "enabled": True})
