@@ -81,6 +81,8 @@ class ResearchEvidence:
         for key, value in metrics.items():
             if not isinstance(key, str) or not key.strip():
                 raise ValueError("metric names must be non-empty strings")
+            if isinstance(value, bool):
+                raise ValueError("metric values must be finite numbers")
             try:
                 numeric = float(value)
             except (TypeError, ValueError, OverflowError) as exc:
@@ -117,7 +119,7 @@ def verify_evidence(evidence: ResearchEvidence) -> bool:
             validate_provenance(evidence.provenance)
         metrics: dict[str, float] = {}
         for key, value in evidence.metrics.items():
-            if not isinstance(key, str) or not key.strip():
+            if not isinstance(key, str) or not key.strip() or isinstance(value, bool):
                 return False
             numeric = float(value)
             if not isfinite(numeric):
