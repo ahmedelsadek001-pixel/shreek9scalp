@@ -81,6 +81,9 @@ class ResearchEvidence:
         for key, value in metrics.items():
             if not isinstance(key, str) or not key.strip():
                 raise ValueError("metric names must be non-empty strings")
+            normalized_key = key.strip()
+            if normalized_key in normalized:
+                raise ValueError("metric names must be unique after normalization")
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError("metric values must be finite numbers")
             try:
@@ -89,7 +92,7 @@ class ResearchEvidence:
                 raise ValueError("metric values must be finite numbers") from exc
             if not isfinite(numeric):
                 raise ValueError("metric values must be finite")
-            normalized[key.strip()] = numeric
+            normalized[normalized_key] = numeric
         normalized = dict(sorted(normalized.items()))
 
         provenance: ResearchProvenance | None = None
@@ -139,10 +142,13 @@ def verify_evidence(evidence: ResearchEvidence) -> bool:
                 or not isinstance(value, (int, float))
             ):
                 return False
+            normalized_key = key.strip()
+            if normalized_key in metrics:
+                return False
             numeric = float(value)
             if not isfinite(numeric):
                 return False
-            metrics[key.strip()] = numeric
+            metrics[normalized_key] = numeric
         payload = ResearchEvidence._canonical_payload(
             evidence.dataset_id,
             evidence.version,
