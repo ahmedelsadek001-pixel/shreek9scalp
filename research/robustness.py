@@ -99,10 +99,10 @@ def _extract_oos_trade_pnl(result: BacktestWFOResult) -> tuple[float, ...]:
     pnl: list[float] = []
     for backtest in result.oos_results:
         for trade in backtest.trades:
-            value = float(trade.net_pnl)
-            if not isfinite(value):
-                raise ValueError("OOS trade P&L must be finite")
-            pnl.append(value)
+            raw_value = trade.net_pnl
+            if not _is_finite_real(raw_value):
+                raise ValueError("OOS trade P&L must be a finite real number")
+            pnl.append(float(raw_value))
     if not pnl:
         raise ValueError("OOS results must contain at least one trade")
     return tuple(pnl)
