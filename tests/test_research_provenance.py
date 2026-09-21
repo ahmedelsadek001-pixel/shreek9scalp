@@ -76,3 +76,18 @@ def test_fingerprint_distinguishes_boolean_from_integer():
 def test_fingerprint_treats_tuples_as_json_arrays():
     """Tuple inputs serialize as arrays, matching equivalent list inputs."""
     assert fingerprint_mapping({"levels": (1, 2, 3)}) == fingerprint_mapping({"levels": [1, 2, 3]})
+
+
+def test_fingerprint_rejects_cyclic_values_with_value_error():
+    cyclic = []
+    cyclic.append(cyclic)
+    with pytest.raises(ValueError, match="finite-depth"):
+        fingerprint_mapping({"cycle": cyclic})
+
+
+def test_fingerprint_rejects_excessively_nested_values_with_value_error():
+    deeply_nested = 0
+    for _ in range(2000):
+        deeply_nested = [deeply_nested]
+    with pytest.raises(ValueError, match="finite-depth"):
+        fingerprint_mapping({"nested": deeply_nested})
