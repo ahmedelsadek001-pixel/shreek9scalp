@@ -225,3 +225,32 @@ def test_no_direct_order_transport_call_outside_guarded_adapter() -> None:
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr.lower() in forbidden:
                 violations.append(f"{relative}:{node.lineno}")
     assert violations == []
+
+
+def test_idempotency_ledger_blocks_second_transport_attempt() -> None:
+    from execution.idempotency import IdempotencyLedger
+    calls: list[str] = []
+    ledger = IdempotencyLedger()
+    adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent.order_id) or "sent", ledger)
+    first = adapter.execute_intent(_ready_gate(), _intent())
+    second = adapter.execute_intent(_ready_gate(), _intent())
+    assert first.executed is True
+    assert second.executed is False
+    assert "idempotency rejected" in second.reasons[0]
+    assert calls == ["ORD-001"]
+
+
+def test_transport_exception_marks_intent_unknown_and_blocks_retry() -> None:
+    from execution.idempotency import IdempotencyLedger, SubmissionState
+    ledger = IdempotencyLedger()
+    calls: list[str] = []
+    def fail(intent):
+        calls.append(intent.order_id)
+        raise TimeoutError("broker timeout")
+    adapter = GuardedExecutionAdapter(fail, ledger)
+    first = adapter.execute_intent(_ready_gate(), _intent())
+    assert first.executed is False
+    assert ledger.get("ORD-001").state is SubmissionState.UNKNOWN
+    second = adapter.execute_intent(_ready_gate(), _intent())
+    assert second.executed is False
+    assert calls == ["ORD-001"]
