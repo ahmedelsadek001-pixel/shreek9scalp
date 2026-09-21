@@ -30,6 +30,31 @@ class IdempotencyLedger:
     def __init__(self) -> None:
         self._records: dict[str, SubmissionRecord] = {}
 
+    def records(self) -> tuple[SubmissionRecord, ...]:
+        """Return an immutable deterministic snapshot of ledger state."""
+        return tuple(self._records[key] for key in sorted(self._records))
+
+    @classmethod
+    def restore(cls, records: tuple[SubmissionRecord, ...]) -> "IdempotencyLedger":
+        """Restore verified state without making any order retryable."""
+        if not isinstance(records, tuple):
+            raise TypeError("records must be a tuple")
+        ledger = cls()
+        for record in records:
+            if not isinstance(record, SubmissionRecord):
+                raise TypeError("records must contain SubmissionRecord values")
+            if not isinstance(record.order_id, str) or not record.order_id.strip():
+                raise ValueError("restored order identity is required")
+            if not isinstance(record.state, SubmissionState):
+                raise ValueError("restored submission state is invalid")
+            if type(record.attempts) is not int or record.attempts < 1:
+                raise ValueError("restored attempts must be a positive integer")
+            key = record.order_id.strip()
+            if key in ledger._records:
+                raise ValueError("duplicate restored order identity")
+            ledger._records[key] = SubmissionRecord(key, record.state, record.attempts)
+        return ledger
+
     @staticmethod
     def _identity(intent: OrderIntent) -> str:
         if not isinstance(intent, OrderIntent):
