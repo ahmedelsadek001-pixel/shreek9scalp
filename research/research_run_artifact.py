@@ -40,6 +40,16 @@ class ResearchRunArtifact:
         expected = sha256(self.evidence_export.encode("utf-8")).hexdigest()
         if expected != self.evidence_export_sha256:
             raise ValueError("evidence export fingerprint mismatch")
+        try:
+            export_payload = json.loads(self.evidence_export)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("evidence_export must contain valid JSON") from exc
+        if not isinstance(export_payload, dict):
+            raise ValueError("evidence_export must contain a JSON object")
+        if export_payload.get("dataset") != asdict(self.dataset):
+            raise ValueError("artifact dataset does not match evidence export dataset")
+        if export_payload.get("schema_version") not in {"2", "3"}:
+            raise ValueError("unsupported evidence export schema version")
         if type(self.metadata) is not tuple:
             raise ValueError("metadata must be a tuple")
         for item in self.metadata:
