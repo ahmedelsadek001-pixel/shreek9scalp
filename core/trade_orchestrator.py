@@ -73,6 +73,10 @@ class TradeOrchestrator:
         if signal.direction not in (Direction.BUY, Direction.SELL):
             return OrchestrationDecision(False, "signal", "direction is not executable")
 
+        # Validate risk-typed bools before signal admission; bool is int in Python.
+        if isinstance(signal.entry_price, bool) or isinstance(signal.sl_price, bool) or isinstance(point_value, bool) or isinstance(volume, bool):
+            return OrchestrationDecision(False, "risk", "risk inputs must be numeric")
+
         signal_admission: AdmissionDecision = admit_signal(signal, gates)
         if not signal_admission.allowed:
             return OrchestrationDecision(False, "signal", signal_admission.reason)
