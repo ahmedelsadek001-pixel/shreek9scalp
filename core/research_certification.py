@@ -7,9 +7,10 @@ Monte Carlo tail risk. It never grants execution authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
+from math import isclose, isfinite
 
 from core.block_bootstrap import BlockBootstrapSummary
+from core.research_metrics import calculate_research_metrics
 from core.statistical_evidence import MeanConfidenceInterval
 from research.backtest_wfo import BacktestWFOResult
 from research.robustness import RobustnessEvidence
@@ -50,6 +51,38 @@ class ResearchCertification:
     oos_stability_pct: float
 
 
+def _validate_wfo_evidence(wfo: BacktestWFOResult) -> None:
+    """Reject structurally inconsistent or tampered WFO evidence."""
+    windows = wfo.validation.windows
+    count = len(windows)
+    if count == 0:
+        raise ValueError("WFO must contain at least one OOS window")
+    if not (
+        len(wfo.validation.train_scores)
+        == len(wfo.validation.test_scores)
+        == len(wfo.validation.selected_parameters)
+        == len(wfo.train_metrics)
+        == len(wfo.oos_metrics)
+        == len(wfo.oos_results)
+        == count
+    ):
+        raise ValueError("WFO evidence cardinality is inconsistent")
+
+    for metric, result in zip(wfo.oos_metrics, wfo.oos_results):
+        expected = calculate_research_metrics(result)
+        numeric_pairs = (
+            (metric.net_pnl, expected.net_pnl),
+            (metric.expectancy, expected.expectancy),
+            (metric.gross_profit, expected.gross_profit),
+            (metric.gross_loss, expected.gross_loss),
+        )
+        if metric.trades != expected.trades or any(
+            not isclose(float(actual), float(wanted), rel_tol=1e-12, abs_tol=1e-12)
+            for actual, wanted in numeric_pairs
+        ):
+            raise ValueError("WFO OOS metrics do not match OOS backtest results")
+
+
 def certify_research(
     wfo: BacktestWFOResult,
     interval: MeanConfidenceInterval,
@@ -70,6 +103,7 @@ def certify_research(
     interval.validate()
     bootstrap.validate()
     robustness.validate()
+    _validate_wfo_evidence(wfo)
 
     pnl = wfo.oos_trade_pnl
     if not pnl:
