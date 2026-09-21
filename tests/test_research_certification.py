@@ -61,3 +61,24 @@ def test_certification_rejects_tampered_robustness_linkage():
     tampered=replace(robustness,oos_trade_pnl=robustness.oos_trade_pnl[:-1]+(99.0,))
     with pytest.raises(ValueError):
         certify_research(wfo,interval,bootstrap,tampered,ResearchCertificationPolicy(min_oos_trades=2))
+
+
+def test_certification_rejects_inconsistent_wfo_cardinality():
+    wfo=_wfo(); pnl=wfo.oos_trade_pnl
+    interval=mean_confidence_interval(pnl)
+    bootstrap=moving_block_bootstrap(pnl,block_size=2,simulations=50,seed=7)
+    robustness=run_oos_monte_carlo(wfo,starting_equity=10000,simulations=20,seed=7)
+    tampered=replace(wfo,oos_results=wfo.oos_results[:-1])
+    with pytest.raises(ValueError,match="cardinality"):
+        certify_research(tampered,interval,bootstrap,robustness,ResearchCertificationPolicy(min_oos_trades=2))
+
+
+def test_certification_rejects_oos_metric_result_mismatch():
+    wfo=_wfo(); pnl=wfo.oos_trade_pnl
+    interval=mean_confidence_interval(pnl)
+    bootstrap=moving_block_bootstrap(pnl,block_size=2,simulations=50,seed=7)
+    robustness=run_oos_monte_carlo(wfo,starting_equity=10000,simulations=20,seed=7)
+    altered=replace(wfo.oos_metrics[0],net_pnl=wfo.oos_metrics[0].net_pnl + 1.0)
+    tampered=replace(wfo,oos_metrics=(altered,) + wfo.oos_metrics[1:])
+    with pytest.raises(ValueError,match="do not match"):
+        certify_research(tampered,interval,bootstrap,robustness,ResearchCertificationPolicy(min_oos_trades=2))
