@@ -15,6 +15,10 @@ def test_is_finite_real_accepts_finite_ints_and_floats(value):
     assert _is_finite_real(value)
 
 
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), 10**10000])
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf"), 10**10000],
+    ids=["nan", "positive_inf", "negative_inf", "huge_int"],
+)
 def test_is_finite_real_rejects_non_finite_or_overflowing_values(value):
     assert not _is_finite_real(value)
