@@ -25,14 +25,14 @@ def test_unknown_blocks_and_requires_reconciliation():
     assert r.matched
     assert ledger.get("O1").state is SubmissionState.ACCEPTED
 
-def test_unknown_mismatch_resolves_rejected_not_retry_same_identity():
+def test_unknown_mismatch_remains_unknown_and_blocks_retry():
     ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
     c=ExecutionLifecycleCoordinator(ledger)
     c.apply_outcome(i,classify_broker_outcome(acknowledged=False,accepted=None))
     r=c.reconcile(i,ExecutionReport("WRONG","XAUUSD",Direction.BUY,0.03,2500.0))
     assert not r.matched
-    assert ledger.get("O1").state is SubmissionState.REJECTED
-    with pytest.raises(ValueError,match="new identity"): ledger.begin(i)
+    assert ledger.get("O1").state is SubmissionState.UNKNOWN
+    with pytest.raises(ValueError, match="unknown"): ledger.begin(i)
 
 def test_explicit_retryable_rejection_still_requires_new_identity():
     ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
