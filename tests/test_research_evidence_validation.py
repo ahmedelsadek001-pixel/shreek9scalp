@@ -123,3 +123,40 @@ def test_verify_rejects_metric_names_colliding_after_whitespace_normalization():
         evidence.evidence_hash,
     )
     assert not verify_evidence(tampered)
+
+
+@pytest.mark.parametrize(
+    "data,config,revision",
+    [
+        ({"bars": 1}, None, "abc123"),
+        (None, {"risk": 0.01}, "abc123"),
+        ({"bars": 1}, {"risk": 0.01}, None),
+        ({"bars": 1}, {"risk": 0.01}, " "),
+    ],
+    ids=["missing-config", "missing-data", "missing-revision", "blank-revision"],
+)
+def test_create_requires_complete_valid_provenance(data, config, revision):
+    with pytest.raises(ValueError):
+        ResearchEvidence.create(
+            "dataset-A",
+            "strategy-1",
+            1,
+            {"score": 1.0},
+            data=data,
+            config=config,
+            code_revision=revision,
+        )
+
+
+def test_evidence_with_complete_provenance_verifies():
+    evidence = ResearchEvidence.create(
+        "dataset-A",
+        "strategy-1",
+        3,
+        {"score": 0.75},
+        data={"closes": [2300.0, 2301.0, 2302.0]},
+        config={"risk_fraction": 0.01},
+        code_revision="abc123",
+    )
+    assert evidence.provenance is not None
+    assert verify_evidence(evidence)
