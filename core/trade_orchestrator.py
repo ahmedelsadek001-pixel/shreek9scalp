@@ -73,6 +73,16 @@ class TradeOrchestrator:
         if signal.direction not in (Direction.BUY, Direction.SELL):
             return OrchestrationDecision(False, "signal", "direction is not executable")
 
+        # Risk-typed bools must fail at the risk boundary before signal admission.
+        # Python bool is a subclass of int, so downstream float coercion is unsafe.
+        if (
+            isinstance(signal.entry_price, bool)
+            or isinstance(signal.sl_price, bool)
+            or isinstance(point_value, bool)
+            or isinstance(volume, bool)
+        ):
+            return OrchestrationDecision(False, "risk", "risk inputs must be numeric")
+
         # Validate risk-typed bools before signal admission; bool is int in Python.
         if isinstance(signal.entry_price, bool) or isinstance(signal.sl_price, bool) or isinstance(point_value, bool) or isinstance(volume, bool):
             return OrchestrationDecision(False, "risk", "risk inputs must be numeric")
