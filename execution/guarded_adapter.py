@@ -5,6 +5,7 @@ from typing import Callable, Generic, TypeVar, cast
 from execution.execution_gate import ExecutionGateDecision, is_gate_issued
 from execution.idempotency import IdempotencyLedger
 from execution.reconciliation import OrderIntent
+from execution.quote_safety import QuoteSafetyDecision
 
 T=TypeVar("T")
 LegacyExecutor=Callable[[],T]
@@ -45,9 +46,14 @@ class GuardedExecutionAdapter(Generic[T]):
         except Exception as exc: return GuardedExecutionResult(False,None,(f"downstream execution failed: {exc}",))
         return GuardedExecutionResult(True,result,())
 
-    def execute_intent(self,decision:ExecutionGateDecision,intent:OrderIntent)->GuardedExecutionResult[T]:
+    def execute_intent(self,decision:ExecutionGateDecision,intent:OrderIntent,quote_safety:QuoteSafetyDecision|None=None)->GuardedExecutionResult[T]:
         reasons=self._validate_decision(decision)
         if reasons is not None: return GuardedExecutionResult(False,None,reasons)
+        if quote_safety is not None:
+            if not isinstance(quote_safety,QuoteSafetyDecision) or type(quote_safety.allowed) is not bool or not isinstance(quote_safety.reason,str):
+                return GuardedExecutionResult(False,None,("quote safety decision malformed",))
+            if not quote_safety.allowed:
+                return GuardedExecutionResult(False,None,(f"quote safety: {quote_safety.reason}",))
         if not isinstance(intent,OrderIntent): return GuardedExecutionResult(False,None,("order intent malformed",))
         if not isinstance(intent.order_id,str) or not intent.order_id.strip(): return GuardedExecutionResult(False,None,("order intent identity missing",))
         if not isinstance(intent.symbol,str) or not intent.symbol.strip(): return GuardedExecutionResult(False,None,("order intent symbol missing",))
