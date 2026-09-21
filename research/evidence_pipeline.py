@@ -9,6 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
+from core.block_bootstrap import BlockBootstrapSummary, moving_block_bootstrap
+from core.research_certification import (
+    ResearchCertification,
+    ResearchCertificationPolicy,
+    certify_research,
+)
+from core.statistical_evidence import MeanConfidenceInterval, mean_confidence_interval
 from research.backtest_wfo import BacktestEvaluator, BacktestWFOResult, MetricEvaluator, run_backtest_wfo
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult, evaluate_oos_evidence
 from research.evidence_report import OOSEvidenceReport, build_oos_evidence_report
@@ -23,7 +30,11 @@ class EvidencePipelineResult:
     robustness: RobustnessEvidence
     report: OOSEvidenceReport
     gate: EvidenceGateResult
+    interval: MeanConfidenceInterval
+    bootstrap: BlockBootstrapSummary
+    certification: ResearchCertification
     policy: EvidenceGatePolicy = EvidenceGatePolicy()
+    certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy()
 
 
 def run_evidence_pipeline(
@@ -43,6 +54,10 @@ def run_evidence_pipeline(
     slippage_multiplier: float = 1.0,
     spread_multiplier: float = 1.0,
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
+    confidence: float = 0.95,
+    bootstrap_block_size: int = 2,
+    bootstrap_simulations: int = 2000,
+    certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy(),
 ) -> EvidencePipelineResult:
     """Run the complete V5.2 evidence chain in causal order.
 
@@ -71,4 +86,30 @@ def run_evidence_pipeline(
     )
     report = build_oos_evidence_report(wfo, robustness)
     gate = evaluate_oos_evidence(report, policy)
-    return EvidencePipelineResult(wfo, robustness, report, gate, policy)
+    pnl = wfo.oos_trade_pnl
+    interval = mean_confidence_interval(pnl, confidence)
+    bootstrap = moving_block_bootstrap(
+        pnl,
+        block_size=bootstrap_block_size,
+        simulations=bootstrap_simulations,
+        confidence=confidence,
+        seed=42 if seed is None else seed,
+    )
+    certification = certify_research(
+        wfo,
+        interval,
+        bootstrap,
+        robustness,
+        certification_policy,
+    )
+    return EvidencePipelineResult(
+        wfo,
+        robustness,
+        report,
+        gate,
+        interval,
+        bootstrap,
+        certification,
+        policy,
+        certification_policy,
+    )
