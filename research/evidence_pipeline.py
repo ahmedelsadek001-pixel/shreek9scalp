@@ -30,10 +30,10 @@ class EvidencePipelineResult:
     robustness: RobustnessEvidence
     report: OOSEvidenceReport
     gate: EvidenceGateResult
-    interval: MeanConfidenceInterval
-    bootstrap: BlockBootstrapSummary
-    certification: ResearchCertification
     policy: EvidenceGatePolicy = EvidenceGatePolicy()
+    interval: MeanConfidenceInterval | None = None
+    bootstrap: BlockBootstrapSummary | None = None
+    certification: ResearchCertification | None = None
     certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy()
 
 
@@ -107,9 +107,9 @@ def run_evidence_pipeline(
         robustness,
         report,
         gate,
+        policy,
         interval,
         bootstrap,
         certification,
-        policy,
         certification_policy,
     )
