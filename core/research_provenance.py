@@ -53,7 +53,12 @@ def fingerprint_mapping(values: Mapping[str, object]) -> str:
         raise ValueError("values must be a mapping")
     try:
         _validate_json_value(values)
-        canonical = json.dumps(values, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except RecursionError as exc:
+        raise ValueError("values must be finite-depth JSON-like data") from exc
+    try:
+        canonical = json.dumps(
+            values, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
     except RecursionError as exc:
         raise ValueError("values must be finite-depth JSON-like data") from exc
     except (TypeError, ValueError) as exc:
@@ -61,7 +66,12 @@ def fingerprint_mapping(values: Mapping[str, object]) -> str:
     return sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def build_provenance(*, data: Mapping[str, object], config: Mapping[str, object], code_revision: str) -> ResearchProvenance:
+def build_provenance(
+    *,
+    data: Mapping[str, object],
+    config: Mapping[str, object],
+    code_revision: str,
+) -> ResearchProvenance:
     """Build and validate provenance before research evidence is accepted."""
     provenance = ResearchProvenance(
         data_fingerprint=fingerprint_mapping(data),
