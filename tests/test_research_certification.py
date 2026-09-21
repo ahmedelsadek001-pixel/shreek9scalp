@@ -28,7 +28,7 @@ def _wfo():
     rows=tuple(_result([2.0,2.0,2.0,2.0]) for _ in range(3))
     metrics=tuple(calculate_research_metrics(r) for r in rows)
     validation=PurgedWFOResult(
-        (PurgedWindow(0,4,4,8),PurgedWindow(8,12,12,16),PurgedWindow(16,20,20,24)),
+        (PurgedWindow(0,4,4,4,4,8),PurgedWindow(8,12,12,12,12,16),PurgedWindow(16,20,20,20,20,24)),
         (2.0,2.0,2.0),(2.0,2.0,2.0),({"x":1},{"x":1},{"x":1}))
     return BacktestWFOResult(validation,metrics,metrics,rows)
 
