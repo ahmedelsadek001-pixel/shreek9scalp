@@ -71,12 +71,23 @@ def _validate_wfo_evidence(wfo: BacktestWFOResult) -> None:
     for metric, result in zip(wfo.oos_metrics, wfo.oos_results):
         expected = calculate_research_metrics(result)
         numeric_pairs = (
+            (metric.win_rate_pct, expected.win_rate_pct),
             (metric.net_pnl, expected.net_pnl),
             (metric.expectancy, expected.expectancy),
-            (metric.gross_profit, expected.gross_profit),
-            (metric.gross_loss, expected.gross_loss),
+            (metric.profit_factor, expected.profit_factor),
+            (metric.average_win, expected.average_win),
+            (metric.average_loss, expected.average_loss),
+            (metric.payoff_ratio, expected.payoff_ratio),
+            (metric.max_drawdown, expected.max_drawdown),
+            (metric.max_drawdown_pct, expected.max_drawdown_pct),
+            (metric.sharpe, expected.sharpe),
         )
-        if metric.trades != expected.trades or any(
+        counts_match = (
+            metric.trades == expected.trades
+            and metric.wins == expected.wins
+            and metric.losses == expected.losses
+        )
+        if not counts_match or any(
             not isclose(float(actual), float(wanted), rel_tol=1e-12, abs_tol=1e-12)
             for actual, wanted in numeric_pairs
         ):
