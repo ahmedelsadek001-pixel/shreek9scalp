@@ -40,6 +40,20 @@ class ExecutionLifecycleCoordinator:
         if current is None or current.state not in (SubmissionState.ACCEPTED,SubmissionState.UNKNOWN):
             raise ValueError("intent is not eligible for reconciliation")
         result=reconcile_execution(intent,report,price_tolerance=price_tolerance,volume_tolerance=volume_tolerance)
-        if current.state is SubmissionState.UNKNOWN:
-            self.ledger.reconcile_unknown(intent.order_id,broker_order_exists=result.matched)
+        if current.state is SubmissionState.UNKNOWN and result.matched:
+            # An exact broker report proves presence. A mismatched report does
+            # NOT prove absence and must leave UNKNOWN fail-closed.
+            self.ledger.reconcile_unknown(intent.order_id,broker_order_exists=True)
         return result
+
+    def resolve_unknown_presence(self,intent:OrderIntent,*,broker_order_exists:bool)->LifecycleDecision:
+        """Resolve UNKNOWN only from an explicit exact-identity broker query."""
+        if not isinstance(intent,OrderIntent): raise ValueError("intent must be OrderIntent")
+        if type(broker_order_exists) is not bool: raise ValueError("broker_order_exists must be bool")
+        current=self.ledger.get(intent.order_id)
+        if current is None or current.state is not SubmissionState.UNKNOWN:
+            raise ValueError("intent is not awaiting broker presence reconciliation")
+        record=self.ledger.reconcile_unknown(intent.order_id,broker_order_exists=broker_order_exists)
+        if record.state is SubmissionState.ACCEPTED:
+            return LifecycleDecision(True,record.state,())
+        return LifecycleDecision(False,record.state,("broker explicitly confirmed order absence",))
