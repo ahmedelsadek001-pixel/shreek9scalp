@@ -43,7 +43,7 @@ def test_export_is_deterministic():
 def test_export_contains_dataset_identity_evidence_and_exact_policy():
     policy = EvidenceGatePolicy(min_oos_trades=30, min_expectancy=1.0)
     payload = build_evidence_export(_result(policy), _provenance())
-    assert payload["schema_version"] == "2"
+    assert payload["schema_version"] == "3"
     assert payload["dataset"]["sha256"] == "a" * 64
     assert "oos_expectancy" in payload["evidence"]
     assert payload["gate"]["passed"] is True
