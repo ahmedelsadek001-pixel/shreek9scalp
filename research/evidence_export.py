@@ -10,7 +10,7 @@ from research.dataset_provenance import DatasetProvenance
 from research.evidence_pipeline import EvidencePipelineResult
 
 
-EXPORT_SCHEMA_VERSION = "2"
+EXPORT_SCHEMA_VERSION = "3"
 
 
 def build_evidence_export(
@@ -32,6 +32,19 @@ def build_evidence_export(
         "gate": asdict(result.gate),
         "gate_policy": asdict(result.policy),
     }
+    statistical = (result.interval, result.bootstrap, result.certification)
+    if any(item is not None for item in statistical):
+        if any(item is None for item in statistical):
+            raise ValueError("statistical certification evidence must be complete")
+        result.interval.validate()
+        result.bootstrap.validate()
+        result.certification_policy.validate()
+        payload["statistical_evidence"] = {
+            "confidence_interval": asdict(result.interval),
+            "block_bootstrap": asdict(result.bootstrap),
+            "certification": asdict(result.certification),
+            "certification_policy": asdict(result.certification_policy),
+        }
     return payload
 
 
