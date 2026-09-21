@@ -30,13 +30,14 @@ def test_unknown_execution_mismatch_fails_closed(report):
     ledger,c,i=_unknown()
     result=c.reconcile(i,report)
     assert not result.matched
-    assert ledger.get(i.order_id).state is SubmissionState.REJECTED
+    assert ledger.get(i.order_id).state is SubmissionState.UNKNOWN
 
-def test_duplicate_broker_report_cannot_reconcile_rejected_unknown_twice():
+def test_repeated_mismatched_reports_leave_unknown_fail_closed():
     ledger,c,i=_unknown()
     bad=ExecutionReport("WRONG","XAUUSD",Direction.BUY,0.03,2500.0)
     assert not c.reconcile(i,bad).matched
-    with pytest.raises(ValueError,match="not eligible"): c.reconcile(i,bad)
+    assert not c.reconcile(i,bad).matched
+    assert ledger.get(i.order_id).state is SubmissionState.UNKNOWN
 
 def test_accepted_fill_mismatch_is_detected_without_mutating_acceptance():
     ledger=IdempotencyLedger(); i=_intent(); ledger.begin(i)
