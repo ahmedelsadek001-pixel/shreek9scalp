@@ -51,8 +51,8 @@ def fingerprint_mapping(values: Mapping[str, object]) -> str:
     """Create a deterministic SHA-256 fingerprint from strict JSON-like inputs."""
     if not isinstance(values, Mapping):
         raise ValueError("values must be a mapping")
-    _validate_json_value(values)
     try:
+        _validate_json_value(values)
         canonical = json.dumps(values, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except RecursionError as exc:
         raise ValueError("values must be finite-depth JSON-like data") from exc
