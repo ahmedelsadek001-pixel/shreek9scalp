@@ -30,19 +30,29 @@ def build_purged_windows(
     test_size: int,
     purge_size: int,
     step: int | None = None,
+    label_horizon: int = 0,
 ) -> tuple[PurgedWindow, ...]:
     """Build chronological windows with an explicit purge/embargo gap.
 
-    ``purge_size`` is caller-supplied and must cover the strategy's maximum
-    information/label-overlap horizon. This primitive enforces the gap, but
-    cannot infer that horizon from an arbitrary evaluator.
+    ``label_horizon`` declares the maximum number of observations used by a
+    feature or label beyond its anchor observation. The caller may use a
+    larger embargo, but a smaller ``purge_size`` is rejected fail-closed.
     """
-    if any(type(value) is not int for value in (length, train_size, test_size, purge_size)):
-        raise ValueError("length, train_size, test_size and purge_size must be integers")
+    if any(
+        type(value) is not int
+        for value in (length, train_size, test_size, purge_size, label_horizon)
+    ):
+        raise ValueError(
+            "length, train_size, test_size, purge_size and label_horizon must be integers"
+        )
     if length <= 0 or train_size <= 0 or test_size <= 0:
         raise ValueError("length, train_size and test_size must be positive")
     if purge_size < 0:
         raise ValueError("purge_size must be non-negative")
+    if label_horizon < 0:
+        raise ValueError("label_horizon must be non-negative")
+    if purge_size < label_horizon:
+        raise ValueError("purge_size must be at least label_horizon")
     if step is None:
         step = test_size
     elif type(step) is not int:
@@ -84,6 +94,7 @@ def run_purged_wfo(
     purge_size: int,
     step: int | None = None,
     maximize: bool = True,
+    label_horizon: int = 0,
 ) -> PurgedWFOResult:
     """Select parameters on train data only and evaluate after an embargo gap."""
     if not parameter_sets:
@@ -95,7 +106,9 @@ def run_purged_wfo(
     if any(not isinstance(params, Mapping) for params in parameter_sets):
         raise ValueError("each parameter set must be a mapping")
 
-    windows = build_purged_windows(len(data), train_size, test_size, purge_size, step)
+    windows = build_purged_windows(
+        len(data), train_size, test_size, purge_size, step, label_horizon
+    )
     train_scores: list[float] = []
     test_scores: list[float] = []
     selected: list[Mapping[str, Any]] = []

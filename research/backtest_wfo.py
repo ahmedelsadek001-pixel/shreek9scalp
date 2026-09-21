@@ -99,7 +99,7 @@ def _validate_timestamped_oos_result(result: BacktestResult, oos_data: Sequence[
     if all(timestamp_flags):
         _validate_context_result(result, oos_data, 0, len(oos_data))
 
-def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, Any]], evaluator: BacktestEvaluator, *, train_size: int, test_size: int, purge_size: int, step: int | None = None, maximize: bool = True, objective: MetricEvaluator = lambda metrics: metrics.expectancy, context_size: int = 0, context_evaluator: ContextBacktestEvaluator | None = None) -> BacktestWFOResult:
+def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, Any]], evaluator: BacktestEvaluator, *, train_size: int, test_size: int, purge_size: int, step: int | None = None, maximize: bool = True, objective: MetricEvaluator = lambda metrics: metrics.expectancy, context_size: int = 0, context_evaluator: ContextBacktestEvaluator | None = None, label_horizon: int = 0) -> BacktestWFOResult:
     """Select on train and evaluate each exact OOS interval once, fail-closed."""
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
@@ -111,7 +111,9 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
         raise ValueError("context_evaluator is required when context_size is positive")
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
-    windows = build_purged_windows(len(data), train_size, test_size, purge_size, step)
+    windows = build_purged_windows(
+        len(data), train_size, test_size, purge_size, step, label_horizon
+    )
     train_scores: list[float] = []
     test_scores: list[float] = []
     selected_parameters: list[Mapping[str, Any]] = []

@@ -95,6 +95,35 @@ def test_invalid_inputs_fail_closed():
         run_purged_wfo([1, 2, 3], [], lambda values, params: 1.0, train_size=1, test_size=1, purge_size=0)
 
 
+def test_purge_must_cover_declared_label_horizon():
+    with pytest.raises(ValueError, match="at least label_horizon"):
+        build_purged_windows(
+            30, train_size=10, test_size=5, purge_size=2, label_horizon=3
+        )
+
+
+def test_declared_label_horizon_is_enforced_by_runner():
+    with pytest.raises(ValueError, match="at least label_horizon"):
+        run_purged_wfo(
+            list(range(30)),
+            ({"x": 1},),
+            lambda values, params: float(sum(values)),
+            train_size=10,
+            test_size=5,
+            purge_size=1,
+            label_horizon=2,
+        )
+
+
+@pytest.mark.parametrize("bad_horizon", [-1, 1.0, True])
+def test_invalid_label_horizon_fails_closed(bad_horizon):
+    with pytest.raises(ValueError, match="label_horizon"):
+        build_purged_windows(
+            30, train_size=10, test_size=5, purge_size=2,
+            label_horizon=bad_horizon,
+        )
+
+
 def test_purged_wfo_rejects_boolean_maximize_and_non_mapping_params():
     args = dict(train_size=2, test_size=1, purge_size=0)
     with pytest.raises(ValueError, match="maximize must be a boolean"):

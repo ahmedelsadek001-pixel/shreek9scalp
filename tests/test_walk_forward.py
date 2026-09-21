@@ -28,6 +28,17 @@ def test_negative_purge_is_rejected():
         rolling_windows(20, 8, 4, purge_size=-1)
 
 
+def test_purge_must_cover_label_horizon():
+    with pytest.raises(ValueError, match="at least label_horizon"):
+        rolling_windows(20, 8, 4, purge_size=1, label_horizon=2)
+
+
+@pytest.mark.parametrize("bad_horizon", [-1, 1.0, True])
+def test_invalid_label_horizon_is_rejected(bad_horizon):
+    with pytest.raises(ValueError, match="label_horizon"):
+        rolling_windows(20, 8, 4, purge_size=2, label_horizon=bad_horizon)
+
+
 def test_purge_can_make_dataset_insufficient():
     with pytest.raises(ValueError, match="insufficient"):
         rolling_windows(14, 8, 4, purge_size=3)

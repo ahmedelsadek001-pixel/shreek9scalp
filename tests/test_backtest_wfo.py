@@ -132,3 +132,16 @@ def test_wfo_oos_result_is_invariant_to_future_data_mutation():
     replay = run_backtest_wfo(mutated, ({"mult": 1.0},), evaluator, train_size=4, test_size=2, purge_size=1, step=2)
     assert baseline.oos_results[0] == replay.oos_results[0]
     assert baseline.oos_metrics[0] == replay.oos_metrics[0]
+
+
+def test_backtest_wfo_rejects_purge_shorter_than_label_horizon():
+    with pytest.raises(ValueError, match="at least label_horizon"):
+        run_backtest_wfo(
+            list(range(12)),
+            ({"mult": 1.0},),
+            lambda rows, selected: _result(sum(rows) * selected["mult"]),
+            train_size=4,
+            test_size=2,
+            purge_size=1,
+            label_horizon=2,
+        )

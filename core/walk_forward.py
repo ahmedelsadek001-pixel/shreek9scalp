@@ -44,6 +44,7 @@ def rolling_windows(
     test_size: int,
     step: Optional[int] = None,
     purge_size: int = 0,
+    label_horizon: int = 0,
 ) -> tuple[WalkForwardWindow, ...]:
     """Create chronological train/test windows with an optional embargo gap.
 
@@ -63,6 +64,10 @@ def rolling_windows(
         raise ValueError("test_size must be a positive integer")
     if type(purge_size) is not int or purge_size < 0:
         raise ValueError("purge_size must be a non-negative integer")
+    if type(label_horizon) is not int or label_horizon < 0:
+        raise ValueError("label_horizon must be a non-negative integer")
+    if purge_size < label_horizon:
+        raise ValueError("purge_size must be at least label_horizon")
     step = test_size if step is None else step
     if type(step) is not int or step <= 0:
         raise ValueError("step must be a positive integer")
@@ -92,6 +97,7 @@ def run_walk_forward(
     step: Optional[int] = None,
     maximize: bool = True,
     purge_size: int = 0,
+    label_horizon: int = 0,
 ) -> WalkForwardSummary:
     """Select parameters only on training data, then evaluate them OOS."""
     if not parameter_sets:
@@ -100,7 +106,9 @@ def run_walk_forward(
         raise ValueError("evaluator must be callable")
     if type(maximize) is not bool:
         raise ValueError("maximize must be a bool")
-    windows = rolling_windows(len(data), train_size, test_size, step, purge_size)
+    windows = rolling_windows(
+        len(data), train_size, test_size, step, purge_size, label_horizon
+    )
     results = []
     for window in windows:
         train = data[window.train_start : window.train_end]

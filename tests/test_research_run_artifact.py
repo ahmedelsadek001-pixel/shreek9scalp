@@ -1,4 +1,7 @@
+from dataclasses import replace
 from datetime import datetime, timezone
+import hashlib
+import json
 
 import pytest
 
@@ -68,6 +71,20 @@ def test_artifact_rejects_tampered_export():
         artifact.metadata,
     )
     with pytest.raises(ValueError, match="fingerprint mismatch"):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_export_with_different_dataset():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["dataset"]["sha256"] = "b" * 64
+    export = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    tampered = replace(
+        artifact,
+        evidence_export=export,
+        evidence_export_sha256=hashlib.sha256(export.encode("utf-8")).hexdigest(),
+    )
+    with pytest.raises(ValueError, match="does not match"):
         tampered.validate()
 
 

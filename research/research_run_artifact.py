@@ -15,6 +15,11 @@ from research.evidence_pipeline import EvidencePipelineResult
 ARTIFACT_SCHEMA_VERSION = "1"
 
 
+def _serialized_dataset(dataset: DatasetProvenance) -> dict[str, Any]:
+    """Return the exact JSON representation used by the evidence exporter."""
+    return json.loads(json.dumps(asdict(dataset), sort_keys=True, default=str))
+
+
 @dataclass(frozen=True)
 class ResearchRunArtifact:
     """Immutable archival identity for one validated research run."""
@@ -46,7 +51,7 @@ class ResearchRunArtifact:
             raise ValueError("evidence_export must contain valid JSON") from exc
         if not isinstance(export_payload, dict):
             raise ValueError("evidence_export must contain a JSON object")
-        if export_payload.get("dataset") != asdict(self.dataset):
+        if export_payload.get("dataset") != _serialized_dataset(self.dataset):
             raise ValueError("artifact dataset does not match evidence export dataset")
         if export_payload.get("schema_version") not in {"2", "3"}:
             raise ValueError("unsupported evidence export schema version")
