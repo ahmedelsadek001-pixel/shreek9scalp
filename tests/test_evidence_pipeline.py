@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
+from core.research_certification import ResearchCertificationPolicy
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import run_evidence_pipeline
 
@@ -54,6 +55,12 @@ def test_pipeline_composes_wfo_monte_carlo_report_and_gate():
         step=2,
         simulations=25,
         policy=EvidenceGatePolicy(min_oos_trades=2, min_expectancy=0.0),
+        bootstrap_block_size=1,
+        bootstrap_simulations=25,
+        certification_policy=ResearchCertificationPolicy(
+            min_oos_trades=2,
+            min_oos_windows=2,
+        ),
     )
 
     assert len(result.wfo.oos_results) == 2
@@ -62,6 +69,9 @@ def test_pipeline_composes_wfo_monte_carlo_report_and_gate():
     assert result.report.simulations == 25
     assert result.gate.passed is True
     assert result.gate.failures == ()
+    assert result.interval.samples == 2
+    assert result.bootstrap.samples == 2
+    assert result.certification.passed is True
 
 
 def test_pipeline_gate_remains_fail_closed_for_insufficient_oos_trades():
@@ -78,7 +88,15 @@ def test_pipeline_gate_remains_fail_closed_for_insufficient_oos_trades():
         starting_equity=10000.0,
         simulations=10,
         policy=EvidenceGatePolicy(min_oos_trades=3),
+        bootstrap_block_size=1,
+        bootstrap_simulations=10,
+        certification_policy=ResearchCertificationPolicy(
+            min_oos_trades=3,
+            min_oos_windows=1,
+        ),
     )
 
     assert result.gate.passed is False
     assert "OOS trade count below minimum" in result.gate.failures
+    assert result.certification.passed is False
+    assert "insufficient OOS trades" in result.certification.failures
