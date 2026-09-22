@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+import json
 from typing import Mapping
 
 from core.live_authorization import REQUIRED_EVIDENCE
