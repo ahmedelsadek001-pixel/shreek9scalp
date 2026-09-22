@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from math import isfinite
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -37,8 +38,13 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         raise ValueError("evidence export gate policy trade minimum is invalid")
     if any(type(policy.get(name)) not in (int, float) for name in numeric_policy):
         raise ValueError("evidence export gate policy numeric values are invalid")
+    if any(not isfinite(float(policy[name])) for name in numeric_policy):
+        raise ValueError("evidence export gate policy numeric values must be finite")
     if type(evidence.get("oos_trade_count")) is not int or evidence["oos_trade_count"] < 0:
         raise ValueError("evidence export OOS trade count is invalid")
+    evidence_numeric = ("oos_expectancy", "oos_stability_pct", "ruin_rate_pct", "worst_max_drawdown")
+    if any(type(evidence.get(name)) not in (int, float) or not isfinite(float(evidence[name])) for name in evidence_numeric):
+        raise ValueError("evidence export numeric evidence must be finite numbers")
     if type(gate.get("passed")) is not bool or not isinstance(gate.get("failures"), list):
         raise ValueError("evidence export gate is malformed")
     if gate["passed"] != (len(gate["failures"]) == 0):
