@@ -127,6 +127,7 @@ def simulate_sequence(
     equity = starting_equity
     peak = equity
     max_dd = 0.0
+    max_dd_pct = 0.0
     ruined = False
 
     for x in sampled:
@@ -138,18 +139,18 @@ def simulate_sequence(
         if not isfinite(equity):
             raise ValueError("simulated equity must remain finite")
         peak = max(peak, equity)
-        max_dd = max(max_dd, peak - equity)
-        if not isfinite(max_dd):
+        current_dd = peak - equity
+        max_dd = max(max_dd, current_dd)
+        current_dd_pct = current_dd / peak * 100.0 if peak > 0 else 100.0
+        max_dd_pct = max(max_dd_pct, current_dd_pct)
+        if not isfinite(max_dd) or not isfinite(max_dd_pct):
             raise ValueError("simulated drawdown must remain finite")
         if equity <= 0:
             ruined = True
             break
 
-    drawdown_pct = max_dd / starting_equity * 100.0
-    if not isfinite(drawdown_pct):
-        raise ValueError("simulated drawdown percentage must remain finite")
     realized = tuple(adjusted)
-    return SimulationResult(realized, equity, max_dd, drawdown_pct, ruined)
+    return SimulationResult(realized, equity, max_dd, max_dd_pct, ruined)
 
 
 def monte_carlo(
