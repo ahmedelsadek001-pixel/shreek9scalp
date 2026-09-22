@@ -9,6 +9,12 @@ def _intent() -> OrderIntent:
     return OrderIntent("sig-001", "XAUUSD", Direction.BUY, 0.03, 2500.0)
 
 
+def _huge_int() -> int:
+    # Construct at runtime so pytest collection never stringifies a gigantic
+    # integer while generating parametrized test IDs on Python 3.10+.
+    return 10 ** 10000
+
+
 def test_reconciliation_accepts_exact_match():
     report = ExecutionReport("sig-001", "XAUUSD", Direction.BUY, 0.03, 2500.0)
     result = reconcile_execution(_intent(), report)
@@ -63,30 +69,44 @@ def test_reconciliation_fails_closed_on_malformed_identity_fields():
     valid_intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     valid_report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     for malformed in ("", "   ", None, 7):
-        assert not reconcile_execution(
-            replace(valid_intent, order_id=malformed), valid_report
-        ).matched
-        assert not reconcile_execution(
-            valid_intent, replace(valid_report, order_id=malformed)
-        ).matched
-        assert not reconcile_execution(
-            replace(valid_intent, symbol=malformed), valid_report
-        ).matched
-        assert not reconcile_execution(
-            valid_intent, replace(valid_report, symbol=malformed)
-        ).matched
+        assert not reconcile_execution(replace(valid_intent, order_id=malformed), valid_report).matched
+        assert not reconcile_execution(valid_intent, replace(valid_report, order_id=malformed)).matched
+        assert not reconcile_execution(replace(valid_intent, symbol=malformed), valid_report).matched
+        assert not reconcile_execution(valid_intent, replace(valid_report, symbol=malformed)).matched
 
 
-@pytest.mark.parametrize("bad", [True, "0.1", None, float("nan"), float("inf"), 10**10000])
-def test_reconciliation_fails_closed_on_malformed_volume(bad):
+@pytest.mark.parametrize(
+    "bad_factory",
+    [
+        pytest.param(lambda: True, id="bool"),
+        pytest.param(lambda: "0.1", id="string"),
+        pytest.param(lambda: None, id="none"),
+        pytest.param(lambda: float("nan"), id="nan"),
+        pytest.param(lambda: float("inf"), id="inf"),
+        pytest.param(_huge_int, id="huge-int"),
+    ],
+)
+def test_reconciliation_fails_closed_on_malformed_volume(bad_factory):
+    bad = bad_factory()
     intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     assert not reconcile_execution(replace(intent, volume=bad), report).matched
     assert not reconcile_execution(intent, replace(report, volume=bad)).matched
 
 
-@pytest.mark.parametrize("bad", [True, "2500", None, float("nan"), float("inf"), 10**10000])
-def test_reconciliation_fails_closed_on_malformed_prices(bad):
+@pytest.mark.parametrize(
+    "bad_factory",
+    [
+        pytest.param(lambda: True, id="bool"),
+        pytest.param(lambda: "2500", id="string"),
+        pytest.param(lambda: None, id="none"),
+        pytest.param(lambda: float("nan"), id="nan"),
+        pytest.param(lambda: float("inf"), id="inf"),
+        pytest.param(_huge_int, id="huge-int"),
+    ],
+)
+def test_reconciliation_fails_closed_on_malformed_prices(bad_factory):
+    bad = bad_factory()
     intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     assert not reconcile_execution(replace(intent, expected_price=bad), report).matched
