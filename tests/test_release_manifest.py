@@ -101,3 +101,17 @@ def test_manifest_validate_rejects_rehashed_semantic_contradiction():
     forged = replace(manifest, failures=failures, manifest_id=forged_id)
     with pytest.raises(ValueError, match="readiness contradicts"):
         forged.validate()
+
+
+def test_manifest_rejects_commit_different_from_certified_evidence():
+    import pytest
+    result = CertificationResult(True, "b" * 64, (), "a" * 40)
+    with pytest.raises(ValueError, match="certified evidence commit"):
+        ReleaseManifest.from_certification("V5.1-RC1", "c" * 40, result)
+
+
+def test_manifest_accepts_commit_bound_certification():
+    result = CertificationResult(True, "b" * 64, (), "a" * 40)
+    manifest = ReleaseManifest.from_certification("V5.1-RC1", "a" * 40, result)
+    assert manifest.commit_sha == result.commit_sha
+    manifest.validate()
