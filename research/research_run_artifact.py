@@ -81,6 +81,31 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 raise ValueError("embedded certification is malformed")
             if passed != (len(failures) == 0):
                 raise ValueError("embedded certification pass state is inconsistent")
+            if any(type(item) is not str or not item for item in failures):
+                raise ValueError("embedded certification failures are malformed")
+            cert_policy = statistical["certification_policy"]
+            required_policy = {
+                "min_oos_trades", "min_oos_windows", "min_oos_stability_pct",
+                "require_positive_ci_lower", "require_positive_bootstrap_lower",
+                "max_bootstrap_non_positive_rate_pct", "max_ruin_rate_pct",
+            }
+            if not required_policy.issubset(cert_policy):
+                raise ValueError("embedded certification policy is incomplete")
+            if passed:
+                if certification["oos_trades"] < cert_policy["min_oos_trades"]:
+                    raise ValueError("passing certification contradicts OOS trade minimum")
+                if certification.get("oos_windows", 0) < cert_policy["min_oos_windows"]:
+                    raise ValueError("passing certification contradicts OOS window minimum")
+                if certification.get("oos_stability_pct", -1) < cert_policy["min_oos_stability_pct"]:
+                    raise ValueError("passing certification contradicts stability minimum")
+                if cert_policy["require_positive_ci_lower"] and interval.get("lower", 0) <= 0:
+                    raise ValueError("passing certification contradicts confidence interval policy")
+                if cert_policy["require_positive_bootstrap_lower"] and bootstrap.get("lower_mean", 0) <= 0:
+                    raise ValueError("passing certification contradicts bootstrap lower policy")
+                if bootstrap.get("non_positive_mean_rate_pct", 101) > cert_policy["max_bootstrap_non_positive_rate_pct"]:
+                    raise ValueError("passing certification contradicts bootstrap rate policy")
+                if evidence.get("ruin_rate_pct") > cert_policy["max_ruin_rate_pct"]:
+                    raise ValueError("passing certification contradicts ruin-rate policy")
 
 
 @dataclass(frozen=True)
