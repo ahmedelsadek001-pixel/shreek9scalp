@@ -112,3 +112,25 @@ def test_tampered_commit_is_rejected_by_release_evaluation():
     decision = evaluate_evidence_bundle(tampered, _required())
     assert not decision.ready
     assert decision.failures == ("evidence bundle integrity validation failed",)
+
+
+def test_evidence_canonical_encoding_has_no_delimiter_collision():
+    base = _bundle().records[0]
+    left = replace(base, source="alpha|beta", run_id="gamma")
+    right = replace(base, source="alpha", run_id="beta|gamma")
+    assert ReleaseEvidenceBundle._canonical((left,)) != ReleaseEvidenceBundle._canonical((right,))
+
+
+def test_bundle_validate_rejects_empty_records_even_with_matching_empty_hash():
+    from hashlib import sha256
+    empty_id = sha256(ReleaseEvidenceBundle._canonical(()).encode("utf-8")).hexdigest()
+    forged = ReleaseEvidenceBundle((), empty_id)
+    with pytest.raises(ValueError, match="non-empty"):
+        forged.validate()
+
+
+def test_bundle_validate_rejects_noncanonical_bundle_id_case():
+    original = _bundle()
+    forged = replace(original, bundle_id=original.bundle_id.upper())
+    with pytest.raises(ValueError, match="normalized SHA-256"):
+        forged.validate()
