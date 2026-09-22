@@ -50,6 +50,24 @@ class ResearchCertification:
     oos_windows: int
     oos_stability_pct: float
 
+    def validate(self) -> None:
+        if type(self.passed) is not bool:
+            raise ValueError("certification passed must be bool")
+        if type(self.failures) is not tuple or any(
+            type(item) is not str or not item for item in self.failures
+        ):
+            raise ValueError("certification failures must be non-empty strings")
+        if self.passed != (len(self.failures) == 0):
+            raise ValueError("certification pass state is inconsistent with failures")
+        if type(self.oos_trades) is not int or self.oos_trades < 1:
+            raise ValueError("certification OOS trades must be positive")
+        if type(self.oos_windows) is not int or self.oos_windows < 1:
+            raise ValueError("certification OOS windows must be positive")
+        if type(self.oos_stability_pct) not in (int, float) or not isfinite(self.oos_stability_pct):
+            raise ValueError("certification OOS stability must be finite")
+        if not 0.0 <= self.oos_stability_pct <= 100.0:
+            raise ValueError("certification OOS stability must be between 0 and 100")
+
 
 def _validate_wfo_evidence(wfo: BacktestWFOResult) -> None:
     """Reject structurally inconsistent or tampered WFO evidence."""
@@ -148,4 +166,6 @@ def certify_research(
         failures.append("bootstrap non-positive expectancy rate above maximum")
     if robustness.summary.ruin_rate_pct > policy.max_ruin_rate_pct:
         failures.append("Monte Carlo ruin rate above maximum")
-    return ResearchCertification(not failures, tuple(failures), len(pnl), windows, stability)
+    result = ResearchCertification(not failures, tuple(failures), len(pnl), windows, stability)
+    result.validate()
+    return result
