@@ -93,6 +93,15 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 raise ValueError("embedded certification pass state is inconsistent")
             if any(type(item) is not str or not item for item in failures):
                 raise ValueError("embedded certification failures are malformed")
+            interval_numeric = ("mean", "lower", "upper")
+            if any(type(interval.get(name)) not in (int, float) or not isfinite(float(interval[name])) for name in interval_numeric):
+                raise ValueError("confidence interval numeric evidence must be finite")
+            bootstrap_numeric = ("observed_mean", "median_mean", "lower_mean", "upper_mean", "non_positive_mean_rate_pct")
+            if any(type(bootstrap.get(name)) not in (int, float) or not isfinite(float(bootstrap[name])) for name in bootstrap_numeric):
+                raise ValueError("block bootstrap numeric evidence must be finite")
+            certification_numeric = ("oos_stability_pct",)
+            if any(type(certification.get(name)) not in (int, float) or not isfinite(float(certification[name])) for name in certification_numeric):
+                raise ValueError("certification numeric evidence must be finite")
             cert_policy = statistical["certification_policy"]
             required_policy = {
                 "min_oos_trades", "min_oos_windows", "min_oos_stability_pct",
@@ -101,6 +110,10 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             }
             if not required_policy.issubset(cert_policy):
                 raise ValueError("embedded certification policy is incomplete")
+            cert_policy_numeric = ("min_oos_stability_pct", "max_bootstrap_non_positive_rate_pct", "max_ruin_rate_pct", "max_oos_expectancy_degradation_pct", "min_parameter_stability_pct")
+            for name in cert_policy_numeric:
+                if name in cert_policy and (type(cert_policy[name]) not in (int, float) or not isfinite(float(cert_policy[name]))):
+                    raise ValueError("certification policy numeric values must be finite")
             if passed:
                 if certification["oos_trades"] < cert_policy["min_oos_trades"]:
                     raise ValueError("passing certification contradicts OOS trade minimum")
