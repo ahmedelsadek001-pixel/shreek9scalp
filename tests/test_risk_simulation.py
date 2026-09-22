@@ -76,7 +76,7 @@ def test_stressed_trade_pnl_overflow_fails_closed():
 
 
 def test_drawdown_percentage_overflow_fails_closed():
-    with pytest.raises(ValueError, match="drawdown percentage must remain finite"):
+    with pytest.raises(ValueError, match="simulated drawdown must remain finite"):
         simulate_sequence([-1e308], starting_equity=1e-308, seed=0)
 
 
@@ -107,3 +107,17 @@ def test_quantile_rejects_empty_unsorted_or_nonfinite_samples(sample):
 def test_quantile_rejects_invalid_probability(probability):
     with pytest.raises(ValueError, match="quantile probability"):
         _quantile([1.0, 2.0], probability)
+
+
+def test_drawdown_percentage_is_measured_from_running_peak(monkeypatch):
+    class FixedRandom:
+        def __init__(self, seed):
+            pass
+        def choice(self, values):
+            return values.pop(0)
+
+    monkeypatch.setattr("core.risk_simulation.random.Random", FixedRandom)
+    pnl = [1000.0, -500.0]
+    result = simulate_sequence(pnl, starting_equity=1000.0, seed=1)
+    assert result.max_drawdown == pytest.approx(500.0)
+    assert result.max_drawdown_pct == pytest.approx(25.0)
