@@ -20,6 +20,49 @@ def _serialized_dataset(dataset: DatasetProvenance) -> dict[str, Any]:
     return json.loads(json.dumps(asdict(dataset), sort_keys=True, default=str))
 
 
+def _validate_embedded_export(payload: dict[str, Any]) -> None:
+    """Fail closed on malformed or internally inconsistent archived evidence."""
+    schema = payload.get("schema_version")
+    required = {"schema_version", "dataset", "evidence", "gate", "gate_policy"}
+    if not required.issubset(payload):
+        raise ValueError("evidence export is missing required sections")
+    for name in ("dataset", "evidence", "gate", "gate_policy"):
+        if not isinstance(payload[name], dict):
+            raise ValueError(f"evidence export {name} must be an object")
+    gate = payload["gate"]
+    if type(gate.get("passed")) is not bool or not isinstance(gate.get("failures"), list):
+        raise ValueError("evidence export gate is malformed")
+    if gate["passed"] != (len(gate["failures"]) == 0):
+        raise ValueError("evidence export gate pass state is inconsistent")
+    if any(type(item) is not str or not item for item in gate["failures"]):
+        raise ValueError("evidence export gate failures are malformed")
+    if schema == "3":
+        statistical = payload.get("statistical_evidence")
+        if statistical is not None:
+            if not isinstance(statistical, dict):
+                raise ValueError("statistical evidence must be an object")
+            names = {"confidence_interval", "block_bootstrap", "certification", "certification_policy"}
+            if set(statistical) != names:
+                raise ValueError("statistical evidence sections are incomplete")
+            if any(not isinstance(statistical[name], dict) for name in names):
+                raise ValueError("statistical evidence sections must be objects")
+            interval = statistical["confidence_interval"]
+            bootstrap = statistical["block_bootstrap"]
+            certification = statistical["certification"]
+            if type(interval.get("samples")) is not int or interval["samples"] < 1:
+                raise ValueError("confidence interval sample count is invalid")
+            if bootstrap.get("samples") != interval["samples"]:
+                raise ValueError("bootstrap sample count does not match confidence interval")
+            if certification.get("oos_trades") != interval["samples"]:
+                raise ValueError("certification OOS trades do not match statistical evidence")
+            passed = certification.get("passed")
+            failures = certification.get("failures")
+            if type(passed) is not bool or not isinstance(failures, list):
+                raise ValueError("embedded certification is malformed")
+            if passed != (len(failures) == 0):
+                raise ValueError("embedded certification pass state is inconsistent")
+
+
 @dataclass(frozen=True)
 class ResearchRunArtifact:
     """Immutable archival identity for one validated research run."""
@@ -55,6 +98,7 @@ class ResearchRunArtifact:
             raise ValueError("artifact dataset does not match evidence export dataset")
         if export_payload.get("schema_version") not in {"2", "3"}:
             raise ValueError("unsupported evidence export schema version")
+        _validate_embedded_export(export_payload)
         if type(self.metadata) is not tuple:
             raise ValueError("metadata must be a tuple")
         for item in self.metadata:
