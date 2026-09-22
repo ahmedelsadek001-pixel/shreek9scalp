@@ -224,7 +224,7 @@ def serialize_research_run_artifact(artifact: ResearchRunArtifact) -> str:
         "evidence_export": artifact.evidence_export,
         "metadata": dict(artifact.metadata),
     }
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False)
 
 
 def fingerprint_research_run_artifact(artifact: ResearchRunArtifact) -> str:
