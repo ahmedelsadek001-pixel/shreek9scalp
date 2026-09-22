@@ -60,7 +60,7 @@ def serialize_evidence_export(
 ) -> str:
     """Serialize evidence deterministically for archival or comparison."""
     payload = build_evidence_export(result, provenance)
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str, allow_nan=False)
 
 
 def fingerprint_evidence_export(
