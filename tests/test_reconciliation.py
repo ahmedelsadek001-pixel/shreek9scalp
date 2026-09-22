@@ -1,4 +1,6 @@
-import pytest\nfrom dataclasses import replace\nfrom core.enums import Direction
+import pytest
+from dataclasses import replace
+from core.enums import Direction
 from execution.reconciliation import ExecutionReport, OrderIntent, reconcile_execution
 
 
