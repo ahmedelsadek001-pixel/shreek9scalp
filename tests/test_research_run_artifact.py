@@ -160,3 +160,30 @@ def test_artifact_rejects_rehashed_missing_required_export_section():
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="missing required sections"):
         tampered.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("oos_trade_count", 0, "trade minimum"),
+        ("oos_expectancy", -1.0, "expectancy minimum"),
+        ("oos_stability_pct", 0.0, "stability minimum"),
+        ("ruin_rate_pct", 100.0, "ruin-rate maximum"),
+    ],
+)
+def test_artifact_rejects_rehashed_passing_gate_that_contradicts_evidence(field, value, message):
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["evidence"][field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match=message):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_passing_gate_that_contradicts_drawdown_policy():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["gate_policy"]["max_worst_drawdown"] = 1.0
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="drawdown maximum"):
+        tampered.validate()
