@@ -112,9 +112,9 @@ def test_quantile_rejects_invalid_probability(probability):
 def test_drawdown_percentage_is_measured_from_running_peak(monkeypatch):
     class FixedRandom:
         def __init__(self, seed):
-            pass
+            self.values = iter((1000.0, -500.0))
         def choice(self, values):
-            return values.pop(0)
+            return next(self.values)
 
     monkeypatch.setattr("core.risk_simulation.random.Random", FixedRandom)
     pnl = [1000.0, -500.0]
