@@ -207,3 +207,8 @@ def test_artifact_rejects_non_finite_rehashed_gate_policy(value):
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="numeric values must be finite"):
         tampered.validate()
+
+
+def test_artifact_accepts_default_unbounded_drawdown_policy():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    artifact.validate()
