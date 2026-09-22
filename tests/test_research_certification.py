@@ -82,3 +82,51 @@ def test_certification_rejects_oos_metric_result_mismatch():
     tampered=replace(wfo,oos_metrics=(altered,) + wfo.oos_metrics[1:])
     with pytest.raises(ValueError,match="do not match"):
         certify_research(tampered,interval,bootstrap,robustness,ResearchCertificationPolicy(min_oos_trades=2))
+
+
+def test_certification_blocks_excessive_is_to_oos_expectancy_degradation():
+    wfo = _wfo()
+    stronger_train = tuple(replace(metric, expectancy=10.0) for metric in wfo.train_metrics)
+    degraded = replace(wfo, train_metrics=stronger_train)
+    pnl = degraded.oos_trade_pnl
+    interval = mean_confidence_interval(pnl)
+    bootstrap = moving_block_bootstrap(pnl, block_size=2, simulations=100, seed=7)
+    robustness = run_oos_monte_carlo(degraded, starting_equity=10000, simulations=50, seed=7)
+    policy = ResearchCertificationPolicy(
+        min_oos_trades=10,
+        min_oos_windows=3,
+        max_oos_expectancy_degradation_pct=50.0,
+    )
+    result = certify_research(degraded, interval, bootstrap, robustness, policy)
+    assert not result.passed
+    assert "OOS expectancy degradation above maximum" in result.failures
+
+
+def test_certification_blocks_unstable_selected_parameters():
+    wfo = _wfo()
+    unstable_validation = replace(
+        wfo.validation,
+        selected_parameters=({"x": 1}, {"x": 2}, {"x": 3}),
+    )
+    unstable = replace(wfo, validation=unstable_validation)
+    pnl = unstable.oos_trade_pnl
+    interval = mean_confidence_interval(pnl)
+    bootstrap = moving_block_bootstrap(pnl, block_size=2, simulations=100, seed=7)
+    robustness = run_oos_monte_carlo(unstable, starting_equity=10000, simulations=50, seed=7)
+    policy = ResearchCertificationPolicy(
+        min_oos_trades=10,
+        min_oos_windows=3,
+        min_parameter_stability_pct=50.0,
+    )
+    result = certify_research(unstable, interval, bootstrap, robustness, policy)
+    assert not result.passed
+    assert "parameter stability below minimum" in result.failures
+
+
+@pytest.mark.parametrize("field", [
+    "max_oos_expectancy_degradation_pct",
+    "min_parameter_stability_pct",
+])
+def test_certification_policy_rejects_invalid_new_thresholds(field):
+    with pytest.raises(ValueError):
+        replace(ResearchCertificationPolicy(), **{field: float("nan")}).validate()
