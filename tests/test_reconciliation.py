@@ -1,4 +1,4 @@
-from core.enums import Direction
+import pytest\nfrom dataclasses import replace\nfrom core.enums import Direction
 from execution.reconciliation import ExecutionReport, OrderIntent, reconcile_execution
 
 
@@ -48,3 +48,27 @@ def test_reconciliation_rejects_invalid_tolerances():
         pass
     else:
         raise AssertionError("negative tolerance must fail")
+
+
+def test_reconciliation_rejects_boolean_and_non_numeric_tolerances():
+    intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    for value in (True, "0.1", None):
+        with pytest.raises(ValueError):
+            reconcile_execution(intent, report, price_tolerance=value)
+        with pytest.raises(ValueError):
+            reconcile_execution(intent, report, volume_tolerance=value)
+
+
+def test_reconciliation_fails_closed_on_malformed_identity_fields():
+    valid_intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    valid_report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    assert not reconcile_execution(
+        replace(valid_intent, order_id=""), valid_report
+    ).matched
+    assert not reconcile_execution(
+        replace(valid_intent, symbol=""), valid_report
+    ).matched
+    assert not reconcile_execution(
+        valid_intent, replace(valid_report, symbol="")
+    ).matched
