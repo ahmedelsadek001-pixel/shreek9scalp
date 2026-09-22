@@ -29,13 +29,33 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
     for name in ("dataset", "evidence", "gate", "gate_policy"):
         if not isinstance(payload[name], dict):
             raise ValueError(f"evidence export {name} must be an object")
+    evidence = payload["evidence"]
     gate = payload["gate"]
+    policy = payload["gate_policy"]
+    numeric_policy = ("min_expectancy", "min_oos_stability_pct", "max_ruin_rate_pct", "max_worst_drawdown")
+    if type(policy.get("min_oos_trades")) is not int or policy["min_oos_trades"] <= 0:
+        raise ValueError("evidence export gate policy trade minimum is invalid")
+    if any(type(policy.get(name)) not in (int, float) for name in numeric_policy):
+        raise ValueError("evidence export gate policy numeric values are invalid")
+    if type(evidence.get("oos_trade_count")) is not int or evidence["oos_trade_count"] < 0:
+        raise ValueError("evidence export OOS trade count is invalid")
     if type(gate.get("passed")) is not bool or not isinstance(gate.get("failures"), list):
         raise ValueError("evidence export gate is malformed")
     if gate["passed"] != (len(gate["failures"]) == 0):
         raise ValueError("evidence export gate pass state is inconsistent")
     if any(type(item) is not str or not item for item in gate["failures"]):
         raise ValueError("evidence export gate failures are malformed")
+    if gate["passed"]:
+        if evidence["oos_trade_count"] < policy["min_oos_trades"]:
+            raise ValueError("passing gate contradicts OOS trade minimum")
+        if evidence.get("oos_expectancy") < policy["min_expectancy"]:
+            raise ValueError("passing gate contradicts expectancy minimum")
+        if evidence.get("oos_stability_pct") < policy["min_oos_stability_pct"]:
+            raise ValueError("passing gate contradicts stability minimum")
+        if evidence.get("ruin_rate_pct") > policy["max_ruin_rate_pct"]:
+            raise ValueError("passing gate contradicts ruin-rate maximum")
+        if evidence.get("worst_max_drawdown") > policy["max_worst_drawdown"]:
+            raise ValueError("passing gate contradicts drawdown maximum")
     if schema == "3":
         statistical = payload.get("statistical_evidence")
         if statistical is not None:
