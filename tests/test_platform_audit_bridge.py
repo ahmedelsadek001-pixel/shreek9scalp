@@ -13,7 +13,7 @@ def test_audit_chain_detects_reordering_or_tampering():
     second=replace(_event(fingerprint_audit_event(first)),event_id="evt-2")
     assert verify_audit_chain((first,second))
     assert not verify_audit_chain((second,first))
-    assert not verify_audit_chain((first,replace(second,payload_fingerprint="b"*64)))
+    tampered_first=replace(first,payload_fingerprint="b"*64)\n    assert not verify_audit_chain((tampered_first,second))
 
 def test_bridge_has_no_live_mode_and_enforces_account_expiry():
     assert "live" not in {m.value for m in BridgeMode}
