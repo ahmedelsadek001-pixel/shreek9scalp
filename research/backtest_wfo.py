@@ -99,6 +99,32 @@ def _validate_timestamped_oos_result(result: BacktestResult, oos_data: Sequence[
     if all(timestamp_flags):
         _validate_context_result(result, oos_data, 0, len(oos_data))
 
+def _validate_input_timeline(data: Sequence[Any]) -> None:
+    """Reject ambiguous timestamped datasets before any WFO evaluation."""
+    if not data:
+        raise ValueError("data must be non-empty")
+    flags = [hasattr(item, "timestamp") for item in data]
+    if any(flags) and not all(flags):
+        raise ValueError("input data must expose timestamps consistently")
+    if not all(flags):
+        return
+    timestamps = [item.timestamp for item in data]
+    try:
+        awareness = [
+            value.tzinfo is not None and value.utcoffset() is not None
+            for value in timestamps
+        ]
+    except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("input timestamps must be valid datetime values") from exc
+    if any(awareness) and not all(awareness):
+        raise ValueError("input timestamps must not mix naive and timezone-aware values")
+    try:
+        if any(left >= right for left, right in zip(timestamps, timestamps[1:])):
+            raise ValueError("input timestamps must be strictly chronological and unique")
+    except TypeError as exc:
+        raise ValueError("input timestamps must be mutually comparable") from exc
+
+
 def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, Any]], evaluator: BacktestEvaluator, *, train_size: int, test_size: int, purge_size: int, step: int | None = None, maximize: bool = True, objective: MetricEvaluator = lambda metrics: metrics.expectancy, context_size: int = 0, context_evaluator: ContextBacktestEvaluator | None = None, label_horizon: int = 0) -> BacktestWFOResult:
     """Select on train and evaluate each exact OOS interval once, fail-closed."""
     if not callable(evaluator):
