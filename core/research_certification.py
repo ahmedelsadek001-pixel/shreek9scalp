@@ -25,6 +25,8 @@ class ResearchCertificationPolicy:
     require_positive_bootstrap_lower: bool = True
     max_bootstrap_non_positive_rate_pct: float = 5.0
     max_ruin_rate_pct: float = 0.0
+    max_oos_expectancy_degradation_pct: float = 50.0
+    min_parameter_stability_pct: float = 50.0
 
     def validate(self) -> None:
         if type(self.min_oos_trades) is not int or self.min_oos_trades < 2:
@@ -37,6 +39,8 @@ class ResearchCertificationPolicy:
             (self.min_oos_stability_pct, "min_oos_stability_pct"),
             (self.max_bootstrap_non_positive_rate_pct, "max_bootstrap_non_positive_rate_pct"),
             (self.max_ruin_rate_pct, "max_ruin_rate_pct"),
+            (self.max_oos_expectancy_degradation_pct, "max_oos_expectancy_degradation_pct"),
+            (self.min_parameter_stability_pct, "min_parameter_stability_pct"),
         ):
             if type(value) not in (int, float) or not isfinite(value) or not 0.0 <= value <= 100.0:
                 raise ValueError(f"{name} must be finite and between 0 and 100")
@@ -166,6 +170,25 @@ def certify_research(
         failures.append("bootstrap non-positive expectancy rate above maximum")
     if robustness.summary.ruin_rate_pct > policy.max_ruin_rate_pct:
         failures.append("Monte Carlo ruin rate above maximum")
+
+    train_expectancies = [float(metric.expectancy) for metric in wfo.train_metrics]
+    oos_expectancies = [float(metric.expectancy) for metric in wfo.oos_metrics]
+    degradation_samples = []
+    for train_value, oos_value in zip(train_expectancies, oos_expectancies):
+        if train_value > 0.0:
+            degradation_samples.append((train_value - oos_value) / train_value * 100.0)
+        elif oos_value < train_value:
+            degradation_samples.append(100.0)
+    if degradation_samples:
+        degradation = sum(degradation_samples) / len(degradation_samples)
+        if not isfinite(degradation) or degradation > policy.max_oos_expectancy_degradation_pct:
+            failures.append("OOS expectancy degradation above maximum")
+
+    selected = tuple(wfo.validation.selected_parameters)
+    stable_pairs = sum(left == right for left, right in zip(selected, selected[1:]))
+    parameter_stability = 100.0 if len(selected) == 1 else stable_pairs / (len(selected) - 1) * 100.0
+    if parameter_stability < policy.min_parameter_stability_pct:
+        failures.append("parameter stability below minimum")
     result = ResearchCertification(not failures, tuple(failures), len(pnl), windows, stability)
     result.validate()
     return result
