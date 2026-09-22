@@ -116,3 +116,19 @@ def test_export_rejects_inconsistent_certification(certification, message):
     result = replace(_certified_result(), certification=certification)
     with pytest.raises(ValueError, match=message):
         build_evidence_export(result, _provenance())
+
+
+def test_export_rejects_bootstrap_sample_count_mismatch():
+    result = _certified_result()
+    mismatched = replace(result.bootstrap, samples=result.interval.samples - 1)
+    result = replace(result, bootstrap=mismatched)
+    with pytest.raises(ValueError, match="bootstrap sample count"):
+        build_evidence_export(result, _provenance())
+
+
+def test_export_rejects_non_finite_certification_stability():
+    result = _certified_result()
+    certification = replace(result.certification, oos_stability_pct=float("nan"))
+    result = replace(result, certification=certification)
+    with pytest.raises(ValueError, match="stability must be finite"):
+        build_evidence_export(result, _provenance())
