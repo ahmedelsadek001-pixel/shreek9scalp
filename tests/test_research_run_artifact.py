@@ -1,5 +1,8 @@
 from dataclasses import replace
+import json
+from dataclasses import replace
 from datetime import datetime, timezone
+from hashlib import sha256
 import hashlib
 import json
 
@@ -113,4 +116,31 @@ def test_artifact_rejects_non_string_metadata_items_after_construction():
         (("run", 1),),
     )
     with pytest.raises(ValueError, match="metadata"):
+        tampered.validate()
+
+
+def _rehash_artifact(artifact, payload):
+    export = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return replace(
+        artifact,
+        evidence_export=export,
+        evidence_export_sha256=sha256(export.encode("utf-8")).hexdigest(),
+    )
+
+
+def test_artifact_rejects_dataset_tampering_even_when_export_is_rehashed():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["dataset"]["sha256"] = "b" * 64
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="dataset does not match"):
+        tampered.validate()
+
+
+def test_artifact_rejects_schema_tampering_even_when_export_is_rehashed():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["schema_version"] = "999"
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="unsupported evidence export schema"):
         tampered.validate()
