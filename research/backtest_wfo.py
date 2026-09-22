@@ -137,6 +137,7 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
         raise ValueError("context_evaluator is required when context_size is positive")
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
+    _validate_input_timeline(data)
     windows = build_purged_windows(
         len(data), train_size, test_size, purge_size, step, label_horizon
     )
