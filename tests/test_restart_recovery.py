@@ -21,3 +21,35 @@ def test_restart_allows_when_no_unresolved_orders():
 def test_malformed_or_duplicate_snapshot_fails_closed():
     assert not validate_restart(RecoverySnapshot(("A","A")))[0]
     assert not validate_restart(RecoverySnapshot(("",)))[0]
+
+
+def test_restart_snapshot_rejects_noncanonical_ordering():
+    ok, reasons = validate_restart(RecoverySnapshot(("B", "A")))
+    assert not ok
+    assert reasons == ("recovery snapshot is not canonical",)
+
+
+def test_snapshot_unresolved_rejects_corrupt_ledger_identity():
+    ledger = IdempotencyLedger()
+    ledger.begin(_i("A"))
+    record = ledger._records.pop("A")
+    ledger._records[""] = record
+    try:
+        snapshot_unresolved(ledger)
+    except ValueError as exc:
+        assert "malformed order identity" in str(exc)
+    else:
+        raise AssertionError("corrupt ledger identity must fail closed")
+
+
+def test_snapshot_unresolved_rejects_corrupt_submission_state():
+    ledger = IdempotencyLedger()
+    ledger.begin(_i("A"))
+    record = ledger._records["A"]
+    object.__setattr__(record, "state", "UNKNOWN")
+    try:
+        snapshot_unresolved(ledger)
+    except ValueError as exc:
+        assert "malformed submission state" in str(exc)
+    else:
+        raise AssertionError("corrupt submission state must fail closed")
