@@ -187,3 +187,23 @@ def test_artifact_rejects_rehashed_passing_gate_that_contradicts_drawdown_policy
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="drawdown maximum"):
         tampered.validate()
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_artifact_rejects_non_finite_rehashed_numeric_evidence(value):
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["evidence"]["oos_expectancy"] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="numeric evidence must be finite"):
+        tampered.validate()
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_artifact_rejects_non_finite_rehashed_gate_policy(value):
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["gate_policy"]["min_expectancy"] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="numeric values must be finite"):
+        tampered.validate()
