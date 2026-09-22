@@ -1,5 +1,6 @@
 import pytest
 from dataclasses import replace
+
 from core.enums import Direction
 from execution.reconciliation import ExecutionReport, OrderIntent, reconcile_execution
 
@@ -44,12 +45,8 @@ def test_reconciliation_blocks_volume_and_direction_mismatch():
 
 def test_reconciliation_rejects_invalid_tolerances():
     report = ExecutionReport("sig-001", "XAUUSD", Direction.BUY, 0.03, 2500.0)
-    try:
+    with pytest.raises(ValueError):
         reconcile_execution(_intent(), report, price_tolerance=-1)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("negative tolerance must fail")
 
 
 def test_reconciliation_rejects_boolean_and_non_numeric_tolerances():
@@ -65,12 +62,41 @@ def test_reconciliation_rejects_boolean_and_non_numeric_tolerances():
 def test_reconciliation_fails_closed_on_malformed_identity_fields():
     valid_intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
     valid_report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
-    assert not reconcile_execution(
-        replace(valid_intent, order_id=""), valid_report
-    ).matched
-    assert not reconcile_execution(
-        replace(valid_intent, symbol=""), valid_report
-    ).matched
-    assert not reconcile_execution(
-        valid_intent, replace(valid_report, symbol="")
-    ).matched
+    for malformed in ("", "   ", None, 7):
+        assert not reconcile_execution(
+            replace(valid_intent, order_id=malformed), valid_report
+        ).matched
+        assert not reconcile_execution(
+            valid_intent, replace(valid_report, order_id=malformed)
+        ).matched
+        assert not reconcile_execution(
+            replace(valid_intent, symbol=malformed), valid_report
+        ).matched
+        assert not reconcile_execution(
+            valid_intent, replace(valid_report, symbol=malformed)
+        ).matched
+
+
+@pytest.mark.parametrize("bad", [True, "0.1", None, float("nan"), float("inf"), 10**10000])
+def test_reconciliation_fails_closed_on_malformed_volume(bad):
+    intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    assert not reconcile_execution(replace(intent, volume=bad), report).matched
+    assert not reconcile_execution(intent, replace(report, volume=bad)).matched
+
+
+@pytest.mark.parametrize("bad", [True, "2500", None, float("nan"), float("inf"), 10**10000])
+def test_reconciliation_fails_closed_on_malformed_prices(bad):
+    intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    assert not reconcile_execution(replace(intent, expected_price=bad), report).matched
+    assert not reconcile_execution(intent, replace(report, fill_price=bad)).matched
+
+
+def test_reconciliation_fails_closed_on_malformed_direction():
+    intent = OrderIntent("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    report = ExecutionReport("o-1", "XAUUSD", Direction.BUY, 0.1, 2500.0)
+    for bad in ("BUY", None, 1):
+        result = reconcile_execution(replace(intent, direction=bad), report)
+        assert not result.matched
+        assert "invalid direction" in result.reasons
