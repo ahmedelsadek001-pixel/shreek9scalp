@@ -36,12 +36,18 @@ class EvidenceRecord:
     commit_sha: str
 
     def validate(self) -> None:
-        if not isinstance(self.name, str) or not self.name.strip():
+        if type(self.name) is not str or not self.name.strip():
             raise ValueError("evidence name is required")
-        if not isinstance(self.source, str) or not self.source.strip():
+        if self.name != self.name.strip() or any(ord(ch) < 32 for ch in self.name):
+            raise ValueError("evidence name must be normalized")
+        if type(self.source) is not str or not self.source.strip():
             raise ValueError("evidence source is required")
-        if not isinstance(self.run_id, str) or not self.run_id.strip():
+        if self.source != self.source.strip() or any(ord(ch) < 32 for ch in self.source):
+            raise ValueError("evidence source must be normalized")
+        if type(self.run_id) is not str or not self.run_id.strip():
             raise ValueError("evidence run_id is required")
+        if self.run_id != self.run_id.strip() or any(ord(ch) < 32 for ch in self.run_id):
+            raise ValueError("evidence run_id must be normalized")
         if self.name not in _SUPPORTED_NAMES:
             raise ValueError(f"unsupported evidence name: {self.name}")
         if type(self.passed) is not bool:
