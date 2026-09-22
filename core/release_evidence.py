@@ -18,7 +18,7 @@ _REQUIRED_NAMES = _V51_RELEASE_NAMES
 
 
 def _validate_commit_sha(commit_sha: str) -> str:
-    if not isinstance(commit_sha, str) or len(commit_sha) != 40:
+    if type(commit_sha) is not str or len(commit_sha) != 40:
         raise ValueError("commit_sha must be a 40-character SHA")
     normalized = commit_sha.lower()
     if any(char not in "0123456789abcdef" for char in normalized):
@@ -48,7 +48,7 @@ class EvidenceRecord:
             raise TypeError("evidence passed must be bool")
         if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
             raise ValueError("recorded_at must be timezone-aware")
-        _validate_commit_sha(self.commit_sha)
+        normalized_sha = _validate_commit_sha(self.commit_sha)\n        if self.commit_sha != normalized_sha:\n            raise ValueError("evidence commit_sha must be normalized hexadecimal")
 
 
 @dataclass(frozen=True)
