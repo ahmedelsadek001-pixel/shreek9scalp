@@ -54,7 +54,9 @@ class EvidenceRecord:
             raise TypeError("evidence passed must be bool")
         if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
             raise ValueError("recorded_at must be timezone-aware")
-        normalized_sha = _validate_commit_sha(self.commit_sha)\n        if self.commit_sha != normalized_sha:\n            raise ValueError("evidence commit_sha must be normalized hexadecimal")
+        normalized_sha = _validate_commit_sha(self.commit_sha)
+        if self.commit_sha != normalized_sha:
+            raise ValueError("evidence commit_sha must be normalized hexadecimal")
 
 
 @dataclass(frozen=True)
