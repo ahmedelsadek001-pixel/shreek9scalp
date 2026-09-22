@@ -57,6 +57,7 @@ def run_evidence_pipeline(
     confidence: float = 0.95,
     bootstrap_block_size: int = 2,
     bootstrap_simulations: int = 2000,
+    label_horizon: int = 0,
     certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy(),
 ) -> EvidencePipelineResult:
     """Run the complete V5.2 evidence chain in causal order.
@@ -75,6 +76,7 @@ def run_evidence_pipeline(
         step=step,
         maximize=maximize,
         objective=objective,
+        label_horizon=label_horizon,
     )
     robustness = run_oos_monte_carlo(
         wfo,
