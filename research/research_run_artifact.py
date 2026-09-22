@@ -38,8 +38,12 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         raise ValueError("evidence export gate policy trade minimum is invalid")
     if any(type(policy.get(name)) not in (int, float) for name in numeric_policy):
         raise ValueError("evidence export gate policy numeric values are invalid")
-    if any(not isfinite(float(policy[name])) for name in numeric_policy):
+    finite_policy = ("min_expectancy", "min_oos_stability_pct", "max_ruin_rate_pct")
+    if any(not isfinite(float(policy[name])) for name in finite_policy):
         raise ValueError("evidence export gate policy numeric values must be finite")
+    max_drawdown = float(policy["max_worst_drawdown"])
+    if max_drawdown < 0 or (not isfinite(max_drawdown) and max_drawdown != float("inf")):
+        raise ValueError("evidence export gate policy drawdown maximum is invalid")
     if type(evidence.get("oos_trade_count")) is not int or evidence["oos_trade_count"] < 0:
         raise ValueError("evidence export OOS trade count is invalid")
     evidence_numeric = ("oos_expectancy", "oos_stability_pct", "ruin_rate_pct", "worst_max_drawdown")
