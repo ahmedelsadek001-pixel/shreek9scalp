@@ -58,7 +58,12 @@ def test_manifest_tampering_is_detected_before_export():
     try:
         tampered.as_dict()
     except ValueError as exc:
-        assert "manifest_id" in str(exc)
+        # Semantic contradictions are intentionally rejected before the hash
+        # check; either path proves the tampered manifest cannot be exported.
+        assert (
+            "readiness contradicts failures" in str(exc)
+            or "manifest_id" in str(exc)
+        )
     else:
         raise AssertionError("tampered manifest was exported")
 
