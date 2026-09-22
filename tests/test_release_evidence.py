@@ -134,3 +134,16 @@ def test_bundle_validate_rejects_noncanonical_bundle_id_case():
     forged = replace(original, bundle_id=original.bundle_id.upper())
     with pytest.raises(ValueError, match="normalized SHA-256"):
         forged.validate()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("name", " ci_green"),
+    ("source", "runner\nforged"),
+    ("run_id", " run-1"),
+    ("commit_sha", "A" * 40),
+])
+def test_evidence_record_rejects_noncanonical_provenance(field, value):
+    record = _bundle().records[0]
+    forged = replace(record, **{field: value})
+    with pytest.raises((ValueError, TypeError)):
+        forged.validate()
