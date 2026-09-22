@@ -49,7 +49,12 @@ class ReleaseManifest:
             raise ValueError("bundle_id must be a 64-character SHA-256")
         if any(char not in "0123456789abcdef" for char in result.bundle_id.lower()):
             raise ValueError("bundle_id must contain only hexadecimal characters")
-        if not isinstance(result.failures, tuple) or any(\n            type(item) is not str or not item.strip() for item in result.failures\n        ):\n            raise TypeError("certification failures must be a tuple of non-empty strings")\n        if result.ready != (len(result.failures) == 0):\n            raise ValueError("certification readiness contradicts failures")
+        if not isinstance(result.failures, tuple) or any(
+            type(item) is not str or not item.strip() for item in result.failures
+        ):
+            raise TypeError("certification failures must be a tuple of non-empty strings")
+        if result.ready != (len(result.failures) == 0):
+            raise ValueError("certification readiness contradicts failures")
         canonical = cls._canonical(
             version,
             normalized_sha,
@@ -79,7 +84,12 @@ class ReleaseManifest:
             raise ValueError("bundle_id must contain only hexadecimal characters")
         if type(self.ready) is not bool:
             raise TypeError("manifest ready must be bool")
-        if not isinstance(self.failures, tuple) or any(\n            type(item) is not str or not item.strip() for item in self.failures\n        ):\n            raise TypeError("manifest failures must be a tuple of non-empty strings")\n        if self.ready != (len(self.failures) == 0):\n            raise ValueError("manifest readiness contradicts failures")
+        if not isinstance(self.failures, tuple) or any(
+            type(item) is not str or not item.strip() for item in self.failures
+        ):
+            raise TypeError("manifest failures must be a tuple of non-empty strings")
+        if self.ready != (len(self.failures) == 0):
+            raise ValueError("manifest readiness contradicts failures")
         expected = sha256(
             self._canonical(
                 self.version,
