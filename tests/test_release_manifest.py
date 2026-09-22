@@ -115,3 +115,38 @@ def test_manifest_accepts_commit_bound_certification():
     manifest = ReleaseManifest.from_certification("V5.1-RC1", "a" * 40, result)
     assert manifest.commit_sha == result.commit_sha
     manifest.validate()
+
+
+def test_manifest_canonical_encoding_has_no_delimiter_collision():
+    left = ReleaseManifest._canonical(
+        "V5.1|RC1", "a" * 40, "b" * 64, False, ("failure",)
+    )
+    right = ReleaseManifest._canonical(
+        "V5.1", "a" * 40, "b" * 64, False, ("RC1|failure",)
+    )
+    assert left != right
+
+
+def test_manifest_normalizes_version_before_hashing():
+    result = CertificationResult(True, "b" * 64, (), "a" * 40)
+    manifest = ReleaseManifest.from_certification("  V5.1-RC1  ", "A" * 40, result)
+    assert manifest.version == "V5.1-RC1"
+    assert manifest.commit_sha == "a" * 40
+    manifest.validate()
+
+
+def test_manifest_rejects_control_characters_in_version():
+    import pytest
+    result = CertificationResult(True, "b" * 64, (), "a" * 40)
+    with pytest.raises(ValueError, match="control"):
+        ReleaseManifest.from_certification("V5.1\nRC1", "a" * 40, result)
+
+
+def test_manifest_validate_rejects_noncanonical_sha_case_even_if_rehashed():
+    import pytest
+    manifest = ReleaseManifest.from_certification(
+        "V5.1-RC1", "a" * 40, CertificationResult(True, "b" * 64, (), "a" * 40)
+    )
+    forged = replace(manifest, commit_sha="A" * 40)
+    with pytest.raises(ValueError, match="normalized hexadecimal"):
+        forged.validate()
