@@ -57,10 +57,19 @@ class ReleaseEvidenceBundle:
 
     @staticmethod
     def _canonical(records: tuple[EvidenceRecord, ...]) -> str:
-        return "\n".join(
-            f"{r.name}|{r.passed}|{r.source}|{r.run_id}|{r.recorded_at.astimezone(timezone.utc).isoformat()}|{r.commit_sha.lower()}"
+        """Return an unambiguous deterministic encoding of evidence provenance."""
+        payload = [
+            {
+                "name": r.name,
+                "passed": r.passed,
+                "source": r.source,
+                "run_id": r.run_id,
+                "recorded_at": r.recorded_at.astimezone(timezone.utc).isoformat(),
+                "commit_sha": r.commit_sha.lower(),
+            }
             for r in sorted(records, key=lambda item: item.name)
-        )
+        ]
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
     @classmethod
     def from_records(cls, records: tuple[EvidenceRecord, ...]) -> "ReleaseEvidenceBundle":
@@ -86,6 +95,12 @@ class ReleaseEvidenceBundle:
         return self.records[0].commit_sha.lower()
 
     def validate(self) -> None:
+        if not isinstance(self.records, tuple) or not self.records:
+            raise ValueError("non-empty tuple of evidence records is required")
+        if type(self.bundle_id) is not str or len(self.bundle_id) != 64 or any(
+            char not in "0123456789abcdef" for char in self.bundle_id
+        ):
+            raise ValueError("bundle_id must be a normalized SHA-256")
         for record in self.records:
             record.validate()
         expected = sha256(self._canonical(self.records).encode("utf-8")).hexdigest()
