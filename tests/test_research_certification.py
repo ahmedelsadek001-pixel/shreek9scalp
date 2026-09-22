@@ -30,7 +30,7 @@ def _wfo():
     validation=PurgedWFOResult(
         (PurgedWindow(0,4,4,4,4,8),PurgedWindow(8,12,12,12,12,16),PurgedWindow(16,20,20,20,20,24)),
         (2.0,2.0,2.0),(2.0,2.0,2.0),({"x":1},{"x":1},{"x":1}))
-    return BacktestWFOResult(validation,metrics,metrics,rows)
+    return BacktestWFOResult(validation,metrics,metrics,rows,rows)
 
 
 def test_certification_passes_consistent_strong_oos_evidence():
@@ -86,8 +86,9 @@ def test_certification_rejects_oos_metric_result_mismatch():
 
 def test_certification_blocks_excessive_is_to_oos_expectancy_degradation():
     wfo = _wfo()
-    stronger_train = tuple(replace(metric, expectancy=10.0) for metric in wfo.train_metrics)
-    degraded = replace(wfo, train_metrics=stronger_train)
+    stronger_rows = tuple(_result([10.0, 10.0, 10.0, 10.0]) for _ in range(3))
+    stronger_train = tuple(calculate_research_metrics(r) for r in stronger_rows)
+    degraded = replace(wfo, train_metrics=stronger_train, train_results=stronger_rows)
     pnl = degraded.oos_trade_pnl
     interval = mean_confidence_interval(pnl)
     bootstrap = moving_block_bootstrap(pnl, block_size=2, simulations=100, seed=7)
@@ -130,3 +131,14 @@ def test_certification_blocks_unstable_selected_parameters():
 def test_certification_policy_rejects_invalid_new_thresholds(field):
     with pytest.raises(ValueError):
         replace(ResearchCertificationPolicy(), **{field: float("nan")}).validate()
+
+
+def test_certification_rejects_tampered_train_metric_result_mismatch():
+    wfo = _wfo(); pnl = wfo.oos_trade_pnl
+    interval = mean_confidence_interval(pnl)
+    bootstrap = moving_block_bootstrap(pnl, block_size=2, simulations=50, seed=7)
+    robustness = run_oos_monte_carlo(wfo, starting_equity=10000, simulations=20, seed=7)
+    altered = replace(wfo.train_metrics[0], expectancy=wfo.train_metrics[0].expectancy + 1.0)
+    tampered = replace(wfo, train_metrics=(altered,) + wfo.train_metrics[1:])
+    with pytest.raises(ValueError, match="train metrics do not match"):
+        certify_research(tampered, interval, bootstrap, robustness, ResearchCertificationPolicy(min_oos_trades=2))
