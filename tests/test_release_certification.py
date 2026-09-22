@@ -60,3 +60,14 @@ def test_certification_blocks_stale_commit_evidence():
 def test_certification_rejects_invalid_expected_commit():
     with pytest.raises(ValueError, match="expected_commit_sha"):
         certify_release(_bundle(), _required(), expected_commit_sha="not-a-sha")
+
+
+def test_certification_result_carries_evidence_commit_binding():
+    result = certify_release(_bundle(), _required(), expected_commit_sha=_COMMIT)
+    assert result.commit_sha == _COMMIT
+
+
+def test_blocked_stale_certification_still_identifies_evidence_commit():
+    result = certify_release(_bundle(), _required(), expected_commit_sha=_OTHER_COMMIT)
+    assert not result.ready
+    assert result.commit_sha == _COMMIT
