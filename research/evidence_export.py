@@ -38,22 +38,13 @@ def build_evidence_export(
             raise ValueError("statistical certification evidence must be complete")
         result.interval.validate()
         result.bootstrap.validate()
+        result.certification.validate()
         result.certification_policy.validate()
         certification = result.certification
-        if type(certification.passed) is not bool:
-            raise ValueError("certification passed must be bool")
-        if type(certification.failures) is not tuple or any(
-            type(item) is not str or not item for item in certification.failures
-        ):
-            raise ValueError("certification failures must be non-empty strings")
-        if certification.passed != (len(certification.failures) == 0):
-            raise ValueError("certification pass state is inconsistent with failures")
         if certification.oos_trades != result.interval.samples:
             raise ValueError("certification OOS trade count does not match statistical evidence")
-        if certification.oos_windows < 1:
-            raise ValueError("certification OOS windows must be positive")
-        if not 0.0 <= certification.oos_stability_pct <= 100.0:
-            raise ValueError("certification OOS stability must be between 0 and 100")
+        if result.bootstrap.samples != result.interval.samples:
+            raise ValueError("bootstrap sample count does not match confidence interval")
         payload["statistical_evidence"] = {
             "confidence_interval": asdict(result.interval),
             "block_bootstrap": asdict(result.bootstrap),
