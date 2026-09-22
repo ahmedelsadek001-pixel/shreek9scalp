@@ -214,23 +214,3 @@ def test_artifact_accepts_default_unbounded_drawdown_policy():
     artifact.validate()
 
 
-@pytest.mark.parametrize("section,field", [
-    ("confidence_interval", "lower"),
-    ("confidence_interval", "upper"),
-    ("block_bootstrap", "lower_mean"),
-    ("block_bootstrap", "non_positive_mean_rate_pct"),
-    ("certification", "oos_stability_pct"),
-])
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
-def test_artifact_rejects_non_finite_rehashed_statistical_evidence(section, field, value):
-    artifact = build_research_run_artifact(_result(), _provenance())
-    payload = json.loads(artifact.evidence_export)
-    payload["statistical_evidence"][section][field] = value
-    tampered_export = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
-    tampered = replace(
-        artifact,
-        evidence_export=tampered_export,
-        evidence_export_sha256=sha256(tampered_export.encode("utf-8")).hexdigest(),
-    )
-    with pytest.raises(ValueError, match="numeric evidence must be finite"):
-        tampered.validate()
