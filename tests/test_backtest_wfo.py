@@ -145,3 +145,41 @@ def test_backtest_wfo_rejects_purge_shorter_than_label_horizon():
             purge_size=1,
             label_horizon=2,
         )
+
+
+def test_wfo_rejects_duplicate_input_timestamps_before_evaluation():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(8)]
+    data[4].timestamp = data[3].timestamp
+    calls = []
+    def evaluator(rows, selected):
+        calls.append(rows)
+        return _result(1.0)
+    with pytest.raises(ValueError, match="strictly chronological and unique"):
+        run_backtest_wfo(data, ({"x": 1},), evaluator, train_size=3, test_size=2, purge_size=1)
+    assert calls == []
+
+
+def test_wfo_rejects_unordered_input_timestamps_before_evaluation():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(8)]
+    data[4], data[5] = data[5], data[4]
+    with pytest.raises(ValueError, match="strictly chronological and unique"):
+        run_backtest_wfo(data, ({"x": 1},), lambda rows, selected: _result(1.0), train_size=3, test_size=2, purge_size=1)
+
+
+def test_wfo_rejects_mixed_naive_and_timezone_aware_timestamps():
+    from datetime import timezone
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(8)]
+    data[-1].timestamp = data[-1].timestamp.replace(tzinfo=timezone.utc)
+    with pytest.raises(ValueError, match="must not mix naive and timezone-aware"):
+        run_backtest_wfo(data, ({"x": 1},), lambda rows, selected: _result(1.0), train_size=3, test_size=2, purge_size=1)
+
+
+def test_wfo_rejects_partially_timestamped_input():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(7)]
+    data.append(SimpleNamespace(value=7))
+    with pytest.raises(ValueError, match="expose timestamps consistently"):
+        run_backtest_wfo(data, ({"x": 1},), lambda rows, selected: _result(1.0), train_size=3, test_size=2, purge_size=1)
