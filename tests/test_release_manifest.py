@@ -61,3 +61,43 @@ def test_manifest_tampering_is_detected_before_export():
         assert "manifest_id" in str(exc)
     else:
         raise AssertionError("tampered manifest was exported")
+
+
+def test_manifest_rejects_ready_with_failures():
+    import pytest
+    from core.release_certification import CertificationResult
+    with pytest.raises(ValueError, match="readiness contradicts"):
+        ReleaseManifest.from_certification(
+            "5.1.0", "a" * 40,
+            CertificationResult(True, "b" * 64, ("hidden failure",)),
+        )
+
+
+def test_manifest_rejects_blocked_without_failures():
+    import pytest
+    from core.release_certification import CertificationResult
+    with pytest.raises(ValueError, match="readiness contradicts"):
+        ReleaseManifest.from_certification(
+            "5.1.0", "a" * 40,
+            CertificationResult(False, "b" * 64, ()),
+        )
+
+
+def test_manifest_validate_rejects_rehashed_semantic_contradiction():
+    import pytest
+    from dataclasses import replace
+    from hashlib import sha256
+    from core.release_certification import CertificationResult
+    manifest = ReleaseManifest.from_certification(
+        "5.1.0", "a" * 40,
+        CertificationResult(True, "b" * 64, ()),
+    )
+    failures = ("tampered",)
+    forged_id = sha256(
+        ReleaseManifest._canonical(
+            manifest.version, manifest.commit_sha, manifest.bundle_id, True, failures
+        ).encode("utf-8")
+    ).hexdigest()
+    forged = replace(manifest, failures=failures, manifest_id=forged_id)
+    with pytest.raises(ValueError, match="readiness contradicts"):
+        forged.validate()
