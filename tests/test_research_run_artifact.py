@@ -1,6 +1,4 @@
 from dataclasses import replace
-import json
-from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 import hashlib
@@ -143,4 +141,22 @@ def test_artifact_rejects_schema_tampering_even_when_export_is_rehashed():
     payload["schema_version"] = "999"
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="unsupported evidence export schema"):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_gate_pass_failure_contradiction():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["gate"] = {"passed": True, "failures": ["contradiction"]}
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="gate pass state is inconsistent"):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_missing_required_export_section():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    del payload["gate_policy"]
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="missing required sections"):
         tampered.validate()
