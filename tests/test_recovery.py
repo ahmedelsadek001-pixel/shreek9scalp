@@ -52,3 +52,52 @@ def test_recovery_cannot_begin_from_connected_state():
 def test_recovery_rejects_invalid_shadow_adapter():
     with pytest.raises(TypeError, match="shadow must be ShadowExecution"):
         ShadowRecovery(object())
+
+
+def test_admission_fails_closed_when_shadow_state_query_raises(monkeypatch):
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+
+    def broken_pending():
+        raise RuntimeError("storage unavailable")
+
+    monkeypatch.setattr(shadow, "pending_order_ids", broken_pending)
+    decision = recovery.admission()
+    assert not decision.can_submit
+    assert decision.state is RecoveryState.CONNECTED
+    assert decision.reason == "shadow recovery state unavailable"
+
+
+def test_complete_recovery_stays_recovering_when_shadow_state_is_malformed(monkeypatch):
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+    recovery.disconnect()
+    recovery.begin_recovery()
+
+    monkeypatch.setattr(shadow, "pending_order_ids", lambda: ["not", "a", "tuple"])
+    decision = recovery.complete_recovery()
+    assert not decision.can_submit
+    assert decision.state is RecoveryState.RECOVERING
+    assert decision.reason == "shadow recovery state unavailable"
+
+
+def test_complete_recovery_rejects_duplicate_or_blank_pending_identity(monkeypatch):
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+    recovery.disconnect()
+    recovery.begin_recovery()
+
+    for malformed in (("A", "A"), ("",), ("   ",), (7,)):
+        monkeypatch.setattr(shadow, "pending_order_ids", lambda value=malformed: value)
+        decision = recovery.complete_recovery()
+        assert not decision.can_submit
+        assert decision.state is RecoveryState.RECOVERING
+
+
+def test_recovery_state_and_shadow_cannot_be_replaced_directly():
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+    with pytest.raises(AttributeError):
+        recovery.state = RecoveryState.RECOVERING
+    with pytest.raises(AttributeError):
+        recovery.shadow = ShadowExecution()
