@@ -20,6 +20,7 @@ class BacktestWFOResult:
     train_metrics: tuple[ResearchMetrics, ...]
     oos_metrics: tuple[ResearchMetrics, ...]
     oos_results: tuple[BacktestResult, ...]
+    train_results: tuple[BacktestResult, ...] = ()
 
     @property
     def oos_expectancy(self) -> float:
@@ -145,19 +146,20 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
     test_scores: list[float] = []
     selected_parameters: list[Mapping[str, Any]] = []
     train_metrics: list[ResearchMetrics] = []
+    train_results: list[BacktestResult] = []
     oos_metrics: list[ResearchMetrics] = []
     oos_results: list[BacktestResult] = []
     for window in windows:
         train = data[window.train_start:window.train_end]
-        scored: list[tuple[float, Mapping[str, Any], ResearchMetrics]] = []
+        scored: list[tuple[float, Mapping[str, Any], ResearchMetrics, BacktestResult]] = []
         for params in parameter_sets:
             train_result = evaluator(train, params)
             if not isinstance(train_result, BacktestResult):
                 raise ValueError("evaluator must return a BacktestResult")
             metrics = calculate_research_metrics(train_result)
-            scored.append((_score_metric(metrics, objective), params, metrics))
+            scored.append((_score_metric(metrics, objective), params, metrics, train_result))
         scored.sort(key=lambda item: item[0], reverse=maximize)
-        train_score, params, selected_train_metrics = scored[0]
+        train_score, params, selected_train_metrics, selected_train_result = scored[0]
         if context_size:
             context_start = max(0, window.test_start - context_size)
             oos_slice = data[context_start:window.test_end]
@@ -179,7 +181,8 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
         test_scores.append(test_score)
         selected_parameters.append(dict(params))
         train_metrics.append(selected_train_metrics)
+        train_results.append(selected_train_result)
         oos_metrics.append(oos_metric)
         oos_results.append(oos_result)
     validation = PurgedWFOResult(tuple(windows), tuple(train_scores), tuple(test_scores), tuple(selected_parameters))
-    return BacktestWFOResult(validation, tuple(train_metrics), tuple(oos_metrics), tuple(oos_results))
+    return BacktestWFOResult(validation, tuple(train_metrics), tuple(oos_metrics), tuple(oos_results), tuple(train_results))
