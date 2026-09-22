@@ -100,3 +100,19 @@ def test_statistical_evidence_changes_export_fingerprint():
     assert fingerprint_evidence_export(original, _provenance()) != fingerprint_evidence_export(
         tampered, _provenance()
     )
+
+
+@pytest.mark.parametrize(
+    ("certification", "message"),
+    [
+        (ResearchCertification(True, ("contradiction",), 30, 4, 75.0), "pass state"),
+        (ResearchCertification(False, (), 30, 4, 75.0), "pass state"),
+        (ResearchCertification(True, (), 29, 4, 75.0), "trade count"),
+        (ResearchCertification(True, (), 30, 0, 75.0), "windows"),
+        (ResearchCertification(True, (), 30, 4, 101.0), "stability"),
+    ],
+)
+def test_export_rejects_inconsistent_certification(certification, message):
+    result = replace(_certified_result(), certification=certification)
+    with pytest.raises(ValueError, match=message):
+        build_evidence_export(result, _provenance())
