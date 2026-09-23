@@ -79,6 +79,8 @@ def test_export_binds_complete_statistical_certification():
     assert statistical["confidence_interval"]["samples"] == 30
     assert statistical["block_bootstrap"]["samples"] == 30
     assert statistical["certification"]["passed"] is True
+    assert statistical["certification"]["oos_expectancy_degradation_pct"] == 0.0
+    assert statistical["certification"]["parameter_stability_pct"] == 100.0
     assert statistical["certification_policy"]["min_oos_trades"] == 30
 
 
