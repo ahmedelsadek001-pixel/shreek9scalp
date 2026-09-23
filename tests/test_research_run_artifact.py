@@ -214,3 +214,27 @@ def test_artifact_accepts_default_unbounded_drawdown_policy():
     artifact.validate()
 
 
+
+
+def test_artifact_serializes_unbounded_drawdown_as_json_null():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    assert payload["gate_policy"]["max_worst_drawdown"] is None
+    assert "Infinity" not in artifact.evidence_export
+    assert "NaN" not in artifact.evidence_export
+
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity"])
+def test_artifact_rejects_nonstandard_json_constants_anywhere(token):
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["unexpected_numeric_evidence"] = 0
+    export = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    export = export.replace('"unexpected_numeric_evidence":0', f'"unexpected_numeric_evidence":{token}')
+    tampered = replace(
+        artifact,
+        evidence_export=export,
+        evidence_export_sha256=sha256(export.encode("utf-8")).hexdigest(),
+    )
+    with pytest.raises(ValueError, match="valid JSON"):
+        tampered.validate()
