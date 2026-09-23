@@ -48,6 +48,8 @@ def _build_wfo_evidence(wfo: BacktestWFOResult, expected_windows: int) -> dict[s
         == expected_windows
     ):
         raise ValueError("WFO evidence cardinality does not match OOS report")
+    if wfo.window_timestamps and len(wfo.window_timestamps) != count:
+        raise ValueError("WFO timestamp evidence cardinality does not match windows")
     for window in validation.windows:
         if not (
             type(window.train_start) is int
@@ -66,12 +68,15 @@ def _build_wfo_evidence(wfo: BacktestWFOResult, expected_windows: int) -> dict[s
     scores = (*validation.train_scores, *validation.test_scores)
     if any(type(score) not in (int, float) or not isfinite(float(score)) for score in scores):
         raise ValueError("WFO scores must be finite numbers")
-    return {
+    evidence = {
         "windows": [asdict(window) for window in validation.windows],
         "train_scores": list(validation.train_scores),
         "test_scores": list(validation.test_scores),
         "selected_parameters": _canonical_selected_parameters(validation.selected_parameters),
     }
+    if wfo.window_timestamps:
+        evidence["window_timestamps"] = [asdict(window) for window in wfo.window_timestamps]
+    return evidence
 
 
 
