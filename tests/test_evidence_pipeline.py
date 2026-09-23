@@ -12,6 +12,7 @@ from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import build_evidence_export
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import run_evidence_pipeline
+from research.research_run_artifact import build_research_run_artifact
 
 
 def _result(pnl: float) -> BacktestResult:
