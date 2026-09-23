@@ -188,6 +188,16 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 raise ValueError("certification numeric evidence must be finite")
             if not isclose(float(certification["oos_stability_pct"]), float(evidence["oos_stability_pct"]), rel_tol=1e-12, abs_tol=1e-12):
                 raise ValueError("certification OOS stability does not match archived evidence")
+            if wfo is not None:
+                mode_count = max(selected.count(params) for params in selected)
+                archived_parameter_stability = mode_count / len(selected) * 100.0
+                if not isclose(
+                    float(certification["parameter_stability_pct"]),
+                    archived_parameter_stability,
+                    rel_tol=1e-12,
+                    abs_tol=1e-12,
+                ):
+                    raise ValueError("certification parameter stability does not match archived WFO selections")
             if not isclose(float(interval["mean"]), float(evidence["oos_expectancy"]), rel_tol=1e-12, abs_tol=1e-12):
                 raise ValueError("confidence interval mean does not match archived OOS expectancy")
             if not isclose(float(bootstrap["observed_mean"]), float(evidence["oos_expectancy"]), rel_tol=1e-12, abs_tol=1e-12):
