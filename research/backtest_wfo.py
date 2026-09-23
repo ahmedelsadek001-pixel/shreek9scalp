@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from math import isfinite
 from typing import Any, Callable, Mapping, Sequence
 
@@ -14,6 +15,18 @@ BacktestEvaluator = Callable[[Sequence[Any], Mapping[str, Any]], BacktestResult]
 ContextBacktestEvaluator = Callable[[Sequence[Any], Mapping[str, Any], int], BacktestResult]
 
 @dataclass(frozen=True)
+class WFOWindowTimestamps:
+    """Observed inclusive timestamps for one train/purge/OOS window."""
+
+    train_first: str
+    train_last: str
+    purge_first: str | None
+    purge_last: str | None
+    test_first: str
+    test_last: str
+
+
+@dataclass(frozen=True)
 class BacktestWFOResult:
     """Purged WFO selection plus the actual train/OOS backtest evidence."""
     validation: PurgedWFOResult
@@ -21,6 +34,7 @@ class BacktestWFOResult:
     oos_metrics: tuple[ResearchMetrics, ...]
     oos_results: tuple[BacktestResult, ...]
     train_results: tuple[BacktestResult, ...] = ()
+    window_timestamps: tuple[WFOWindowTimestamps, ...] = ()
 
     @property
     def oos_expectancy(self) -> float:
@@ -110,12 +124,14 @@ def _validate_input_timeline(data: Sequence[Any]) -> None:
     if not all(flags):
         return
     timestamps = [item.timestamp for item in data]
+    if any(not isinstance(value, datetime) for value in timestamps):
+        raise ValueError("input timestamps must be datetime values")
     try:
         awareness = [
             value.tzinfo is not None and value.utcoffset() is not None
             for value in timestamps
         ]
-    except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError("input timestamps must be valid datetime values") from exc
     if any(awareness) and not all(awareness):
         raise ValueError("input timestamps must not mix naive and timezone-aware values")
@@ -149,6 +165,8 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
     train_results: list[BacktestResult] = []
     oos_metrics: list[ResearchMetrics] = []
     oos_results: list[BacktestResult] = []
+    window_timestamps: list[WFOWindowTimestamps] = []
+    timestamped = all(hasattr(item, "timestamp") for item in data)
     for window in windows:
         train = data[window.train_start:window.train_end]
         scored: list[tuple[float, Mapping[str, Any], ResearchMetrics, BacktestResult]] = []
@@ -184,5 +202,25 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
         train_results.append(selected_train_result)
         oos_metrics.append(oos_metric)
         oos_results.append(oos_result)
+        if timestamped:
+            purge_first = data[window.purge_start].timestamp.isoformat() if window.purge_start < window.purge_end else None
+            purge_last = data[window.purge_end - 1].timestamp.isoformat() if window.purge_start < window.purge_end else None
+            window_timestamps.append(
+                WFOWindowTimestamps(
+                    data[window.train_start].timestamp.isoformat(),
+                    data[window.train_end - 1].timestamp.isoformat(),
+                    purge_first,
+                    purge_last,
+                    data[window.test_start].timestamp.isoformat(),
+                    data[window.test_end - 1].timestamp.isoformat(),
+                )
+            )
     validation = PurgedWFOResult(tuple(windows), tuple(train_scores), tuple(test_scores), tuple(selected_parameters))
-    return BacktestWFOResult(validation, tuple(train_metrics), tuple(oos_metrics), tuple(oos_results), tuple(train_results))
+    return BacktestWFOResult(
+        validation,
+        tuple(train_metrics),
+        tuple(oos_metrics),
+        tuple(oos_results),
+        tuple(train_results),
+        tuple(window_timestamps),
+    )
