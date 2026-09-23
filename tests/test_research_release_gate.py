@@ -13,6 +13,8 @@ from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
 from research.research_run_artifact import build_research_run_artifact
 
+CODE_REVISION = "a" * 40
+
 from research.research_release_gate import (
     ResearchReleaseEvidence,
     ResearchReleasePackage,
@@ -102,6 +104,7 @@ def _release_artifact(strategy_id="breakout-retest", strategy_version="research-
         metadata={
             "strategy_id": strategy_id,
             "strategy_version": strategy_version,
+            "code_revision": CODE_REVISION,
         },
     )
 
@@ -185,6 +188,7 @@ def _promotion_artifact():
         artifact_metadata={
             "strategy_id": "breakout-retest",
             "strategy_version": "research-v1",
+            "code_revision": CODE_REVISION,
         },
     )
     return result.artifact
@@ -196,6 +200,7 @@ def test_release_package_accepts_complete_artifact_derived_evidence():
         _promotion_artifact(),
         "breakout-retest",
         "research-v1",
+        CODE_REVISION,
     )
     decision = evaluate_research_release_package(package)
     assert decision.ready is True
@@ -208,6 +213,7 @@ def test_release_package_blocks_strategy_bound_but_non_empirical_artifact():
         _release_artifact(),
         "breakout-retest",
         "research-v1",
+        CODE_REVISION,
     )
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
@@ -228,6 +234,27 @@ def test_release_package_blocks_strategy_identity_mismatch(strategy_id, strategy
         _release_artifact(),
         strategy_id,
         strategy_version,
+    )
+    decision = evaluate_research_release_package(package)
+    assert decision.ready is False
+    assert decision.failures == ("research artifact identity validation failed",)
+
+
+@pytest.mark.parametrize(
+    "code_revision",
+    [
+        "b" * 40,
+        "A" * 40,
+        "short",
+    ],
+)
+def test_release_package_blocks_code_revision_mismatch_or_malformed(code_revision):
+    package = ResearchReleasePackage(
+        complete(),
+        _promotion_artifact(),
+        "breakout-retest",
+        "research-v1",
+        code_revision,
     )
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
