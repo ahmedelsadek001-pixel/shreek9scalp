@@ -7,7 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from research.research_run_artifact import ResearchRunArtifact, validate_strategy_binding
+from research.research_run_artifact import (
+    ResearchRunArtifact,
+    validate_strategy_binding,
+    validated_evidence_payload,
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,38 @@ class ResearchReleasePackage:
     strategy_version: str
 
 
+def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ...]:
+    """Derive promotion-critical claims from the artifact instead of trusting flags."""
+    payload = validated_evidence_payload(artifact)
+    failures: list[str] = []
+    if payload.get("schema_version") != "3":
+        failures.append("research artifact does not use statistical evidence schema")
+    gate = payload.get("gate")
+    if not isinstance(gate, dict) or gate.get("passed") is not True:
+        failures.append("research artifact OOS evidence gate did not pass")
+    wfo = payload.get("wfo_evidence")
+    config = payload.get("research_config")
+    if not isinstance(wfo, dict) or not isinstance(config, dict):
+        failures.append("research artifact lacks reproducible WFO evidence")
+    else:
+        timestamps = wfo.get("window_timestamps")
+        if not isinstance(timestamps, list) or not timestamps:
+            failures.append("research artifact lacks timestamped WFO windows")
+        if config.get("purge_size", -1) < config.get("label_horizon", 0):
+            failures.append("research artifact purge does not cover label horizon")
+    statistical = payload.get("statistical_evidence")
+    if not isinstance(statistical, dict):
+        failures.append("research artifact lacks statistical certification evidence")
+    else:
+        certification = statistical.get("certification")
+        if not isinstance(certification, dict) or certification.get("passed") is not True:
+            failures.append("research artifact statistical certification did not pass")
+        bootstrap = statistical.get("block_bootstrap")
+        if not isinstance(bootstrap, dict) or bootstrap.get("simulations", 0) <= 0:
+            failures.append("research artifact lacks valid block bootstrap evidence")
+    return tuple(failures)
+
+
 def evaluate_research_release_package(package: ResearchReleasePackage) -> ResearchReleaseDecision:
     """Evaluate V5.2 promotion with artifact and strategy identity verified in-process."""
     if not isinstance(package, ResearchReleasePackage):
@@ -81,12 +117,11 @@ def evaluate_research_release_package(package: ResearchReleasePackage) -> Resear
             strategy_id=package.strategy_id,
             strategy_version=package.strategy_version,
         )
+        artifact_failures = _artifact_promotion_failures(package.artifact)
     except (TypeError, ValueError):
         return ResearchReleaseDecision(False, ("research artifact identity validation failed",))
-    if not (
-        package.evidence.dataset_provenance_validated
-        and package.evidence.reproducible_artifact_validated
-        and package.evidence.strategy_version_bound
-    ):
-        return evaluate_research_release(package.evidence)
-    return evaluate_research_release(package.evidence)
+    manual = evaluate_research_release(package.evidence)
+    failures = manual.failures + tuple(
+        failure for failure in artifact_failures if failure not in manual.failures
+    )
+    return ResearchReleaseDecision(not failures, failures)
