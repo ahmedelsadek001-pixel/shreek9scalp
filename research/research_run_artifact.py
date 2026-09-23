@@ -5,6 +5,7 @@ import json
 from math import isclose, isfinite
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from hashlib import sha256
 from typing import Any
 
@@ -103,9 +104,12 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
     archived_report.validate()
     wfo = payload.get("wfo_evidence")
     if wfo is not None:
-        if not isinstance(wfo, dict) or set(wfo) != {
-            "windows", "train_scores", "test_scores", "selected_parameters"
-        }:
+        required_wfo = {"windows", "train_scores", "test_scores", "selected_parameters"}
+        if (
+            not isinstance(wfo, dict)
+            or not required_wfo.issubset(wfo)
+            or set(wfo) - required_wfo - {"window_timestamps"}
+        ):
             raise ValueError("archived WFO evidence structure is invalid")
         windows = wfo["windows"]
         train_scores = wfo["train_scores"]
@@ -146,6 +150,43 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         for params in selected:
             if not isinstance(params, dict) or any(type(key) is not str or not key for key in params):
                 raise ValueError("archived WFO selected parameters are invalid")
+        timestamp_windows = wfo.get("window_timestamps")
+        if timestamp_windows is not None:
+            if not isinstance(timestamp_windows, list) or len(timestamp_windows) != count:
+                raise ValueError("archived WFO timestamp evidence cardinality is invalid")
+            timestamp_fields = {
+                "train_first", "train_last", "purge_first", "purge_last", "test_first", "test_last"
+            }
+            previous_test_last = None
+            for row in timestamp_windows:
+                if not isinstance(row, dict) or set(row) != timestamp_fields:
+                    raise ValueError("archived WFO timestamp structure is invalid")
+                parsed: dict[str, datetime | None] = {}
+                for name in timestamp_fields:
+                    value = row[name]
+                    if value is None and name in {"purge_first", "purge_last"}:
+                        parsed[name] = None
+                        continue
+                    if type(value) is not str or not value:
+                        raise ValueError("archived WFO timestamps must be ISO datetime strings")
+                    try:
+                        moment = datetime.fromisoformat(value)
+                    except ValueError as exc:
+                        raise ValueError("archived WFO timestamps must be valid ISO datetimes") from exc
+                    if moment.tzinfo is None or moment.utcoffset() is None:
+                        raise ValueError("archived WFO timestamps must be timezone-aware")
+                    parsed[name] = moment
+                if (parsed["purge_first"] is None) != (parsed["purge_last"] is None):
+                    raise ValueError("archived WFO purge timestamps must both be present or absent")
+                if not parsed["train_first"] <= parsed["train_last"] < parsed["test_first"] <= parsed["test_last"]:
+                    raise ValueError("archived WFO timestamp chronology is invalid")
+                if parsed["purge_first"] is not None and not (
+                    parsed["train_last"] < parsed["purge_first"] <= parsed["purge_last"] < parsed["test_first"]
+                ):
+                    raise ValueError("archived WFO purge timestamp chronology is invalid")
+                if previous_test_last is not None and parsed["test_first"] <= previous_test_last:
+                    raise ValueError("archived WFO timestamped OOS windows must not overlap")
+                previous_test_last = parsed["test_last"]
     config_payload = payload.get("research_config")
     if (wfo is None) != (config_payload is None):
         raise ValueError("archived WFO evidence and research config must be present together")
