@@ -525,7 +525,7 @@ def validate_strategy_binding(
     payload = validated_evidence_payload(artifact)
     identity = payload.get("artifact_identity")
     if not isinstance(identity, dict):
-        raise ValueError("research artifact lacks embedded strategy identity")
+        raise ValueError("research artifact lacks embedded strategy_id identity")
     if metadata.get("strategy_id") != strategy_id.strip() or identity.get("strategy_id") != strategy_id.strip():
         raise ValueError("research artifact strategy_id does not match expected strategy")
     if (
