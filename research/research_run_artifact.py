@@ -13,7 +13,7 @@ from core.research_certification import ResearchCertification, ResearchCertifica
 from core.statistical_evidence import MeanConfidenceInterval
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import serialize_evidence_export
-from research.evidence_pipeline import EvidencePipelineResult
+from research.evidence_pipeline import EvidencePipelineResult, ResearchRunConfig
 from research.evidence_report import OOSEvidenceReport
 
 
@@ -146,6 +146,37 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         for params in selected:
             if not isinstance(params, dict) or any(type(key) is not str or not key for key in params):
                 raise ValueError("archived WFO selected parameters are invalid")
+    config_payload = payload.get("research_config")
+    if (wfo is None) != (config_payload is None):
+        raise ValueError("archived WFO evidence and research config must be present together")
+    archived_config = None
+    if config_payload is not None:
+        if not isinstance(config_payload, dict):
+            raise ValueError("archived research config must be an object")
+        try:
+            archived_config = ResearchRunConfig(
+                **{
+                    **config_payload,
+                    "candidate_parameters": tuple(config_payload["candidate_parameters"]),
+                }
+            )
+        except (KeyError, TypeError) as exc:
+            raise ValueError("archived research config structure is invalid") from exc
+        archived_config.validate()
+        if evidence["simulations"] != archived_config.simulations:
+            raise ValueError("archived research simulations do not match OOS report")
+        candidates = list(archived_config.candidate_parameters)
+        if any(params not in candidates for params in selected):
+            raise ValueError("archived selected WFO parameters are absent from candidate grid")
+        for index, window in enumerate(windows):
+            if window["train_end"] - window["train_start"] != archived_config.train_size:
+                raise ValueError("archived WFO train size does not match research config")
+            if window["test_end"] - window["test_start"] != archived_config.test_size:
+                raise ValueError("archived WFO test size does not match research config")
+            if window["purge_end"] - window["purge_start"] != archived_config.purge_size:
+                raise ValueError("archived WFO purge size does not match research config")
+            if index and window["train_start"] - windows[index - 1]["train_start"] != archived_config.step:
+                raise ValueError("archived WFO step does not match research config")
     if schema == "3":
         statistical = payload.get("statistical_evidence")
         if statistical is not None:
@@ -277,6 +308,15 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             archived_bootstrap.validate()
             archived_certification.validate()
             archived_certification_policy.validate()
+            if archived_config is not None:
+                if not isclose(archived_interval.confidence, archived_config.confidence, rel_tol=0.0, abs_tol=0.0):
+                    raise ValueError("archived confidence interval does not match research config")
+                if archived_bootstrap.block_size != archived_config.bootstrap_block_size:
+                    raise ValueError("archived bootstrap block size does not match research config")
+                if archived_bootstrap.simulations != archived_config.bootstrap_simulations:
+                    raise ValueError("archived bootstrap simulations do not match research config")
+                if not isclose(archived_bootstrap.confidence, archived_config.confidence, rel_tol=0.0, abs_tol=0.0):
+                    raise ValueError("archived bootstrap confidence does not match research config")
 
 
 @dataclass(frozen=True)
