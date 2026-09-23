@@ -40,6 +40,29 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
     for name in ("dataset", "evidence", "gate", "gate_policy"):
         if not isinstance(payload[name], dict):
             raise ValueError(f"evidence export {name} must be an object")
+    identity = payload.get("artifact_identity")
+    if identity is not None:
+        if (
+            not isinstance(identity, dict)
+            or set(identity) - {"strategy_id", "strategy_version", "code_revision"}
+            or not identity
+        ):
+            raise ValueError("embedded artifact identity is malformed")
+        for name in ("strategy_id", "strategy_version"):
+            if name in identity and (
+                type(identity[name]) is not str
+                or not identity[name]
+                or identity[name] != identity[name].strip()
+            ):
+                raise ValueError("embedded artifact identity is malformed")
+        if "code_revision" in identity:
+            revision = identity["code_revision"]
+            if (
+                type(revision) is not str
+                or len(revision) != 40
+                or any(char not in "0123456789abcdef" for char in revision)
+            ):
+                raise ValueError("embedded artifact code revision is malformed")
     evidence = payload["evidence"]
     gate = payload["gate"]
     policy = payload["gate_policy"]
@@ -441,6 +464,20 @@ def build_research_run_artifact(
     else:
         normalized = ()
     evidence_export = serialize_evidence_export(result, provenance)
+    identity = {
+        key: value
+        for key, value in normalized
+        if key in {"strategy_id", "strategy_version", "code_revision"}
+    }
+    if identity:
+        payload = json.loads(
+            evidence_export,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
+        payload["artifact_identity"] = identity
+        evidence_export = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
     artifact = ResearchRunArtifact(
         ARTIFACT_SCHEMA_VERSION,
         provenance,
@@ -485,9 +522,16 @@ def validate_strategy_binding(
         raise ValueError("strategy_version must be non-empty")
     artifact.validate()
     metadata = dict(artifact.metadata)
-    if metadata.get("strategy_id") != strategy_id.strip():
+    payload = validated_evidence_payload(artifact)
+    identity = payload.get("artifact_identity")
+    if not isinstance(identity, dict):
+        raise ValueError("research artifact lacks embedded strategy identity")
+    if metadata.get("strategy_id") != strategy_id.strip() or identity.get("strategy_id") != strategy_id.strip():
         raise ValueError("research artifact strategy_id does not match expected strategy")
-    if metadata.get("strategy_version") != strategy_version.strip():
+    if (
+        metadata.get("strategy_version") != strategy_version.strip()
+        or identity.get("strategy_version") != strategy_version.strip()
+    ):
         raise ValueError("research artifact strategy_version does not match expected version")
     if code_revision is not None:
         if (
@@ -496,7 +540,10 @@ def validate_strategy_binding(
             or any(char not in "0123456789abcdef" for char in code_revision)
         ):
             raise ValueError("code_revision must be a lowercase 40-character commit SHA")
-        if metadata.get("code_revision") != code_revision:
+        if (
+            metadata.get("code_revision") != code_revision
+            or identity.get("code_revision") != code_revision
+        ):
             raise ValueError("research artifact code_revision does not match expected commit")
 
 
