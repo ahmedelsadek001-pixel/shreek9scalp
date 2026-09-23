@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from math import isfinite
+from math import isclose, isfinite
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -94,6 +94,10 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 raise ValueError("bootstrap sample count does not match confidence interval")
             if certification.get("oos_trades") != interval["samples"]:
                 raise ValueError("certification OOS trades do not match statistical evidence")
+            if interval["samples"] != evidence["oos_trade_count"]:
+                raise ValueError("statistical evidence samples do not match archived OOS trade count")
+            if certification.get("oos_windows") != evidence.get("oos_window_count"):
+                raise ValueError("certification OOS windows do not match archived evidence")
             passed = certification.get("passed")
             failures = certification.get("failures")
             if type(passed) is not bool or not isinstance(failures, list):
@@ -111,6 +115,12 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             certification_numeric = ("oos_stability_pct", "oos_expectancy_degradation_pct", "parameter_stability_pct")
             if any(type(certification.get(name)) not in (int, float) or not isfinite(float(certification[name])) for name in certification_numeric):
                 raise ValueError("certification numeric evidence must be finite")
+            if not isclose(float(certification["oos_stability_pct"]), float(evidence["oos_stability_pct"]), rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError("certification OOS stability does not match archived evidence")
+            if not isclose(float(interval["mean"]), float(evidence["oos_expectancy"]), rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError("confidence interval mean does not match archived OOS expectancy")
+            if not isclose(float(bootstrap["observed_mean"]), float(evidence["oos_expectancy"]), rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError("bootstrap observed mean does not match archived OOS expectancy")
             cert_policy = statistical["certification_policy"]
             required_policy = {
                 "min_oos_trades", "min_oos_windows", "min_oos_stability_pct",
