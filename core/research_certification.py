@@ -53,6 +53,8 @@ class ResearchCertification:
     oos_trades: int
     oos_windows: int
     oos_stability_pct: float
+    oos_expectancy_degradation_pct: float = 0.0
+    parameter_stability_pct: float = 100.0
 
     def validate(self) -> None:
         if type(self.passed) is not bool:
@@ -71,6 +73,12 @@ class ResearchCertification:
             raise ValueError("certification OOS stability must be finite")
         if not 0.0 <= self.oos_stability_pct <= 100.0:
             raise ValueError("certification OOS stability must be between 0 and 100")
+        if type(self.oos_expectancy_degradation_pct) not in (int, float) or not isfinite(self.oos_expectancy_degradation_pct):
+            raise ValueError("certification OOS expectancy degradation must be finite")
+        if type(self.parameter_stability_pct) not in (int, float) or not isfinite(self.parameter_stability_pct):
+            raise ValueError("certification parameter stability must be finite")
+        if not 0.0 <= self.parameter_stability_pct <= 100.0:
+            raise ValueError("certification parameter stability must be between 0 and 100")
 
 
 def _validate_wfo_evidence(wfo: BacktestWFOResult) -> None:
@@ -193,16 +201,23 @@ def certify_research(
             degradation_samples.append((train_value - oos_value) / train_value * 100.0)
         elif oos_value < train_value:
             degradation_samples.append(100.0)
-    if degradation_samples:
-        degradation = sum(degradation_samples) / len(degradation_samples)
-        if not isfinite(degradation) or degradation > policy.max_oos_expectancy_degradation_pct:
-            failures.append("OOS expectancy degradation above maximum")
+    degradation = sum(degradation_samples) / len(degradation_samples) if degradation_samples else 0.0
+    if not isfinite(degradation) or degradation > policy.max_oos_expectancy_degradation_pct:
+        failures.append("OOS expectancy degradation above maximum")
 
     selected = tuple(wfo.validation.selected_parameters)
     mode_count = max(sum(candidate == other for other in selected) for candidate in selected)
     parameter_stability = mode_count / len(selected) * 100.0
     if parameter_stability < policy.min_parameter_stability_pct:
         failures.append("parameter stability below minimum")
-    result = ResearchCertification(not failures, tuple(failures), len(pnl), windows, stability)
+    result = ResearchCertification(
+        not failures,
+        tuple(failures),
+        len(pnl),
+        windows,
+        stability,
+        degradation,
+        parameter_stability,
+    )
     result.validate()
     return result
