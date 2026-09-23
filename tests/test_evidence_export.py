@@ -132,3 +132,17 @@ def test_export_rejects_non_finite_certification_stability():
     result = replace(result, certification=certification)
     with pytest.raises(ValueError, match="stability must be finite"):
         build_evidence_export(result, _provenance())
+
+
+def test_export_rejects_forged_passing_gate():
+    result = _result(EvidenceGatePolicy(min_expectancy=10.0))
+    forged = replace(result, gate=EvidenceGateResult(True, ()))
+    with pytest.raises(ValueError, match="does not match report and policy"):
+        build_evidence_export(forged, _provenance())
+
+
+def test_export_rejects_forged_failing_gate():
+    result = _result()
+    forged = replace(result, gate=EvidenceGateResult(False, ("forged failure",)))
+    with pytest.raises(ValueError, match="does not match report and policy"):
+        build_evidence_export(forged, _provenance())
