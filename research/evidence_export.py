@@ -101,6 +101,21 @@ def build_evidence_export(
         payload["wfo_evidence"] = _build_wfo_evidence(
             result.wfo, result.report.oos_window_count
         )
+        if result.run_config is None:
+            raise ValueError("real WFO evidence requires reproducible research run config")
+        result.run_config.validate()
+        config = asdict(result.run_config)
+        config["candidate_parameters"] = _canonical_selected_parameters(
+            result.run_config.candidate_parameters
+        )
+        if result.report.simulations != result.run_config.simulations:
+            raise ValueError("research run simulation count does not match OOS report")
+        if any(
+            params not in config["candidate_parameters"]
+            for params in payload["wfo_evidence"]["selected_parameters"]
+        ):
+            raise ValueError("selected WFO parameters are absent from candidate parameter grid")
+        payload["research_config"] = config
     statistical = (result.interval, result.bootstrap, result.certification)
     if any(item is not None for item in statistical):
         if any(item is None for item in statistical):
@@ -108,6 +123,15 @@ def build_evidence_export(
         result.interval.validate()
         result.bootstrap.validate()
         result.certification.validate()
+        if result.run_config is not None:
+            if not isclose(result.interval.confidence, result.run_config.confidence, rel_tol=0.0, abs_tol=0.0):
+                raise ValueError("confidence interval does not match research run config")
+            if result.bootstrap.block_size != result.run_config.bootstrap_block_size:
+                raise ValueError("bootstrap block size does not match research run config")
+            if result.bootstrap.simulations != result.run_config.bootstrap_simulations:
+                raise ValueError("bootstrap simulations do not match research run config")
+            if not isclose(result.bootstrap.confidence, result.run_config.confidence, rel_tol=0.0, abs_tol=0.0):
+                raise ValueError("bootstrap confidence does not match research run config")
         result.certification_policy.validate()
         certification = result.certification
         if certification.oos_trades != result.interval.samples:
