@@ -84,6 +84,7 @@ def _validate_wfo_evidence(wfo: BacktestWFOResult) -> None:
         == len(wfo.validation.test_scores)
         == len(wfo.validation.selected_parameters)
         == len(wfo.train_metrics)
+        == len(wfo.train_results)
         == len(wfo.oos_metrics)
         == len(wfo.oos_results)
         == count
@@ -198,8 +199,8 @@ def certify_research(
             failures.append("OOS expectancy degradation above maximum")
 
     selected = tuple(wfo.validation.selected_parameters)
-    stable_pairs = sum(left == right for left, right in zip(selected, selected[1:]))
-    parameter_stability = 100.0 if len(selected) == 1 else stable_pairs / (len(selected) - 1) * 100.0
+    mode_count = max(sum(candidate == other for other in selected) for candidate in selected)
+    parameter_stability = mode_count / len(selected) * 100.0
     if parameter_stability < policy.min_parameter_stability_pct:
         failures.append("parameter stability below minimum")
     result = ResearchCertification(not failures, tuple(failures), len(pnl), windows, stability)
