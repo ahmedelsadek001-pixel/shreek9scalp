@@ -108,7 +108,7 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             bootstrap_numeric = ("observed_mean", "median_mean", "lower_mean", "upper_mean", "non_positive_mean_rate_pct")
             if any(type(bootstrap.get(name)) not in (int, float) or not isfinite(float(bootstrap[name])) for name in bootstrap_numeric):
                 raise ValueError("block bootstrap numeric evidence must be finite")
-            certification_numeric = ("oos_stability_pct",)
+            certification_numeric = ("oos_stability_pct", "oos_expectancy_degradation_pct", "parameter_stability_pct")
             if any(type(certification.get(name)) not in (int, float) or not isfinite(float(certification[name])) for name in certification_numeric):
                 raise ValueError("certification numeric evidence must be finite")
             cert_policy = statistical["certification_policy"]
@@ -116,6 +116,7 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 "min_oos_trades", "min_oos_windows", "min_oos_stability_pct",
                 "require_positive_ci_lower", "require_positive_bootstrap_lower",
                 "max_bootstrap_non_positive_rate_pct", "max_ruin_rate_pct",
+                "max_oos_expectancy_degradation_pct", "min_parameter_stability_pct",
             }
             if not required_policy.issubset(cert_policy):
                 raise ValueError("embedded certification policy is incomplete")
@@ -138,6 +139,10 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                     raise ValueError("passing certification contradicts bootstrap rate policy")
                 if evidence.get("ruin_rate_pct") > cert_policy["max_ruin_rate_pct"]:
                     raise ValueError("passing certification contradicts ruin-rate policy")
+                if certification["oos_expectancy_degradation_pct"] > cert_policy["max_oos_expectancy_degradation_pct"]:
+                    raise ValueError("passing certification contradicts expectancy degradation policy")
+                if certification["parameter_stability_pct"] < cert_policy["min_parameter_stability_pct"]:
+                    raise ValueError("passing certification contradicts parameter stability policy")
 
 
 @dataclass(frozen=True)
