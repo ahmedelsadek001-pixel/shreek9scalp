@@ -1,5 +1,9 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+import json
+
+import pytest
 
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
@@ -153,6 +157,13 @@ def test_export_archives_exact_wfo_windows_scores_and_selected_parameters():
     }
     assert wfo["selected_parameters"] == [{"mult": 2.0}, {"mult": 2.0}]
     assert len(wfo["train_scores"]) == len(wfo["test_scores"]) == 2
+    config = payload["research_config"]
+    assert config["train_size"] == 4
+    assert config["test_size"] == 2
+    assert config["purge_size"] == 1
+    assert config["step"] == 2
+    assert config["objective_id"] == "expectancy"
+    assert config["candidate_parameters"] == [{"mult": 1.0}, {"mult": 2.0}]
 
 
 def test_export_rejects_wfo_cardinality_mismatch():
@@ -162,13 +173,58 @@ def test_export_rejects_wfo_cardinality_mismatch():
         selected_parameters=result.wfo.validation.selected_parameters[:-1],
     )
     forged = replace(result, wfo=replace(result.wfo, validation=validation))
-    import pytest
     with pytest.raises(ValueError, match="WFO evidence cardinality"):
         build_evidence_export(forged, _provenance())
 
 
 def test_export_rejects_non_json_selected_parameters():
     result = _pipeline_for_export(({"mult": 2.0, "opaque": object()},))
-    import pytest
     with pytest.raises(ValueError, match="strict JSON"):
         build_evidence_export(result, _provenance())
+
+
+def test_custom_objective_requires_stable_objective_id():
+    def evaluator(rows, params):
+        return _result(1.0)
+
+    with pytest.raises(ValueError, match="explicit objective_id"):
+        run_evidence_pipeline(
+            list(range(8)),
+            ({"mult": 1.0},),
+            evaluator,
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            starting_equity=10000.0,
+            objective=lambda metrics: metrics.net_pnl,
+            bootstrap_block_size=1,
+            bootstrap_simulations=10,
+            certification_policy=ResearchCertificationPolicy(
+                min_oos_trades=2,
+                min_oos_windows=1,
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "message"),
+    [
+        ("research_config", "train_size", 5, "train size does not match"),
+        ("research_config", "purge_size", 2, "purge size does not match"),
+        ("research_config", "step", 3, "step does not match"),
+        ("research_config", "simulations", 26, "simulations do not match"),
+        ("wfo_evidence", "selected_parameters", [{"mult": 9.0}, {"mult": 9.0}], "absent from candidate grid"),
+    ],
+)
+def test_artifact_rejects_rehashed_wfo_config_tampering(section, field, value, message):
+    artifact = build_research_run_artifact(_pipeline_for_export(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload[section][field] = value
+    export = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    forged = replace(
+        artifact,
+        evidence_export=export,
+        evidence_export_sha256=sha256(export.encode("utf-8")).hexdigest(),
+    )
+    with pytest.raises(ValueError, match=message):
+        forged.validate()
