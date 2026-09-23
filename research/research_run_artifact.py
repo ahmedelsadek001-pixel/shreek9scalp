@@ -33,7 +33,7 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
     evidence = payload["evidence"]
     gate = payload["gate"]
     policy = payload["gate_policy"]
-    numeric_policy = ("min_expectancy", "min_oos_stability_pct", "max_ruin_rate_pct", "max_worst_drawdown")
+    numeric_policy = ("min_expectancy", "min_oos_stability_pct", "max_ruin_rate_pct")
     if type(policy.get("min_oos_trades")) is not int or policy["min_oos_trades"] <= 0:
         raise ValueError("evidence export gate policy trade minimum is invalid")
     if any(type(policy.get(name)) not in (int, float) for name in numeric_policy):
