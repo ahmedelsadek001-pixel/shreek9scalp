@@ -229,3 +229,22 @@ def test_artifact_rejects_rehashed_wfo_config_tampering(section, field, value, m
     )
     with pytest.raises(ValueError, match=message):
         forged.validate()
+
+
+def test_artifact_rejects_rehashed_shifted_wfo_geometry_even_when_sizes_match():
+    artifact = build_research_run_artifact(_pipeline_for_export(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    for window in payload["wfo_evidence"]["windows"]:
+        for field in (
+            "train_start", "train_end", "purge_start",
+            "purge_end", "test_start", "test_end",
+        ):
+            window[field] += 1
+    export = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    forged = replace(
+        artifact,
+        evidence_export=export,
+        evidence_export_sha256=sha256(export.encode("utf-8")).hexdigest(),
+    )
+    with pytest.raises(ValueError, match="windows do not match dataset and research config"):
+        forged.validate()
