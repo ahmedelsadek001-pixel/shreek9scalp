@@ -237,6 +237,15 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         candidates = list(archived_config.candidate_parameters)
         if any(params not in candidates for params in selected):
             raise ValueError("archived selected WFO parameters are absent from candidate grid")
+        for index, window in enumerate(windows):
+            if window["train_end"] - window["train_start"] != archived_config.train_size:
+                raise ValueError("archived WFO train size does not match research config")
+            if window["test_end"] - window["test_start"] != archived_config.test_size:
+                raise ValueError("archived WFO test size does not match research config")
+            if window["purge_end"] - window["purge_start"] != archived_config.purge_size:
+                raise ValueError("archived WFO purge size does not match research config")
+            if index and window["train_start"] - windows[index - 1]["train_start"] != archived_config.step:
+                raise ValueError("archived WFO step does not match research config")
         expected_windows = [
             asdict(window)
             for window in build_purged_windows(
@@ -250,15 +259,6 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         ]
         if windows != expected_windows:
             raise ValueError("archived WFO windows do not match dataset and research config")
-        for index, window in enumerate(windows):
-            if window["train_end"] - window["train_start"] != archived_config.train_size:
-                raise ValueError("archived WFO train size does not match research config")
-            if window["test_end"] - window["test_start"] != archived_config.test_size:
-                raise ValueError("archived WFO test size does not match research config")
-            if window["purge_end"] - window["purge_start"] != archived_config.purge_size:
-                raise ValueError("archived WFO purge size does not match research config")
-            if index and window["train_start"] - windows[index - 1]["train_start"] != archived_config.step:
-                raise ValueError("archived WFO step does not match research config")
     if schema == "3":
         statistical = payload.get("statistical_evidence")
         if statistical is not None:
