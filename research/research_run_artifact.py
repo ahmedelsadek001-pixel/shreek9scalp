@@ -64,6 +64,7 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 or any(char not in "0123456789abcdef" for char in revision)
             ):
                 raise ValueError("embedded artifact code revision is malformed")
+    dataset = payload["dataset"]
     evidence = payload["evidence"]
     gate = payload["gate"]
     policy = payload["gate_policy"]
