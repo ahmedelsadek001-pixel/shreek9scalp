@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import pytest
 
@@ -54,3 +54,19 @@ def test_rejects_naive_timestamps():
 def test_empty_dataset_is_rejected():
     with pytest.raises(ValueError, match="chronological validation"):
         validate_market_data([])
+
+
+class _PseudoAwareTimezone(tzinfo):
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
+
+
+def test_rejects_timezone_object_without_utc_offset():
+    bars = list(_bars())
+    pseudo = datetime(2026, 1, 1, tzinfo=_PseudoAwareTimezone())
+    bars[0] = ResearchBar(pseudo, 100.0, 101.0, 99.0, 100.5, 10.0)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        validate_market_data(bars)
