@@ -46,6 +46,10 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
     finite_policy = numeric_policy
     if any(not isfinite(float(policy[name])) for name in finite_policy):
         raise ValueError("evidence export gate policy numeric values must be finite")
+    if not 0.0 <= float(policy["min_oos_stability_pct"]) <= 100.0:
+        raise ValueError("evidence export gate policy stability minimum is invalid")
+    if float(policy["max_ruin_rate_pct"]) < 0.0:
+        raise ValueError("evidence export gate policy ruin maximum is invalid")
     raw_max_drawdown = policy.get("max_worst_drawdown")
     if raw_max_drawdown is None:
         max_drawdown = float("inf")
@@ -75,6 +79,19 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             raise ValueError("passing gate contradicts ruin-rate maximum")
         if evidence.get("worst_max_drawdown") > max_drawdown:
             raise ValueError("passing gate contradicts drawdown maximum")
+    expected_gate_failures: list[str] = []
+    if evidence["oos_trade_count"] < policy["min_oos_trades"]:
+        expected_gate_failures.append("OOS trade count below minimum")
+    if evidence["oos_expectancy"] < policy["min_expectancy"]:
+        expected_gate_failures.append("OOS expectancy below minimum")
+    if evidence["oos_stability_pct"] < policy["min_oos_stability_pct"]:
+        expected_gate_failures.append("OOS stability below minimum")
+    if evidence["ruin_rate_pct"] > policy["max_ruin_rate_pct"]:
+        expected_gate_failures.append("Monte Carlo ruin rate above maximum")
+    if evidence["worst_max_drawdown"] > max_drawdown:
+        expected_gate_failures.append("worst OOS Monte Carlo drawdown above maximum")
+    if gate["failures"] != expected_gate_failures:
+        raise ValueError("archived gate failures do not match evidence and policy")
     if schema == "3":
         statistical = payload.get("statistical_evidence")
         if statistical is not None:
@@ -160,6 +177,29 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                     raise ValueError("passing certification contradicts expectancy degradation policy")
                 if certification["parameter_stability_pct"] < cert_policy["min_parameter_stability_pct"]:
                     raise ValueError("passing certification contradicts parameter stability policy")
+            expected_certification_failures: list[str] = []
+            if certification["oos_trades"] < cert_policy["min_oos_trades"]:
+                expected_certification_failures.append("insufficient OOS trades")
+            if certification["oos_windows"] < cert_policy["min_oos_windows"]:
+                expected_certification_failures.append("insufficient OOS windows")
+            if certification["oos_stability_pct"] < cert_policy["min_oos_stability_pct"]:
+                expected_certification_failures.append("OOS stability below minimum")
+            if evidence["oos_expectancy"] <= 0.0:
+                expected_certification_failures.append("OOS expectancy is not positive")
+            if cert_policy["require_positive_ci_lower"] and interval["lower"] <= 0.0:
+                expected_certification_failures.append("confidence interval does not exclude non-positive expectancy")
+            if cert_policy["require_positive_bootstrap_lower"] and bootstrap["lower_mean"] <= 0.0:
+                expected_certification_failures.append("block bootstrap lower bound is not positive")
+            if bootstrap["non_positive_mean_rate_pct"] > cert_policy["max_bootstrap_non_positive_rate_pct"]:
+                expected_certification_failures.append("bootstrap non-positive expectancy rate above maximum")
+            if evidence["ruin_rate_pct"] > cert_policy["max_ruin_rate_pct"]:
+                expected_certification_failures.append("Monte Carlo ruin rate above maximum")
+            if certification["oos_expectancy_degradation_pct"] > cert_policy["max_oos_expectancy_degradation_pct"]:
+                expected_certification_failures.append("OOS expectancy degradation above maximum")
+            if certification["parameter_stability_pct"] < cert_policy["min_parameter_stability_pct"]:
+                expected_certification_failures.append("parameter stability below minimum")
+            if failures != expected_certification_failures:
+                raise ValueError("archived certification failures do not match evidence and policy")
 
 
 @dataclass(frozen=True)
