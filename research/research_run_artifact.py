@@ -8,9 +8,13 @@ from dataclasses import asdict, dataclass
 from hashlib import sha256
 from typing import Any
 
+from core.block_bootstrap import BlockBootstrapSummary
+from core.research_certification import ResearchCertification, ResearchCertificationPolicy
+from core.statistical_evidence import MeanConfidenceInterval
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import serialize_evidence_export
 from research.evidence_pipeline import EvidencePipelineResult
+from research.evidence_report import OOSEvidenceReport
 
 
 ARTIFACT_SCHEMA_VERSION = "1"
@@ -92,6 +96,11 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         expected_gate_failures.append("worst OOS Monte Carlo drawdown above maximum")
     if gate["failures"] != expected_gate_failures:
         raise ValueError("archived gate failures do not match evidence and policy")
+    try:
+        archived_report = OOSEvidenceReport(**evidence)
+    except TypeError as exc:
+        raise ValueError("archived OOS evidence structure is invalid") from exc
+    archived_report.validate()
     if schema == "3":
         statistical = payload.get("statistical_evidence")
         if statistical is not None:
@@ -200,6 +209,25 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 expected_certification_failures.append("parameter stability below minimum")
             if failures != expected_certification_failures:
                 raise ValueError("archived certification failures do not match evidence and policy")
+            try:
+                archived_interval = MeanConfidenceInterval(**interval)
+                archived_bootstrap = BlockBootstrapSummary(**bootstrap)
+                archived_certification = ResearchCertification(
+                    certification["passed"],
+                    tuple(certification["failures"]),
+                    certification["oos_trades"],
+                    certification["oos_windows"],
+                    certification["oos_stability_pct"],
+                    certification["oos_expectancy_degradation_pct"],
+                    certification["parameter_stability_pct"],
+                )
+                archived_certification_policy = ResearchCertificationPolicy(**cert_policy)
+            except (KeyError, TypeError) as exc:
+                raise ValueError("archived statistical evidence structure is invalid") from exc
+            archived_interval.validate()
+            archived_bootstrap.validate()
+            archived_certification.validate()
+            archived_certification_policy.validate()
 
 
 @dataclass(frozen=True)
