@@ -15,6 +15,8 @@ V5.2 is the evidence-generation phase. Passing software tests does not mean the 
 - [x] Advanced WFO stability measures OOS positivity and parameter churn.
 - [x] Performance metrics include expectancy, profit factor, payoff and SQN.
 - [x] Research evidence records are hashed and reproducible.
+- [x] Reproducible artifacts bind dataset provenance, WFO configuration, and explicit strategy identity/version.
+- [x] V5.2 release gate fails closed when provenance, reproducible artifact, or strategy-version binding is missing.
 - [x] V5.2 research release gate fails closed on missing evidence.
 
 ## Empirical evidence required
@@ -27,7 +29,7 @@ The following must be generated from real historical/paper datasets and retained
 4. MAE/MFE distributions and stop-efficiency analysis.
 5. Robustness results including adverse sequencing and cost stress.
 6. Execution-quality observations from paper/shadow operation.
-7. A reproducible evidence record bound to dataset and strategy version.
+7. A reproducible evidence record bound to dataset and an explicit strategy ID/version; phase labels or branch names are not substitutes for strategy identity.
 
 ## Promotion rule
 
