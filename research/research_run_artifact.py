@@ -444,6 +444,23 @@ def build_research_run_artifact(
     return artifact
 
 
+def validated_evidence_payload(artifact: ResearchRunArtifact) -> dict[str, Any]:
+    """Return the already integrity-checked embedded evidence payload."""
+    if not isinstance(artifact, ResearchRunArtifact):
+        raise ValueError("artifact must be a ResearchRunArtifact")
+    artifact.validate()
+    try:
+        payload = json.loads(
+            artifact.evidence_export,
+            parse_constant=_reject_nonstandard_json_constant,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("evidence_export must contain valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("evidence_export must contain a JSON object")
+    return payload
+
+
 def validate_strategy_binding(
     artifact: ResearchRunArtifact,
     *,
