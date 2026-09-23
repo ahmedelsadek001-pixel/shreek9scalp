@@ -18,6 +18,7 @@ from research.research_run_artifact import (
     build_research_run_artifact,
     fingerprint_research_run_artifact,
     serialize_research_run_artifact,
+    validate_strategy_binding,
 )
 
 
@@ -405,3 +406,47 @@ def test_artifact_rejects_rehashed_unexpected_archived_evidence_fields(section):
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="structure is invalid"):
         tampered.validate()
+
+
+def test_strategy_binding_accepts_exact_artifact_identity():
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={"strategy_id": "breakout-retest", "strategy_version": "research-v1"},
+    )
+    validate_strategy_binding(
+        artifact,
+        strategy_id="breakout-retest",
+        strategy_version="research-v1",
+    )
+
+
+@pytest.mark.parametrize(
+    ("strategy_id", "strategy_version", "message"),
+    [
+        ("wrong", "research-v1", "strategy_id"),
+        ("breakout-retest", "wrong", "strategy_version"),
+    ],
+)
+def test_strategy_binding_rejects_mismatch(strategy_id, strategy_version, message):
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={"strategy_id": "breakout-retest", "strategy_version": "research-v1"},
+    )
+    with pytest.raises(ValueError, match=message):
+        validate_strategy_binding(
+            artifact,
+            strategy_id=strategy_id,
+            strategy_version=strategy_version,
+        )
+
+
+def test_strategy_binding_rejects_unbound_legacy_artifact():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    with pytest.raises(ValueError, match="strategy_id"):
+        validate_strategy_binding(
+            artifact,
+            strategy_id="breakout-retest",
+            strategy_version="research-v1",
+        )
