@@ -1,9 +1,9 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import pytest
 
 from research.breakout_retest import ResearchBar
-from research.data_provenance import fingerprint_bars
+from research.data_provenance import DatasetProvenance, fingerprint_bars
 from research.data_validation import validate_market_data
 
 
@@ -48,3 +48,30 @@ def test_fingerprint_requires_matching_validation():
     validation = validate_market_data(bars)
     with pytest.raises(ValueError, match="bar_count"):
         fingerprint_bars(bars[:1], validation)
+
+
+class _PseudoAwareTimezone(tzinfo):
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        datetime(2026, 1, 1),
+        datetime(2026, 1, 1, tzinfo=_PseudoAwareTimezone()),
+    ],
+)
+def test_provenance_rejects_non_aware_timestamps(timestamp):
+    provenance = DatasetProvenance(
+        "1",
+        "a" * 64,
+        2,
+        timestamp,
+        datetime(2026, 1, 2, tzinfo=timezone.utc),
+    )
+    with pytest.raises(ValueError, match="timezone-aware"):
+        provenance.validate()
