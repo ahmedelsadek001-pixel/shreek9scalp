@@ -213,13 +213,7 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 archived_interval = MeanConfidenceInterval(**interval)
                 archived_bootstrap = BlockBootstrapSummary(**bootstrap)
                 archived_certification = ResearchCertification(
-                    certification["passed"],
-                    tuple(certification["failures"]),
-                    certification["oos_trades"],
-                    certification["oos_windows"],
-                    certification["oos_stability_pct"],
-                    certification["oos_expectancy_degradation_pct"],
-                    certification["parameter_stability_pct"],
+                    **{**certification, "failures": tuple(certification["failures"])}
                 )
                 archived_certification_policy = ResearchCertificationPolicy(**cert_policy)
             except (KeyError, TypeError) as exc:
