@@ -11,6 +11,7 @@ from datetime import timedelta, tzinfo
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.research_certification import ResearchCertificationPolicy
 from research.backtest_wfo import BacktestEvaluator
 from research.breakout_retest import ResearchBar
 from research.csv_adapter import load_ohlcv_csv
@@ -48,6 +49,11 @@ def run_dataset_research(
     slippage_multiplier: float = 1.0,
     spread_multiplier: float = 1.0,
     policy: EvidenceGatePolicy = EvidenceGatePolicy(),
+    confidence: float = 0.95,
+    bootstrap_block_size: int = 2,
+    bootstrap_simulations: int = 2000,
+    label_horizon: int = 0,
+    certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy(),
     artifact_metadata: Mapping[str, str] | None = None,
 ) -> DatasetResearchResult:
     """Validate, fingerprint, research, and package one deterministic run."""
@@ -68,6 +74,11 @@ def run_dataset_research(
         slippage_multiplier=slippage_multiplier,
         spread_multiplier=spread_multiplier,
         policy=policy,
+        confidence=confidence,
+        bootstrap_block_size=bootstrap_block_size,
+        bootstrap_simulations=bootstrap_simulations,
+        label_horizon=label_horizon,
+        certification_policy=certification_policy,
     )
     artifact = build_research_run_artifact(
         evidence, provenance, metadata=artifact_metadata
