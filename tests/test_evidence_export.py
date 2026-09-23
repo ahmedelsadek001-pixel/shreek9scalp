@@ -62,8 +62,8 @@ def test_export_rejects_invalid_policy():
 
 def _certified_result():
     base = _result()
-    interval = MeanConfidenceInterval(30, 3.0, 0.5, 0.95, 2.0, 4.0)
-    bootstrap = BlockBootstrapSummary(30, 2, 100, 0.95, 3.0, 3.0, 2.0, 4.0, 0.0)
+    interval = MeanConfidenceInterval(30, 3.333333, 0.5, 0.95, 2.0, 4.0)
+    bootstrap = BlockBootstrapSummary(30, 2, 100, 0.95, 3.333333, 3.0, 2.0, 4.0, 0.0)
     certification = ResearchCertification(True, (), 30, 4, 75.0)
     return replace(
         base,
@@ -93,15 +93,14 @@ def test_export_rejects_partial_statistical_certification():
         build_evidence_export(result, _provenance())
 
 
-def test_statistical_evidence_changes_export_fingerprint():
+def test_export_rejects_semantically_forged_certification():
     original = _certified_result()
     tampered = replace(
         original,
         certification=replace(original.certification, passed=False, failures=("tampered",)),
     )
-    assert fingerprint_evidence_export(original, _provenance()) != fingerprint_evidence_export(
-        tampered, _provenance()
-    )
+    with pytest.raises(ValueError, match="does not match archived statistical evidence and policy"):
+        fingerprint_evidence_export(tampered, _provenance())
 
 
 @pytest.mark.parametrize(
@@ -147,4 +146,19 @@ def test_export_rejects_forged_failing_gate():
     result = _result()
     forged = replace(result, gate=EvidenceGateResult(False, ("forged failure",)))
     with pytest.raises(ValueError, match="does not match report and policy"):
+        build_evidence_export(forged, _provenance())
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("oos_expectancy_degradation_pct", 60.0, "does not match archived statistical evidence"),
+        ("parameter_stability_pct", 40.0, "does not match archived statistical evidence"),
+    ],
+)
+def test_export_rejects_certification_robustness_metric_policy_bypass(field, value, message):
+    result = _certified_result()
+    certification = replace(result.certification, **{field: value})
+    forged = replace(result, certification=certification)
+    with pytest.raises(ValueError, match=message):
         build_evidence_export(forged, _provenance())
