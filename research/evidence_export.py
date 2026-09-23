@@ -5,7 +5,9 @@ import json
 from dataclasses import asdict
 from hashlib import sha256
 from math import isclose
-from typing import Any
+from typing import Any, Mapping
+
+from research.backtest_wfo import BacktestWFOResult
 
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_pipeline import EvidencePipelineResult
@@ -13,6 +15,64 @@ from research.evidence_gate import evaluate_oos_evidence
 
 
 EXPORT_SCHEMA_VERSION = "3"
+
+
+def _canonical_selected_parameters(parameters: tuple[Mapping[str, Any], ...]) -> list[dict[str, Any]]:
+    """Return JSON-native selected parameters without lossy string coercion."""
+    canonical: list[dict[str, Any]] = []
+    for params in parameters:
+        if not isinstance(params, Mapping) or any(type(key) is not str or not key for key in params):
+            raise ValueError("selected WFO parameters must use non-empty string keys")
+        row = dict(sorted(params.items()))
+        try:
+            json.dumps(row, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("selected WFO parameters must be strict JSON values") from exc
+        canonical.append(row)
+    return canonical
+
+
+def _build_wfo_evidence(wfo: BacktestWFOResult, expected_windows: int) -> dict[str, Any]:
+    """Archive exact WFO geometry, scores, and train-selected parameters."""
+    validation = wfo.validation
+    count = len(validation.windows)
+    if not (
+        count
+        == len(validation.train_scores)
+        == len(validation.test_scores)
+        == len(validation.selected_parameters)
+        == len(wfo.train_metrics)
+        == len(wfo.train_results)
+        == len(wfo.oos_metrics)
+        == len(wfo.oos_results)
+        == expected_windows
+    ):
+        raise ValueError("WFO evidence cardinality does not match OOS report")
+    for window in validation.windows:
+        if not (
+            type(window.train_start) is int
+            and type(window.train_end) is int
+            and type(window.purge_start) is int
+            and type(window.purge_end) is int
+            and type(window.test_start) is int
+            and type(window.test_end) is int
+            and 0 <= window.train_start < window.train_end
+            and window.train_end == window.purge_start
+            and window.purge_start <= window.purge_end
+            and window.purge_end == window.test_start
+            and window.test_start < window.test_end
+        ):
+            raise ValueError("WFO window geometry is invalid")
+    scores = (*validation.train_scores, *validation.test_scores)
+    if any(type(score) not in (int, float) or not __import__("math").isfinite(float(score)) for score in scores):
+        raise ValueError("WFO scores must be finite numbers")
+    return {
+        "windows": [asdict(window) for window in validation.windows],
+        "train_scores": list(validation.train_scores),
+        "test_scores": list(validation.test_scores),
+        "selected_parameters": _canonical_selected_parameters(validation.selected_parameters),
+    }
+
 
 
 def build_evidence_export(
@@ -37,6 +97,10 @@ def build_evidence_export(
         "gate": asdict(result.gate),
         "gate_policy": {**asdict(result.policy), "max_worst_drawdown": (None if result.policy.max_worst_drawdown == float("inf") else result.policy.max_worst_drawdown)},
     }
+    if isinstance(result.wfo, BacktestWFOResult):
+        payload["wfo_evidence"] = _build_wfo_evidence(
+            result.wfo, result.report.oos_window_count
+        )
     statistical = (result.interval, result.bootstrap, result.certification)
     if any(item is not None for item in statistical):
         if any(item is None for item in statistical):
