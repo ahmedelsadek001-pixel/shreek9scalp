@@ -441,6 +441,27 @@ def build_research_run_artifact(
     return artifact
 
 
+def validate_strategy_binding(
+    artifact: ResearchRunArtifact,
+    *,
+    strategy_id: str,
+    strategy_version: str,
+) -> None:
+    """Require an artifact to be explicitly bound to the expected strategy identity."""
+    if not isinstance(artifact, ResearchRunArtifact):
+        raise ValueError("artifact must be a ResearchRunArtifact")
+    if type(strategy_id) is not str or not strategy_id.strip():
+        raise ValueError("strategy_id must be non-empty")
+    if type(strategy_version) is not str or not strategy_version.strip():
+        raise ValueError("strategy_version must be non-empty")
+    artifact.validate()
+    metadata = dict(artifact.metadata)
+    if metadata.get("strategy_id") != strategy_id.strip():
+        raise ValueError("research artifact strategy_id does not match expected strategy")
+    if metadata.get("strategy_version") != strategy_version.strip():
+        raise ValueError("research artifact strategy_version does not match expected version")
+
+
 def serialize_research_run_artifact(artifact: ResearchRunArtifact) -> str:
     """Serialize the complete artifact deterministically."""
     if not isinstance(artifact, ResearchRunArtifact):
