@@ -38,11 +38,15 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         raise ValueError("evidence export gate policy trade minimum is invalid")
     if any(type(policy.get(name)) not in (int, float) for name in numeric_policy):
         raise ValueError("evidence export gate policy numeric values are invalid")
-    finite_policy = ("min_expectancy", "min_oos_stability_pct", "max_ruin_rate_pct")
+    finite_policy = numeric_policy
     if any(not isfinite(float(policy[name])) for name in finite_policy):
         raise ValueError("evidence export gate policy numeric values must be finite")
-    max_drawdown = float(policy["max_worst_drawdown"])
-    if max_drawdown < 0 or (not isfinite(max_drawdown) and max_drawdown != float("inf")):
+    raw_max_drawdown = policy.get("max_worst_drawdown")
+    if raw_max_drawdown is None:
+        max_drawdown = float("inf")
+    elif type(raw_max_drawdown) in (int, float) and isfinite(float(raw_max_drawdown)) and float(raw_max_drawdown) >= 0:
+        max_drawdown = float(raw_max_drawdown)
+    else:
         raise ValueError("evidence export gate policy drawdown maximum is invalid")
     if type(evidence.get("oos_trade_count")) is not int or evidence["oos_trade_count"] < 0:
         raise ValueError("evidence export OOS trade count is invalid")
@@ -64,7 +68,7 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             raise ValueError("passing gate contradicts stability minimum")
         if evidence.get("ruin_rate_pct") > policy["max_ruin_rate_pct"]:
             raise ValueError("passing gate contradicts ruin-rate maximum")
-        if evidence.get("worst_max_drawdown") > policy["max_worst_drawdown"]:
+        if evidence.get("worst_max_drawdown") > max_drawdown:
             raise ValueError("passing gate contradicts drawdown maximum")
     if schema == "3":
         statistical = payload.get("statistical_evidence")
