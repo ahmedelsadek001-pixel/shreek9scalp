@@ -8,6 +8,7 @@ from typing import Any
 
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_pipeline import EvidencePipelineResult
+from research.evidence_gate import evaluate_oos_evidence
 
 
 EXPORT_SCHEMA_VERSION = "3"
@@ -25,6 +26,9 @@ def build_evidence_export(
     provenance.validate()
     result.report.validate()
     result.policy.validate()
+    expected_gate = evaluate_oos_evidence(result.report, result.policy)
+    if result.gate != expected_gate:
+        raise ValueError("evidence gate result does not match report and policy")
     payload = {
         "schema_version": EXPORT_SCHEMA_VERSION,
         "dataset": asdict(provenance),
