@@ -195,7 +195,7 @@ def test_artifact_rejects_non_finite_rehashed_numeric_evidence(value):
     payload = json.loads(artifact.evidence_export)
     payload["evidence"]["oos_expectancy"] = value
     tampered = _rehash_artifact(artifact, payload)
-    with pytest.raises(ValueError, match="numeric evidence must be finite"):
+    with pytest.raises(ValueError, match="valid JSON"):
         tampered.validate()
 
 
@@ -205,7 +205,7 @@ def test_artifact_rejects_non_finite_rehashed_gate_policy(value):
     payload = json.loads(artifact.evidence_export)
     payload["gate_policy"]["min_expectancy"] = value
     tampered = _rehash_artifact(artifact, payload)
-    with pytest.raises(ValueError, match="numeric values must be finite"):
+    with pytest.raises(ValueError, match="valid JSON"):
         tampered.validate()
 
 
