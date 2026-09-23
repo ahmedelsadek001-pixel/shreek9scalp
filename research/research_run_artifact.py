@@ -405,6 +405,9 @@ class ResearchRunArtifact:
                 raise ValueError("metadata must contain non-empty string key/value pairs")
         if tuple(sorted(self.metadata)) != self.metadata:
             raise ValueError("metadata must be canonically sorted")
+        metadata_keys = tuple(key for key, _ in self.metadata)
+        if len(set(metadata_keys)) != len(metadata_keys):
+            raise ValueError("metadata keys must be unique")
 
 
 def build_research_run_artifact(
