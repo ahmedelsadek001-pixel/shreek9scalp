@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from hashlib import sha256
+from math import isclose
 from typing import Any
 
 from research.dataset_provenance import DatasetProvenance
@@ -49,6 +50,40 @@ def build_evidence_export(
             raise ValueError("certification OOS trade count does not match statistical evidence")
         if result.bootstrap.samples != result.interval.samples:
             raise ValueError("bootstrap sample count does not match confidence interval")
+        if result.interval.samples != result.report.oos_trade_count:
+            raise ValueError("statistical sample count does not match OOS report")
+        if certification.oos_windows != result.report.oos_window_count:
+            raise ValueError("certification OOS windows do not match OOS report")
+        if not isclose(certification.oos_stability_pct, result.report.oos_stability_pct, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("certification OOS stability does not match OOS report")
+        if not isclose(result.interval.mean, result.report.oos_expectancy, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("confidence interval mean does not match OOS report expectancy")
+        if not isclose(result.bootstrap.observed_mean, result.report.oos_expectancy, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("bootstrap observed mean does not match OOS report expectancy")
+        expected_failures: list[str] = []
+        cert_policy = result.certification_policy
+        if certification.oos_trades < cert_policy.min_oos_trades:
+            expected_failures.append("insufficient OOS trades")
+        if certification.oos_windows < cert_policy.min_oos_windows:
+            expected_failures.append("insufficient OOS windows")
+        if certification.oos_stability_pct < cert_policy.min_oos_stability_pct:
+            expected_failures.append("OOS stability below minimum")
+        if result.report.oos_expectancy <= 0.0:
+            expected_failures.append("OOS expectancy is not positive")
+        if cert_policy.require_positive_ci_lower and result.interval.lower <= 0.0:
+            expected_failures.append("confidence interval does not exclude non-positive expectancy")
+        if cert_policy.require_positive_bootstrap_lower and result.bootstrap.lower_mean <= 0.0:
+            expected_failures.append("block bootstrap lower bound is not positive")
+        if result.bootstrap.non_positive_mean_rate_pct > cert_policy.max_bootstrap_non_positive_rate_pct:
+            expected_failures.append("bootstrap non-positive expectancy rate above maximum")
+        if result.report.ruin_rate_pct > cert_policy.max_ruin_rate_pct:
+            expected_failures.append("Monte Carlo ruin rate above maximum")
+        if certification.oos_expectancy_degradation_pct > cert_policy.max_oos_expectancy_degradation_pct:
+            expected_failures.append("OOS expectancy degradation above maximum")
+        if certification.parameter_stability_pct < cert_policy.min_parameter_stability_pct:
+            expected_failures.append("parameter stability below minimum")
+        if certification.failures != tuple(expected_failures):
+            raise ValueError("certification result does not match archived statistical evidence and policy")
         payload["statistical_evidence"] = {
             "confidence_interval": asdict(result.interval),
             "block_bootstrap": asdict(result.bootstrap),
