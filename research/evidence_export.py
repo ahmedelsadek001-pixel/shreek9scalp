@@ -30,7 +30,7 @@ def build_evidence_export(
         "dataset": asdict(provenance),
         "evidence": asdict(result.report),
         "gate": asdict(result.gate),
-        "gate_policy": asdict(result.policy),
+        "gate_policy": {**asdict(result.policy), "max_worst_drawdown": (None if result.policy.max_worst_drawdown == float("inf") else result.policy.max_worst_drawdown)},
     }
     statistical = (result.interval, result.bootstrap, result.certification)
     if any(item is not None for item in statistical):
