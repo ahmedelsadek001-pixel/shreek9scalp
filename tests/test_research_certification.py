@@ -101,6 +101,7 @@ def test_certification_blocks_excessive_is_to_oos_expectancy_degradation():
     result = certify_research(degraded, interval, bootstrap, robustness, policy)
     assert not result.passed
     assert "OOS expectancy degradation above maximum" in result.failures
+    assert result.oos_expectancy_degradation_pct == pytest.approx(80.0)
 
 
 def test_certification_blocks_unstable_selected_parameters():
@@ -122,6 +123,7 @@ def test_certification_blocks_unstable_selected_parameters():
     result = certify_research(unstable, interval, bootstrap, robustness, policy)
     assert not result.passed
     assert "parameter stability below minimum" in result.failures
+    assert result.parameter_stability_pct == pytest.approx(100.0 / 3.0)
 
 
 @pytest.mark.parametrize("field", [
@@ -174,4 +176,21 @@ def test_parameter_stability_uses_dominant_configuration_frequency():
         ResearchCertificationPolicy(min_oos_trades=2, min_parameter_stability_pct=70.0),
     )
     assert passes.passed
+    assert passes.parameter_stability_pct == pytest.approx(200.0 / 3.0)
     assert "parameter stability below minimum" in blocks.failures
+
+
+@pytest.mark.parametrize("field", [
+    "oos_expectancy_degradation_pct",
+    "parameter_stability_pct",
+])
+def test_certification_rejects_non_finite_archived_metrics(field):
+    certification = certify_research(
+        _wfo(),
+        mean_confidence_interval(_wfo().oos_trade_pnl),
+        moving_block_bootstrap(_wfo().oos_trade_pnl, block_size=2, simulations=50, seed=7),
+        run_oos_monte_carlo(_wfo(), starting_equity=10000, simulations=20, seed=7),
+        ResearchCertificationPolicy(min_oos_trades=2),
+    )
+    with pytest.raises(ValueError):
+        replace(certification, **{field: float("nan")}).validate()
