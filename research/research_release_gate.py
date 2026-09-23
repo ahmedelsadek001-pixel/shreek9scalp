@@ -19,6 +19,9 @@ class ResearchReleaseEvidence:
     bootstrap_validated: bool
     mae_mfe_validated: bool
     execution_quality_validated: bool
+    dataset_provenance_validated: bool = False
+    reproducible_artifact_validated: bool = False
+    strategy_version_bound: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,6 +44,9 @@ def evaluate_research_release(evidence: ResearchReleaseEvidence) -> ResearchRele
         "bootstrap expectancy validation is not validated": evidence.bootstrap_validated,
         "MAE/MFE is not validated": evidence.mae_mfe_validated,
         "execution quality is not validated": evidence.execution_quality_validated,
+        "dataset provenance is not validated": evidence.dataset_provenance_validated,
+        "reproducible research artifact is not validated": evidence.reproducible_artifact_validated,
+        "research artifact is not bound to strategy version": evidence.strategy_version_bound,
     }
     failures = tuple(name for name, passed in checks.items() if type(passed) is not bool or not passed)
     return ResearchReleaseDecision(not failures, failures)
