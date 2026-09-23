@@ -6,6 +6,9 @@ import json
 
 import pytest
 
+from core.block_bootstrap import BlockBootstrapSummary
+from core.research_certification import ResearchCertification, ResearchCertificationPolicy
+from core.statistical_evidence import MeanConfidenceInterval
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
@@ -34,6 +37,17 @@ def _result(policy=None):
     policy = policy or EvidenceGatePolicy()
     return EvidencePipelineResult(
         object(), object(), report, EvidenceGateResult(True, ()), policy
+    )
+
+
+def _statistical_result():
+    base = _result()
+    return replace(
+        base,
+        interval=MeanConfidenceInterval(30, 3.333333, 0.5, 0.95, 2.0, 4.0),
+        bootstrap=BlockBootstrapSummary(30, 2, 100, 0.95, 3.333333, 3.3, 2.0, 4.0, 0.0),
+        certification=ResearchCertification(True, (), 30, 4, 75.0, 10.0, 80.0),
+        certification_policy=ResearchCertificationPolicy(),
     )
 
 
@@ -237,4 +251,33 @@ def test_artifact_rejects_nonstandard_json_constants_anywhere(token):
         evidence_export_sha256=sha256(export.encode("utf-8")).hexdigest(),
     )
     with pytest.raises(ValueError, match="valid JSON"):
+        tampered.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("oos_expectancy_degradation_pct", 60.0, "expectancy degradation policy"),
+        ("parameter_stability_pct", 40.0, "parameter stability policy"),
+    ],
+)
+def test_artifact_rejects_rehashed_passing_certification_that_contradicts_robustness_policy(field, value, message):
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["statistical_evidence"]["certification"][field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match=message):
+        tampered.validate()
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["max_oos_expectancy_degradation_pct", "min_parameter_stability_pct"],
+)
+def test_artifact_rejects_missing_required_robustness_certification_policy(field):
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    del payload["statistical_evidence"]["certification_policy"][field]
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="certification policy is incomplete"):
         tampered.validate()
