@@ -16,6 +16,7 @@ from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import serialize_evidence_export
 from research.evidence_pipeline import EvidencePipelineResult, ResearchRunConfig
 from research.evidence_report import OOSEvidenceReport
+from research.purged_wfo import build_purged_windows
 
 
 ARTIFACT_SCHEMA_VERSION = "1"
@@ -209,6 +210,10 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                     raise ValueError("archived WFO purge timestamp chronology is invalid")
                 if previous_test_last is not None and parsed["test_first"] <= previous_test_last:
                     raise ValueError("archived WFO timestamped OOS windows must not overlap")
+                dataset_first = datetime.fromisoformat(dataset["first_timestamp"])
+                dataset_last = datetime.fromisoformat(dataset["last_timestamp"])
+                if parsed["train_first"] < dataset_first or parsed["test_last"] > dataset_last:
+                    raise ValueError("archived WFO timestamps fall outside dataset provenance")
                 previous_test_last = parsed["test_last"]
     config_payload = payload.get("research_config")
     if (wfo is None) != (config_payload is None):
@@ -232,6 +237,19 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
         candidates = list(archived_config.candidate_parameters)
         if any(params not in candidates for params in selected):
             raise ValueError("archived selected WFO parameters are absent from candidate grid")
+        expected_windows = [
+            asdict(window)
+            for window in build_purged_windows(
+                dataset["bar_count"],
+                archived_config.train_size,
+                archived_config.test_size,
+                archived_config.purge_size,
+                archived_config.step,
+                archived_config.label_horizon,
+            )
+        ]
+        if windows != expected_windows:
+            raise ValueError("archived WFO windows do not match dataset and research config")
         for index, window in enumerate(windows):
             if window["train_end"] - window["train_start"] != archived_config.train_size:
                 raise ValueError("archived WFO train size does not match research config")
