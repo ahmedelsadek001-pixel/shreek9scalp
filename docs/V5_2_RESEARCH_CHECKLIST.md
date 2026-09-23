@@ -18,6 +18,8 @@ V5.2 is the evidence-generation phase. Passing software tests does not mean the 
 - [x] Reproducible artifacts bind dataset provenance, WFO configuration, and explicit strategy identity/version.
 - [x] V5.2 release gate fails closed when provenance, reproducible artifact, or strategy-version binding is missing.
 - [x] V5.2 research release gate fails closed on missing evidence.
+- [x] Promotion re-derives WFO/statistical pass evidence from the exact strategy-bound artifact; manual flags cannot substitute for it.
+- [x] Validation provenance binds label horizon and rejects purge windows smaller than the declared horizon.
 
 ## Empirical evidence required
 
@@ -30,6 +32,8 @@ The following must be generated from real historical/paper datasets and retained
 5. Robustness results including adverse sequencing and cost stress.
 6. Execution-quality observations from paper/shadow operation.
 7. A reproducible evidence record bound to dataset and an explicit strategy ID/version; phase labels or branch names are not substitutes for strategy identity.
+8. Timestamped WFO windows and the exact candidate/selected parameter sets retained in the artifact.
+9. The declared label horizon covered by the purge/embargo used for the retained WFO evidence.
 
 ## Promotion rule
 
