@@ -336,3 +336,39 @@ def test_artifact_rejects_rehashed_invalid_certification_policy_types_and_ranges
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match=message):
         tampered.validate()
+
+
+def test_artifact_rejects_rehashed_forged_failing_gate():
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["gate"] = {"passed": False, "failures": ["forged failure"]}
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="gate failures do not match evidence and policy"):
+        tampered.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("min_oos_stability_pct", -1.0, "stability minimum is invalid"),
+        ("min_oos_stability_pct", 101.0, "stability minimum is invalid"),
+        ("max_ruin_rate_pct", -1.0, "ruin maximum is invalid"),
+    ],
+)
+def test_artifact_rejects_rehashed_invalid_gate_policy_ranges(field, value, message):
+    artifact = build_research_run_artifact(_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["gate_policy"][field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match=message):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_forged_failing_certification():
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["statistical_evidence"]["certification"]["passed"] = False
+    payload["statistical_evidence"]["certification"]["failures"] = ["forged failure"]
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="certification failures do not match evidence and policy"):
+        tampered.validate()
