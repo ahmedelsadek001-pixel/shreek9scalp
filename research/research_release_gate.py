@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from research.research_run_artifact import ResearchRunArtifact, validate_strategy_binding
+
 
 @dataclass(frozen=True)
 class ResearchReleaseEvidence:
@@ -50,3 +52,41 @@ def evaluate_research_release(evidence: ResearchReleaseEvidence) -> ResearchRele
     }
     failures = tuple(name for name, passed in checks.items() if type(passed) is not bool or not passed)
     return ResearchReleaseDecision(not failures, failures)
+
+
+
+@dataclass(frozen=True)
+class ResearchReleasePackage:
+    """Promotion input binding empirical release claims to one exact research artifact."""
+
+    evidence: ResearchReleaseEvidence
+    artifact: ResearchRunArtifact
+    strategy_id: str
+    strategy_version: str
+
+
+def evaluate_research_release_package(package: ResearchReleasePackage) -> ResearchReleaseDecision:
+    """Evaluate V5.2 promotion with artifact and strategy identity verified in-process."""
+    if not isinstance(package, ResearchReleasePackage):
+        raise TypeError("package must be ResearchReleasePackage")
+    if not isinstance(package.evidence, ResearchReleaseEvidence):
+        return ResearchReleaseDecision(False, ("research release evidence is malformed",))
+    if not isinstance(package.artifact, ResearchRunArtifact):
+        return ResearchReleaseDecision(False, ("research artifact is malformed",))
+    try:
+        package.artifact.dataset.validate()
+        package.artifact.validate()
+        validate_strategy_binding(
+            package.artifact,
+            strategy_id=package.strategy_id,
+            strategy_version=package.strategy_version,
+        )
+    except (TypeError, ValueError):
+        return ResearchReleaseDecision(False, ("research artifact identity validation failed",))
+    if not (
+        package.evidence.dataset_provenance_validated
+        and package.evidence.reproducible_artifact_validated
+        and package.evidence.strategy_version_bound
+    ):
+        return evaluate_research_release(package.evidence)
+    return evaluate_research_release(package.evidence)
