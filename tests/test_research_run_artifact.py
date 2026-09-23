@@ -281,3 +281,38 @@ def test_artifact_rejects_missing_required_robustness_certification_policy(field
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="certification policy is incomplete"):
         tampered.validate()
+
+
+def test_artifact_rejects_rehashed_statistical_sample_count_mismatch_with_oos_report():
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["evidence"]["oos_trade_count"] = 31
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="samples do not match archived OOS trade count"):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_certification_window_mismatch_with_oos_report():
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["statistical_evidence"]["certification"]["oos_windows"] = 3
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="OOS windows do not match archived evidence"):
+        tampered.validate()
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "message"),
+    [
+        ("confidence_interval", "mean", 9.0, "confidence interval mean"),
+        ("block_bootstrap", "observed_mean", 9.0, "bootstrap observed mean"),
+        ("certification", "oos_stability_pct", 74.0, "certification OOS stability"),
+    ],
+)
+def test_artifact_rejects_rehashed_statistical_summary_mismatch_with_oos_report(section, field, value, message):
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["statistical_evidence"][section][field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match=message):
+        tampered.validate()
