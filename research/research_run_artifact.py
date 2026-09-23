@@ -101,6 +101,51 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
     except TypeError as exc:
         raise ValueError("archived OOS evidence structure is invalid") from exc
     archived_report.validate()
+    wfo = payload.get("wfo_evidence")
+    if wfo is not None:
+        if not isinstance(wfo, dict) or set(wfo) != {
+            "windows", "train_scores", "test_scores", "selected_parameters"
+        }:
+            raise ValueError("archived WFO evidence structure is invalid")
+        windows = wfo["windows"]
+        train_scores = wfo["train_scores"]
+        test_scores = wfo["test_scores"]
+        selected = wfo["selected_parameters"]
+        count = evidence.get("oos_window_count")
+        if (
+            not isinstance(windows, list)
+            or not isinstance(train_scores, list)
+            or not isinstance(test_scores, list)
+            or not isinstance(selected, list)
+            or not len(windows) == len(train_scores) == len(test_scores) == len(selected) == count
+        ):
+            raise ValueError("archived WFO evidence cardinality does not match OOS report")
+        expected_window_fields = {
+            "train_start", "train_end", "purge_start", "purge_end", "test_start", "test_end"
+        }
+        previous_test_end = None
+        for window in windows:
+            if not isinstance(window, dict) or set(window) != expected_window_fields:
+                raise ValueError("archived WFO window structure is invalid")
+            if any(type(window[name]) is not int for name in expected_window_fields):
+                raise ValueError("archived WFO window boundaries must be integers")
+            if not (
+                0 <= window["train_start"] < window["train_end"]
+                and window["train_end"] == window["purge_start"]
+                and window["purge_start"] <= window["purge_end"]
+                and window["purge_end"] == window["test_start"]
+                and window["test_start"] < window["test_end"]
+            ):
+                raise ValueError("archived WFO window geometry is invalid")
+            if previous_test_end is not None and window["test_start"] < previous_test_end:
+                raise ValueError("archived WFO OOS windows must not overlap")
+            previous_test_end = window["test_end"]
+        for scores in (train_scores, test_scores):
+            if any(type(value) not in (int, float) or not isfinite(float(value)) for value in scores):
+                raise ValueError("archived WFO scores must be finite numbers")
+        for params in selected:
+            if not isinstance(params, dict) or any(type(key) is not str or not key for key in params):
+                raise ValueError("archived WFO selected parameters are invalid")
     if schema == "3":
         statistical = payload.get("statistical_evidence")
         if statistical is not None:
