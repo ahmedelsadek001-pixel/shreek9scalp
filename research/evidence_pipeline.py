@@ -22,6 +22,65 @@ from research.evidence_report import OOSEvidenceReport, build_oos_evidence_repor
 from research.robustness import RobustnessEvidence, run_oos_monte_carlo
 
 
+def _expectancy_objective(metrics: Any) -> float:
+    return metrics.expectancy
+
+
+@dataclass(frozen=True)
+class ResearchRunConfig:
+    """Exact research controls required to reproduce one evidence run."""
+
+    train_size: int
+    test_size: int
+    purge_size: int
+    step: int
+    maximize: bool
+    starting_equity: float
+    simulations: int
+    seed: int | None
+    slippage_multiplier: float
+    spread_multiplier: float
+    confidence: float
+    bootstrap_block_size: int
+    bootstrap_simulations: int
+    label_horizon: int
+    objective_id: str
+    candidate_parameters: tuple[Mapping[str, Any], ...]
+
+    def validate(self) -> None:
+        if any(type(value) is not int or value <= 0 for value in (
+            self.train_size, self.test_size, self.step, self.simulations,
+            self.bootstrap_block_size, self.bootstrap_simulations,
+        )):
+            raise ValueError("research run positive integer controls are invalid")
+        if type(self.purge_size) is not int or self.purge_size < 0:
+            raise ValueError("research run purge_size is invalid")
+        if type(self.label_horizon) is not int or self.label_horizon < 0:
+            raise ValueError("research run label_horizon is invalid")
+        if self.purge_size < self.label_horizon:
+            raise ValueError("research run purge_size must cover label_horizon")
+        if self.step < self.test_size:
+            raise ValueError("research run step must prevent overlapping OOS windows")
+        if type(self.maximize) is not bool:
+            raise ValueError("research run maximize must be a bool")
+        if type(self.starting_equity) not in (int, float) or self.starting_equity <= 0:
+            raise ValueError("research run starting_equity must be positive")
+        if self.seed is not None and type(self.seed) is not int:
+            raise ValueError("research run seed must be an integer or None")
+        if any(type(value) not in (int, float) or value < 1 for value in (
+            self.slippage_multiplier, self.spread_multiplier
+        )):
+            raise ValueError("research run cost multipliers must be numeric and >= 1")
+        if type(self.confidence) not in (int, float) or not 0 < self.confidence < 1:
+            raise ValueError("research run confidence must be between zero and one")
+        if not isinstance(self.objective_id, str) or not self.objective_id.strip():
+            raise ValueError("research run objective_id must be non-empty")
+        if not self.candidate_parameters or any(
+            not isinstance(params, Mapping) for params in self.candidate_parameters
+        ):
+            raise ValueError("research run candidate parameters must be non-empty mappings")
+
+
 @dataclass(frozen=True)
 class EvidencePipelineResult:
     """Complete research evidence bundle plus its fail-closed gate decision."""
@@ -35,6 +94,7 @@ class EvidencePipelineResult:
     bootstrap: BlockBootstrapSummary | None = None
     certification: ResearchCertification | None = None
     certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy()
+    run_config: ResearchRunConfig | None = None
 
 
 def run_evidence_pipeline(
@@ -48,7 +108,8 @@ def run_evidence_pipeline(
     starting_equity: float,
     step: int | None = None,
     maximize: bool = True,
-    objective: MetricEvaluator = lambda metrics: metrics.expectancy,
+    objective: MetricEvaluator = _expectancy_objective,
+    objective_id: str | None = None,
     simulations: int = 1000,
     seed: int | None = 42,
     slippage_multiplier: float = 1.0,
@@ -66,6 +127,36 @@ def run_evidence_pipeline(
     realized OOS trades. The final gate evaluates the documented evidence and
     remains strictly research-only.
     """
+    if objective_id is None:
+        if objective is not _expectancy_objective:
+            raise ValueError("custom research objective requires explicit objective_id")
+        resolved_objective_id = "expectancy"
+    elif not isinstance(objective_id, str) or not objective_id.strip():
+        raise ValueError("objective_id must be non-empty")
+    elif objective is _expectancy_objective and objective_id != "expectancy":
+        raise ValueError("default expectancy objective must use objective_id='expectancy'")
+    else:
+        resolved_objective_id = objective_id.strip()
+    resolved_step = test_size if step is None else step
+    run_config = ResearchRunConfig(
+        train_size,
+        test_size,
+        purge_size,
+        resolved_step,
+        maximize,
+        starting_equity,
+        simulations,
+        seed,
+        slippage_multiplier,
+        spread_multiplier,
+        confidence,
+        bootstrap_block_size,
+        bootstrap_simulations,
+        label_horizon,
+        resolved_objective_id,
+        tuple(dict(params) for params in parameter_sets),
+    )
+    run_config.validate()
     wfo = run_backtest_wfo(
         data,
         parameter_sets,
@@ -114,4 +205,5 @@ def run_evidence_pipeline(
         bootstrap,
         certification,
         certification_policy,
+        run_config,
     )
