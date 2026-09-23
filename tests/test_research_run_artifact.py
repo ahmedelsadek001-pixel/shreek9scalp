@@ -467,3 +467,56 @@ def test_artifact_rejects_duplicate_metadata_keys():
     )
     with pytest.raises(ValueError, match="metadata keys must be unique"):
         ambiguous.validate()
+
+
+def test_strategy_binding_accepts_exact_code_revision():
+    revision = "a" * 40
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={
+            "strategy_id": "breakout-retest",
+            "strategy_version": "research-v1",
+            "code_revision": revision,
+        },
+    )
+    validate_strategy_binding(
+        artifact,
+        strategy_id="breakout-retest",
+        strategy_version="research-v1",
+        code_revision=revision,
+    )
+
+
+@pytest.mark.parametrize("revision", ["b" * 40, "A" * 40, "short"])
+def test_strategy_binding_rejects_wrong_or_malformed_code_revision(revision):
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={
+            "strategy_id": "breakout-retest",
+            "strategy_version": "research-v1",
+            "code_revision": "a" * 40,
+        },
+    )
+    with pytest.raises(ValueError, match="code_revision"):
+        validate_strategy_binding(
+            artifact,
+            strategy_id="breakout-retest",
+            strategy_version="research-v1",
+            code_revision=revision,
+        )
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        ({"strategy_id": " breakout-retest"}, "strategy_id metadata must be normalized"),
+        ({"strategy_version": "research-v1 "}, "strategy_version metadata must be normalized"),
+        ({"code_revision": "A" * 40}, "code_revision metadata"),
+        ({"code_revision": "short"}, "code_revision metadata"),
+    ],
+)
+def test_artifact_rejects_noncanonical_reserved_identity_metadata(metadata, message):
+    with pytest.raises(ValueError, match=message):
+        build_research_run_artifact(_result(), _provenance(), metadata=metadata)
