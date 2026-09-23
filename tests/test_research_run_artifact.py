@@ -372,3 +372,36 @@ def test_artifact_rejects_rehashed_forged_failing_certification():
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match="certification failures do not match evidence and policy"):
         tampered.validate()
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "message"),
+    [
+        ("evidence", "simulations", 0, "requires OOS trades, windows, and simulations"),
+        ("confidence_interval", "standard_error", -1.0, "invalid confidence interval"),
+        ("block_bootstrap", "block_size", 0, "invalid block size"),
+        ("certification", "parameter_stability_pct", 120.0, "parameter stability must be between 0 and 100"),
+    ],
+)
+def test_artifact_rejects_rehashed_structurally_invalid_archived_evidence(section, field, value, message):
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    target = payload["evidence"] if section == "evidence" else payload["statistical_evidence"][section]
+    target[field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match=message):
+        tampered.validate()
+
+
+@pytest.mark.parametrize(
+    "section",
+    ["evidence", "confidence_interval", "block_bootstrap", "certification", "certification_policy"],
+)
+def test_artifact_rejects_rehashed_unexpected_archived_evidence_fields(section):
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    target = payload["evidence"] if section == "evidence" else payload["statistical_evidence"][section]
+    target["unexpected_field"] = "tampered"
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="structure is invalid"):
+        tampered.validate()
