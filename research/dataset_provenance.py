@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from math import isfinite
 from hashlib import sha256
 from typing import Sequence
 
@@ -19,8 +21,8 @@ class DatasetProvenance:
     schema_version: str
     sha256: str
     bar_count: int
-    first_timestamp: object
-    last_timestamp: object
+    first_timestamp: datetime
+    last_timestamp: datetime
 
     def validate(self) -> None:
         if self.schema_version != PROVENANCE_SCHEMA_VERSION:
@@ -29,8 +31,15 @@ class DatasetProvenance:
             raise ValueError("dataset sha256 must be a lowercase SHA-256 digest")
         if self.bar_count <= 0:
             raise ValueError("dataset bar_count must be positive")
-        if self.first_timestamp is None or self.last_timestamp is None:
-            raise ValueError("dataset timestamps are required")
+        for value in (self.first_timestamp, self.last_timestamp):
+            if (
+                not isinstance(value, datetime)
+                or value.tzinfo is None
+                or value.utcoffset() is None
+            ):
+                raise ValueError("dataset timestamps must be timezone-aware datetimes")
+            if not isfinite(float(value.timestamp())):
+                raise ValueError("dataset timestamps must be finite")
         if self.first_timestamp >= self.last_timestamp:
             raise ValueError("dataset timestamps must span a positive interval")
 
