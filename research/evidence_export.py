@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from hashlib import sha256
-from math import isclose
+from math import isclose, isfinite
 from typing import Any, Mapping
 
 from research.backtest_wfo import BacktestWFOResult
@@ -64,7 +64,7 @@ def _build_wfo_evidence(wfo: BacktestWFOResult, expected_windows: int) -> dict[s
         ):
             raise ValueError("WFO window geometry is invalid")
     scores = (*validation.train_scores, *validation.test_scores)
-    if any(type(score) not in (int, float) or not __import__("math").isfinite(float(score)) for score in scores):
+    if any(type(score) not in (int, float) or not isfinite(float(score)) for score in scores):
         raise ValueError("WFO scores must be finite numbers")
     return {
         "windows": [asdict(window) for window in validation.windows],
