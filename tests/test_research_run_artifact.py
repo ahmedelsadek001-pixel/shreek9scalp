@@ -316,3 +316,23 @@ def test_artifact_rejects_rehashed_statistical_summary_mismatch_with_oos_report(
     tampered = _rehash_artifact(artifact, payload)
     with pytest.raises(ValueError, match=message):
         tampered.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("min_oos_trades", 1, "OOS trade minimum"),
+        ("min_oos_windows", 0, "OOS window minimum"),
+        ("require_positive_ci_lower", 0, "switches must be bools"),
+        ("require_positive_bootstrap_lower", 1, "switches must be bools"),
+        ("min_parameter_stability_pct", 101.0, "between 0 and 100"),
+        ("max_oos_expectancy_degradation_pct", -1.0, "between 0 and 100"),
+    ],
+)
+def test_artifact_rejects_rehashed_invalid_certification_policy_types_and_ranges(field, value, message):
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["statistical_evidence"]["certification_policy"][field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match=message):
+        tampered.validate()
