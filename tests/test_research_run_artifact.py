@@ -511,10 +511,10 @@ def test_strategy_binding_rejects_wrong_or_malformed_code_revision(revision):
 @pytest.mark.parametrize(
     ("metadata", "message"),
     [
-        ({"strategy_id": " breakout-retest"}, "strategy_id metadata must be normalized"),
-        ({"strategy_version": "research-v1 "}, "strategy_version metadata must be normalized"),
-        ({"code_revision": "A" * 40}, "code_revision metadata"),
-        ({"code_revision": "short"}, "code_revision metadata"),
+        ({"strategy_id": " breakout-retest"}, "embedded artifact identity is malformed"),
+        ({"strategy_version": "research-v1 "}, "embedded artifact identity is malformed"),
+        ({"code_revision": "A" * 40}, "embedded artifact code revision is malformed"),
+        ({"code_revision": "short"}, "embedded artifact code revision is malformed"),
     ],
 )
 def test_artifact_rejects_noncanonical_reserved_identity_metadata(metadata, message):
