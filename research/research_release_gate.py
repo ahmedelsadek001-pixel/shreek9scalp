@@ -67,6 +67,7 @@ class ResearchReleasePackage:
     artifact: ResearchRunArtifact
     strategy_id: str
     strategy_version: str
+    code_revision: str
 
 
 def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ...]:
@@ -116,6 +117,7 @@ def evaluate_research_release_package(package: ResearchReleasePackage) -> Resear
             package.artifact,
             strategy_id=package.strategy_id,
             strategy_version=package.strategy_version,
+            code_revision=package.code_revision,
         )
         artifact_failures = _artifact_promotion_failures(package.artifact)
     except (TypeError, ValueError):
