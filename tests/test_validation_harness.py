@@ -178,6 +178,7 @@ def test_validation_harness_rejects_tampered_evidence():
         ({"train_size": 2}, "provenance"),
         ({"test_size": 1}, "provenance"),
         ({"purge_size": 0}, "provenance"),
+        ({"label_horizon": 1}, "provenance"),
         ({"step": 3}, "provenance"),
         ({"policy": EvidenceGatePolicy(min_oos_trades=2, min_expectancy=0.0, min_oos_stability_pct=0.0, max_ruin_rate_pct=100.0, max_worst_drawdown=10000.0)}, "provenance"),
     ],
@@ -210,3 +211,14 @@ def test_validation_harness_requires_context_evaluator_identity():
 def test_validation_harness_rejects_context_size_without_context_evaluator():
     with pytest.raises(ValueError, match="context_evaluator"):
         _run(context_size=1)
+
+
+def test_validation_harness_rejects_purge_smaller_than_label_horizon():
+    with pytest.raises(ValueError, match="purge_size must be at least label_horizon"):
+        _run(purge_size=1, label_horizon=2)
+
+
+def test_validation_harness_accepts_purge_covering_label_horizon():
+    result = _run(purge_size=1, label_horizon=1)
+    result.validate()
+    assert result.passed
