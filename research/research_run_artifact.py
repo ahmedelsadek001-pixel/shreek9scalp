@@ -466,8 +466,9 @@ def validate_strategy_binding(
     *,
     strategy_id: str,
     strategy_version: str,
+    code_revision: str | None = None,
 ) -> None:
-    """Require an artifact to be explicitly bound to the expected strategy identity."""
+    """Require an artifact to be explicitly bound to strategy and optional code identity."""
     if not isinstance(artifact, ResearchRunArtifact):
         raise ValueError("artifact must be a ResearchRunArtifact")
     if type(strategy_id) is not str or not strategy_id.strip():
@@ -480,6 +481,15 @@ def validate_strategy_binding(
         raise ValueError("research artifact strategy_id does not match expected strategy")
     if metadata.get("strategy_version") != strategy_version.strip():
         raise ValueError("research artifact strategy_version does not match expected version")
+    if code_revision is not None:
+        if (
+            type(code_revision) is not str
+            or len(code_revision) != 40
+            or any(char not in "0123456789abcdef" for char in code_revision)
+        ):
+            raise ValueError("code_revision must be a lowercase 40-character commit SHA")
+        if metadata.get("code_revision") != code_revision:
+            raise ValueError("research artifact code_revision does not match expected commit")
 
 
 def serialize_research_run_artifact(artifact: ResearchRunArtifact) -> str:
