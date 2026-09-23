@@ -142,3 +142,36 @@ def test_certification_rejects_tampered_train_metric_result_mismatch():
     tampered = replace(wfo, train_metrics=(altered,) + wfo.train_metrics[1:])
     with pytest.raises(ValueError, match="train metrics do not match"):
         certify_research(tampered, interval, bootstrap, robustness, ResearchCertificationPolicy(min_oos_trades=2))
+
+
+def test_certification_rejects_missing_train_result_cardinality():
+    wfo = _wfo(); pnl = wfo.oos_trade_pnl
+    interval = mean_confidence_interval(pnl)
+    bootstrap = moving_block_bootstrap(pnl, block_size=2, simulations=50, seed=7)
+    robustness = run_oos_monte_carlo(wfo, starting_equity=10000, simulations=20, seed=7)
+    tampered = replace(wfo, train_results=wfo.train_results[:-1])
+    with pytest.raises(ValueError, match="cardinality"):
+        certify_research(tampered, interval, bootstrap, robustness, ResearchCertificationPolicy(min_oos_trades=2))
+
+
+def test_parameter_stability_uses_dominant_configuration_frequency():
+    wfo = _wfo()
+    validation = replace(
+        wfo.validation,
+        selected_parameters=({"x": 1}, {"x": 2}, {"x": 1}),
+    )
+    varied = replace(wfo, validation=validation)
+    pnl = varied.oos_trade_pnl
+    interval = mean_confidence_interval(pnl)
+    bootstrap = moving_block_bootstrap(pnl, block_size=2, simulations=50, seed=7)
+    robustness = run_oos_monte_carlo(varied, starting_equity=10000, simulations=20, seed=7)
+    passes = certify_research(
+        varied, interval, bootstrap, robustness,
+        ResearchCertificationPolicy(min_oos_trades=2, min_parameter_stability_pct=60.0),
+    )
+    blocks = certify_research(
+        varied, interval, bootstrap, robustness,
+        ResearchCertificationPolicy(min_oos_trades=2, min_parameter_stability_pct=70.0),
+    )
+    assert passes.passed
+    assert "parameter stability below minimum" in blocks.failures
