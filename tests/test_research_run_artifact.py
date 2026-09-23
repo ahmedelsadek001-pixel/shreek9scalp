@@ -520,3 +520,55 @@ def test_strategy_binding_rejects_wrong_or_malformed_code_revision(revision):
 def test_artifact_rejects_noncanonical_reserved_identity_metadata(metadata, message):
     with pytest.raises(ValueError, match=message):
         build_research_run_artifact(_result(), _provenance(), metadata=metadata)
+
+
+def test_artifact_embeds_reserved_identity_in_hashed_evidence():
+    revision = "a" * 40
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={
+            "strategy_id": "breakout-retest",
+            "strategy_version": "research-v1",
+            "code_revision": revision,
+            "note": "not-identity",
+        },
+    )
+    payload = json.loads(artifact.evidence_export)
+    assert payload["artifact_identity"] == {
+        "code_revision": revision,
+        "strategy_id": "breakout-retest",
+        "strategy_version": "research-v1",
+    }
+    assert "note" not in payload["artifact_identity"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("strategy_id", "other"),
+        ("strategy_version", "other"),
+        ("code_revision", "b" * 40),
+    ],
+)
+def test_strategy_binding_rejects_rehashed_embedded_identity_tampering(field, value):
+    revision = "a" * 40
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={
+            "strategy_id": "breakout-retest",
+            "strategy_version": "research-v1",
+            "code_revision": revision,
+        },
+    )
+    payload = json.loads(artifact.evidence_export)
+    payload["artifact_identity"][field] = value
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError):
+        validate_strategy_binding(
+            tampered,
+            strategy_id="breakout-retest",
+            strategy_version="research-v1",
+            code_revision=revision,
+        )
