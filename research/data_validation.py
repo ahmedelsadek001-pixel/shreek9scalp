@@ -59,7 +59,11 @@ def validate_market_data(
         if not isinstance(bar, ResearchBar):
             raise ValueError("all bars must be ResearchBar instances")
         bar.validate()
-        if not isinstance(bar.timestamp, datetime) or bar.timestamp.tzinfo is None:
+        if (
+            not isinstance(bar.timestamp, datetime)
+            or bar.timestamp.tzinfo is None
+            or bar.timestamp.utcoffset() is None
+        ):
             raise ValueError("bar timestamps must be timezone-aware datetimes")
         if not isfinite(float(bar.timestamp.timestamp())):
             raise ValueError("bar timestamp must be finite")
