@@ -234,6 +234,7 @@ def test_release_package_blocks_strategy_identity_mismatch(strategy_id, strategy
         _release_artifact(),
         strategy_id,
         strategy_version,
+        CODE_REVISION,
     )
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
