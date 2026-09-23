@@ -1,8 +1,13 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
+from core.enums import Direction
+from core.research_certification import ResearchCertificationPolicy
+from research.breakout_retest import ResearchBar
 from research.dataset_provenance import DatasetProvenance
+from research.dataset_runner import run_dataset_research
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
@@ -101,7 +106,103 @@ def _release_artifact(strategy_id="breakout-retest", strategy_version="research-
     )
 
 
-def test_release_package_accepts_exact_strategy_bound_artifact():
+def _promotion_artifact():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    bars = tuple(
+        ResearchBar(
+            start + timedelta(minutes=5 * index),
+            100.0 + index,
+            101.0 + index,
+            99.0 + index,
+            100.5 + index,
+            10.0 + index,
+        )
+        for index in range(13)
+    )
+
+    def evaluator(rows, params):
+        pnl = 2.0 * params["mult"]
+        signal = rows[0].timestamp
+        exit_time = rows[-1].timestamp
+        trade = BacktestTrade(
+            signal,
+            signal,
+            exit_time,
+            Direction.BUY,
+            100.0,
+            100.0 + pnl,
+            1.0,
+            pnl,
+            0.0,
+            pnl,
+            "TP3",
+        )
+        stats = BacktestStats(
+            10000.0,
+            10000.0 + pnl,
+            pnl,
+            pnl / 100.0,
+            1,
+            1,
+            0,
+            100.0,
+            float("inf"),
+            pnl,
+            0.0,
+            0.0,
+            0.0,
+        )
+        return BacktestResult((trade,), (10000.0, 10000.0 + pnl), stats)
+
+    result = run_dataset_research(
+        bars,
+        ({"mult": 1.0},),
+        evaluator,
+        train_size=4,
+        test_size=2,
+        purge_size=1,
+        step=2,
+        starting_equity=10000.0,
+        simulations=20,
+        seed=7,
+        policy=EvidenceGatePolicy(
+            min_oos_trades=4,
+            min_expectancy=0.0,
+            min_oos_stability_pct=100.0,
+            max_ruin_rate_pct=0.0,
+            max_worst_drawdown=100.0,
+        ),
+        bootstrap_block_size=1,
+        bootstrap_simulations=50,
+        certification_policy=ResearchCertificationPolicy(
+            min_oos_trades=4,
+            min_oos_windows=4,
+            min_oos_stability_pct=100.0,
+            max_ruin_rate_pct=0.0,
+            max_oos_expectancy_degradation_pct=0.0,
+            min_parameter_stability_pct=100.0,
+        ),
+        artifact_metadata={
+            "strategy_id": "breakout-retest",
+            "strategy_version": "research-v1",
+        },
+    )
+    return result.artifact
+
+
+def test_release_package_accepts_complete_artifact_derived_evidence():
+    package = ResearchReleasePackage(
+        complete(),
+        _promotion_artifact(),
+        "breakout-retest",
+        "research-v1",
+    )
+    decision = evaluate_research_release_package(package)
+    assert decision.ready is True
+    assert decision.failures == ()
+
+
+def test_release_package_blocks_strategy_bound_but_non_empirical_artifact():
     package = ResearchReleasePackage(
         complete(),
         _release_artifact(),
@@ -109,8 +210,9 @@ def test_release_package_accepts_exact_strategy_bound_artifact():
         "research-v1",
     )
     decision = evaluate_research_release_package(package)
-    assert decision.ready is True
-    assert decision.failures == ()
+    assert decision.ready is False
+    assert "research artifact lacks reproducible WFO evidence" in decision.failures
+    assert "research artifact lacks statistical certification evidence" in decision.failures
 
 
 @pytest.mark.parametrize(
