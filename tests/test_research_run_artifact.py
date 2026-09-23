@@ -450,3 +450,20 @@ def test_strategy_binding_rejects_unbound_legacy_artifact():
             strategy_id="breakout-retest",
             strategy_version="research-v1",
         )
+
+
+def test_artifact_rejects_duplicate_metadata_keys():
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={"strategy_id": "breakout-retest"},
+    )
+    ambiguous = replace(
+        artifact,
+        metadata=(
+            ("strategy_id", "breakout-retest"),
+            ("strategy_id", "other"),
+        ),
+    )
+    with pytest.raises(ValueError, match="metadata keys must be unique"):
+        ambiguous.validate()
