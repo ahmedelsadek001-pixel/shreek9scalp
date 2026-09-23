@@ -130,10 +130,17 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
             }
             if not required_policy.issubset(cert_policy):
                 raise ValueError("embedded certification policy is incomplete")
+            if type(cert_policy["min_oos_trades"]) is not int or cert_policy["min_oos_trades"] < 2:
+                raise ValueError("certification policy OOS trade minimum is invalid")
+            if type(cert_policy["min_oos_windows"]) is not int or cert_policy["min_oos_windows"] < 1:
+                raise ValueError("certification policy OOS window minimum is invalid")
+            for name in ("require_positive_ci_lower", "require_positive_bootstrap_lower"):
+                if type(cert_policy[name]) is not bool:
+                    raise ValueError("certification policy switches must be bools")
             cert_policy_numeric = ("min_oos_stability_pct", "max_bootstrap_non_positive_rate_pct", "max_ruin_rate_pct", "max_oos_expectancy_degradation_pct", "min_parameter_stability_pct")
             for name in cert_policy_numeric:
-                if name in cert_policy and (type(cert_policy[name]) not in (int, float) or not isfinite(float(cert_policy[name]))):
-                    raise ValueError("certification policy numeric values must be finite")
+                if type(cert_policy[name]) not in (int, float) or not isfinite(float(cert_policy[name])) or not 0.0 <= float(cert_policy[name]) <= 100.0:
+                    raise ValueError("certification policy numeric values must be finite and between 0 and 100")
             if passed:
                 if certification["oos_trades"] < cert_policy["min_oos_trades"]:
                     raise ValueError("passing certification contradicts OOS trade minimum")
