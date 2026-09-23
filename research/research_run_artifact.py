@@ -16,6 +16,11 @@ from research.evidence_pipeline import EvidencePipelineResult
 ARTIFACT_SCHEMA_VERSION = "1"
 
 
+def _reject_nonstandard_json_constant(value: str) -> None:
+    """Reject NaN/Infinity tokens accepted by Python's permissive JSON parser."""
+    raise ValueError(f"non-standard JSON numeric constant: {value}")
+
+
 def _serialized_dataset(dataset: DatasetProvenance) -> dict[str, Any]:
     """Return the exact JSON representation used by the evidence exporter."""
     return json.loads(json.dumps(asdict(dataset), sort_keys=True, default=str))
@@ -161,7 +166,7 @@ class ResearchRunArtifact:
         if expected != self.evidence_export_sha256:
             raise ValueError("evidence export fingerprint mismatch")
         try:
-            export_payload = json.loads(self.evidence_export)
+            export_payload = json.loads(self.evidence_export, parse_constant=_reject_nonstandard_json_constant)
         except (TypeError, ValueError) as exc:
             raise ValueError("evidence_export must contain valid JSON") from exc
         if not isinstance(export_payload, dict):
