@@ -408,6 +408,14 @@ class ResearchRunArtifact:
         metadata_keys = tuple(key for key, _ in self.metadata)
         if len(set(metadata_keys)) != len(metadata_keys):
             raise ValueError("metadata keys must be unique")
+        metadata = dict(self.metadata)
+        for name in ("strategy_id", "strategy_version"):
+            if name in metadata and metadata[name] != metadata[name].strip():
+                raise ValueError(f"{name} metadata must be normalized")
+        if "code_revision" in metadata:
+            revision = metadata["code_revision"]
+            if len(revision) != 40 or any(char not in "0123456789abcdef" for char in revision):
+                raise ValueError("code_revision metadata must be a lowercase 40-character commit SHA")
 
 
 def build_research_run_artifact(
