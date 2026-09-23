@@ -4,6 +4,7 @@ import pytest
 
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
+from core.research_certification import ResearchCertificationPolicy
 from research.dataset_runner import run_csv_research, run_dataset_research
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
@@ -75,3 +76,40 @@ def test_csv_runner_rejects_invalid_dataset(tmp_path):
     path.write_text(CSV.replace("2026-01-01T10:35:00Z", "2026-01-01T10:20:00Z"), encoding="utf-8")
     with pytest.raises(ValueError, match="chronological validation"):
         run_csv_research(path, ({"x": 1},), lambda rows, params: _result(1.0), train_size=3, test_size=2, purge_size=1, starting_equity=10000.0)
+
+
+def test_dataset_runner_forwards_causal_and_statistical_controls(monkeypatch):
+    from research import dataset_runner
+
+    captured = {}
+
+    def fake_pipeline(*args, **kwargs):
+        captured.update(kwargs)
+        return _evidence()
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", fake_pipeline)
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    certification_policy = ResearchCertificationPolicy(
+        min_oos_trades=2,
+        min_oos_windows=1,
+        min_parameter_stability_pct=75.0,
+    )
+    run_dataset_research(
+        bars,
+        ({"x": 1},),
+        lambda rows, params: _result(1.0),
+        train_size=3,
+        test_size=2,
+        purge_size=2,
+        starting_equity=10000.0,
+        confidence=0.90,
+        bootstrap_block_size=3,
+        bootstrap_simulations=321,
+        label_horizon=2,
+        certification_policy=certification_policy,
+    )
+    assert captured["confidence"] == 0.90
+    assert captured["bootstrap_block_size"] == 3
+    assert captured["bootstrap_simulations"] == 321
+    assert captured["label_horizon"] == 2
+    assert captured["certification_policy"] is certification_policy
