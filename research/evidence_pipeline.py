@@ -7,6 +7,7 @@ execution or deployment authority.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Mapping, Sequence
 
 from core.block_bootstrap import BlockBootstrapSummary, moving_block_bootstrap
@@ -63,15 +64,24 @@ class ResearchRunConfig:
             raise ValueError("research run step must prevent overlapping OOS windows")
         if type(self.maximize) is not bool:
             raise ValueError("research run maximize must be a bool")
-        if type(self.starting_equity) not in (int, float) or self.starting_equity <= 0:
-            raise ValueError("research run starting_equity must be positive")
+        if (
+            type(self.starting_equity) not in (int, float)
+            or not isfinite(float(self.starting_equity))
+            or self.starting_equity <= 0
+        ):
+            raise ValueError("research run starting_equity must be positive and finite")
         if self.seed is not None and type(self.seed) is not int:
             raise ValueError("research run seed must be an integer or None")
-        if any(type(value) not in (int, float) or value < 1 for value in (
-            self.slippage_multiplier, self.spread_multiplier
-        )):
+        if any(
+            type(value) not in (int, float) or not isfinite(float(value)) or value < 1
+            for value in (self.slippage_multiplier, self.spread_multiplier)
+        ):
             raise ValueError("research run cost multipliers must be numeric and >= 1")
-        if type(self.confidence) not in (int, float) or not 0 < self.confidence < 1:
+        if (
+            type(self.confidence) not in (int, float)
+            or not isfinite(float(self.confidence))
+            or not 0 < self.confidence < 1
+        ):
             raise ValueError("research run confidence must be between zero and one")
         if not isinstance(self.objective_id, str) or not self.objective_id.strip():
             raise ValueError("research run objective_id must be non-empty")
