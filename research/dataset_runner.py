@@ -6,14 +6,16 @@ broker, credential, or execution authority.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from datetime import timedelta, tzinfo
+from math import isclose, isfinite
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from core.research_certification import ResearchCertificationPolicy
 from research.backtest_wfo import BacktestEvaluator
-from research.breakout_retest import ResearchBar
+from research.backtest_breakout_retest import run_breakout_retest_backtest
+from research.breakout_retest import BreakoutRetestConfig, ResearchBar
 from research.csv_adapter import load_ohlcv_csv
 from research.dataset_provenance import DatasetProvenance, fingerprint_bars
 from research.data_validation import MarketDataValidation, validate_market_data
@@ -21,6 +23,14 @@ from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
 from research.research_run_artifact import ResearchRunArtifact, build_research_run_artifact
 from research.xauusd_source_manifest import XAUUSDSourceManifest
+
+
+MANIFEST_BOUND_COST_APPLICATION_ID = "manifest-bound-breakout-retest-v1"
+_SIGNAL_PARAMETER_NAMES = frozenset(field.name for field in fields(BreakoutRetestConfig))
+_ECONOMIC_PARAMETER_NAMES = frozenset({
+    "pip_size", "volume", "spread", "slippage", "point_value",
+    "commission_per_volume", "timeframe", "signal",
+})
 
 
 @dataclass(frozen=True)
@@ -123,6 +133,89 @@ def run_dataset_research(
         metadata=_merge_manifest_metadata(artifact_metadata, source_manifest),
     )
     return DatasetResearchResult(validation, provenance, evidence, artifact)
+
+
+def _validate_manifest_volume(manifest: XAUUSDSourceManifest, volume: float) -> float:
+    if type(volume) not in (int, float) or not isfinite(float(volume)):
+        raise ValueError("volume must be a finite number")
+    resolved = float(volume)
+    if resolved < manifest.minimum_volume:
+        raise ValueError("volume must not be below the source minimum volume")
+    steps = (resolved - manifest.minimum_volume) / manifest.volume_step
+    if not isclose(steps, round(steps), rel_tol=0.0, abs_tol=1e-9):
+        raise ValueError("volume must align with the source volume step")
+    return resolved
+
+
+def _signal_config(parameters: Mapping[str, Any]) -> BreakoutRetestConfig:
+    if not isinstance(parameters, Mapping):
+        raise ValueError("each parameter set must be a mapping")
+    names = set(parameters)
+    forbidden = names & _ECONOMIC_PARAMETER_NAMES
+    if forbidden:
+        raise ValueError(
+            "manifest-bound parameter sets cannot override execution economics: "
+            + ", ".join(sorted(forbidden))
+        )
+    unknown = names - _SIGNAL_PARAMETER_NAMES
+    if unknown:
+        raise ValueError("unknown breakout-retest parameters: " + ", ".join(sorted(unknown)))
+    config = BreakoutRetestConfig(**dict(parameters))
+    config.validate()
+    return config
+
+
+def run_xauusd_breakout_retest_research(
+    bars: Sequence[ResearchBar],
+    parameter_sets: Sequence[Mapping[str, Any]],
+    *,
+    source_manifest: XAUUSDSourceManifest,
+    pip_size: float,
+    volume: float = 1.0,
+    artifact_metadata: Mapping[str, str] | None = None,
+    **kwargs: Any,
+) -> DatasetResearchResult:
+    """Run the canonical XAUUSD study with manifest-locked execution costs.
+
+    Candidate parameters may tune signal thresholds only. Spread, slippage,
+    point value, commission, volume, pip size, and timeframe are constructed
+    outside the optimization surface so documented costs cannot be archived
+    without also being consumed by the backtest engine.
+    """
+    if not isinstance(source_manifest, XAUUSDSourceManifest):
+        raise ValueError("source_manifest must be an XAUUSDSourceManifest")
+    source_manifest.validate()
+    resolved_volume = _validate_manifest_volume(source_manifest, volume)
+    signal_configs = tuple(_signal_config(params) for params in parameter_sets)
+    if not signal_configs:
+        raise ValueError("parameter_sets must be non-empty")
+    base_config = source_manifest.to_breakout_retest_config(
+        pip_size=pip_size,
+        volume=resolved_volume,
+    )
+
+    normalized_parameters = tuple(
+        {field.name: getattr(config, field.name) for field in fields(BreakoutRetestConfig)}
+        for config in signal_configs
+    )
+
+    def evaluator(rows: Sequence[ResearchBar], params: Mapping[str, Any]):
+        signal = _signal_config(params)
+        return run_breakout_retest_backtest(rows, replace(base_config, signal=signal))
+
+    metadata = dict(artifact_metadata or {})
+    existing = metadata.get("cost_application_id")
+    if existing is not None and existing != MANIFEST_BOUND_COST_APPLICATION_ID:
+        raise ValueError("artifact metadata conflicts with manifest-bound cost application")
+    metadata["cost_application_id"] = MANIFEST_BOUND_COST_APPLICATION_ID
+    return run_dataset_research(
+        bars,
+        normalized_parameters,
+        evaluator,
+        source_manifest=source_manifest,
+        artifact_metadata=metadata,
+        **kwargs,
+    )
 
 
 def run_csv_research(

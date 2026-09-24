@@ -5,7 +5,12 @@ import pytest
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
 from core.research_certification import ResearchCertificationPolicy
-from research.dataset_runner import run_csv_research, run_dataset_research
+from research.dataset_runner import (
+    MANIFEST_BOUND_COST_APPLICATION_ID,
+    run_csv_research,
+    run_dataset_research,
+    run_xauusd_breakout_retest_research,
+)
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
@@ -151,4 +156,71 @@ def test_dataset_runner_rejects_manifest_timezone_mismatch(monkeypatch):
             bars, ({"x": 1},), lambda rows, params: _result(1.0),
             train_size=3, test_size=2, purge_size=1, starting_equity=10000.0,
             source_manifest=_utc_manifest(180),
+        )
+
+
+def test_manifest_bound_runner_applies_costs_and_marks_artifact(monkeypatch):
+    from research import dataset_runner
+
+    captured = {}
+
+    def fake_pipeline(rows, parameters, evaluator, **kwargs):
+        captured["parameters"] = parameters
+        captured["result"] = evaluator(rows, parameters[0])
+        return _evidence()
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", fake_pipeline)
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    result = run_xauusd_breakout_retest_research(
+        bars,
+        ({"consolidation_bars": 2, "volume_lookback": 2},),
+        source_manifest=_utc_manifest(),
+        pip_size=0.1,
+        volume=0.01,
+        train_size=3,
+        test_size=2,
+        purge_size=1,
+        starting_equity=10000.0,
+    )
+    assert captured["parameters"][0]["consolidation_bars"] == 2
+    assert isinstance(captured["result"], BacktestResult)
+    assert dict(result.artifact.metadata)["cost_application_id"] == MANIFEST_BOUND_COST_APPLICATION_ID
+
+
+@pytest.mark.parametrize("field", ["spread", "slippage", "point_value", "commission_per_volume", "volume"])
+def test_manifest_bound_runner_rejects_execution_cost_overrides(monkeypatch, field):
+    from research import dataset_runner
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="cannot override execution economics"):
+        run_xauusd_breakout_retest_research(
+            bars,
+            ({field: 0.0},),
+            source_manifest=_utc_manifest(),
+            pip_size=0.1,
+            volume=0.01,
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            starting_equity=10000.0,
+        )
+
+
+def test_manifest_bound_runner_enforces_broker_volume_step(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="volume step"):
+        run_xauusd_breakout_retest_research(
+            bars,
+            ({},),
+            source_manifest=_utc_manifest(),
+            pip_size=0.1,
+            volume=0.015,
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            starting_equity=10000.0,
         )

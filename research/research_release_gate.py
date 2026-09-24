@@ -13,6 +13,7 @@ from research.research_run_artifact import (
     validate_strategy_binding,
     validated_evidence_payload,
 )
+from research.dataset_runner import MANIFEST_BOUND_COST_APPLICATION_ID
 from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
@@ -101,6 +102,8 @@ def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ..
         ):
             failures.append("research artifact lacks adverse execution-cost stress")
     metadata = dict(artifact.metadata)
+    if metadata.get("cost_application_id") != MANIFEST_BOUND_COST_APPLICATION_ID:
+        failures.append("research artifact costs were not applied by the manifest-bound backtest")
     cost_keys = {
         "source_broker", "source_server", "source_symbol",
         "source_timezone_offset_minutes", "source_digits", "source_point_size",
