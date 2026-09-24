@@ -70,3 +70,20 @@ class GuardedExecutionAdapter(Generic[T]):
         # Successful function return is only transport completion. The caller
         # must finish ACCEPTED/REJECTED from explicit broker acknowledgement.
         return GuardedExecutionResult(True,result,())
+
+    def execute_intent_strict(
+        self,
+        decision: ExecutionGateDecision,
+        intent: OrderIntent,
+        quote_safety: QuoteSafetyDecision,
+    ) -> GuardedExecutionResult[T]:
+        """Submit an intent only with an explicit quote-safety decision.
+
+        The legacy ``execute_intent`` entry point permits ``None`` for callers
+        that have not yet migrated.  This boundary is the migration target for
+        real broker adapters: missing quote evidence is rejected before the
+        idempotency ledger or downstream transport can be touched.
+        """
+        if quote_safety is None:
+            return GuardedExecutionResult(False, None, ("quote safety decision required",))
+        return self.execute_intent(decision, intent, quote_safety)

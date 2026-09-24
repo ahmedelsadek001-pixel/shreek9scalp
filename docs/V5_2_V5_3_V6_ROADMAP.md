@@ -16,6 +16,8 @@
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
+- Strict broker-bound submission requires an explicit quote-freshness and
+  deviation decision; missing quote evidence is rejected before transport.
 - A `KILLED` risk state cannot be reset without explicit boolean operator
   approval and a non-empty audit reason; reset is not a live-execution grant.
 

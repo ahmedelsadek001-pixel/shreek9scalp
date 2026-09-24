@@ -25,3 +25,14 @@ def test_fabricated_malformed_quote_decision_fails_closed():
     calls=[]
     r=GuardedExecutionAdapter(lambda x:calls.append(x)).execute_intent(gate(),intent(),object())
     assert not r.executed and calls==[]
+
+def test_strict_boundary_rejects_missing_quote_before_transport():
+    calls=[]
+    r=GuardedExecutionAdapter(lambda x:calls.append(x)).execute_intent_strict(gate(),intent(),None)
+    assert not r.executed and calls==[] and r.reasons==("quote safety decision required",)
+
+def test_strict_boundary_accepts_only_explicit_fresh_quote():
+    calls=[]; now=datetime.now(timezone.utc)
+    q=evaluate_quote_safety(quote_time=now,now=now,intended_price=2500,market_price=2500,max_age_seconds=2,max_deviation_points=3,point_size=.1)
+    r=GuardedExecutionAdapter(lambda x:calls.append(x.order_id) or "sent").execute_intent_strict(gate(),intent(),q)
+    assert r.executed and calls==["Q-1"]
