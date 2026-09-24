@@ -136,6 +136,8 @@ def test_dataset_runner_binds_manifest_timezone_and_safe_artifact_metadata(monke
     metadata = dict(result.artifact.metadata)
     assert metadata["source_symbol"] == "XAUUSD"
     assert metadata["source_timezone_offset_minutes"] == "0"
+    assert metadata["source_minimum_volume"] == "0.01"
+    assert metadata["source_volume_step"] == "0.01"
     assert "account" not in " ".join(metadata).lower()
 
 

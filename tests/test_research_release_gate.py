@@ -12,6 +12,7 @@ from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
 from research.research_run_artifact import build_research_run_artifact
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 CODE_REVISION = "a" * 40
 
@@ -109,7 +110,7 @@ def _release_artifact(strategy_id="breakout-retest", strategy_version="research-
     )
 
 
-def _promotion_artifact():
+def _promotion_artifact(*, include_cost_provenance=True, adverse_cost_stress=True):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     bars = tuple(
         ResearchBar(
@@ -168,6 +169,8 @@ def _promotion_artifact():
         starting_equity=10000.0,
         simulations=20,
         seed=7,
+        slippage_multiplier=1.5 if adverse_cost_stress else 1.0,
+        spread_multiplier=1.5 if adverse_cost_stress else 1.0,
         policy=EvidenceGatePolicy(
             min_oos_trades=4,
             min_expectancy=0.0,
@@ -190,6 +193,13 @@ def _promotion_artifact():
             "strategy_version": "research-v1",
             "code_revision": CODE_REVISION,
         },
+        source_manifest=(
+            XAUUSDSourceManifest(
+                "research-broker", "research-server", "XAUUSD", 0,
+                2, 0.01, 100.0, 0.01, 0.01, 19.0, 7.0, 1.5,
+            )
+            if include_cost_provenance else None
+        ),
     )
     return result.artifact
 
@@ -205,6 +215,32 @@ def test_release_package_accepts_complete_artifact_derived_evidence():
     decision = evaluate_research_release_package(package)
     assert decision.ready is True
     assert decision.failures == ()
+
+
+def test_release_package_blocks_missing_broker_cost_provenance():
+    package = ResearchReleasePackage(
+        complete(),
+        _promotion_artifact(include_cost_provenance=False),
+        "breakout-retest",
+        "research-v1",
+        CODE_REVISION,
+    )
+    decision = evaluate_research_release_package(package)
+    assert decision.ready is False
+    assert "research artifact lacks complete broker cost provenance" in decision.failures
+
+
+def test_release_package_blocks_unstressed_execution_costs():
+    package = ResearchReleasePackage(
+        complete(),
+        _promotion_artifact(adverse_cost_stress=False),
+        "breakout-retest",
+        "research-v1",
+        CODE_REVISION,
+    )
+    decision = evaluate_research_release_package(package)
+    assert decision.ready is False
+    assert "research artifact lacks adverse execution-cost stress" in decision.failures
 
 
 def test_release_package_blocks_strategy_bound_but_non_empirical_artifact():

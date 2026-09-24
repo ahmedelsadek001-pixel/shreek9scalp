@@ -43,6 +43,8 @@ def _manifest_metadata(manifest: XAUUSDSourceManifest) -> dict[str, str]:
         "source_digits": str(manifest.digits),
         "source_point_size": f"{manifest.point_size:.12g}",
         "source_contract_size": f"{manifest.contract_size:.12g}",
+        "source_minimum_volume": f"{manifest.minimum_volume:.12g}",
+        "source_volume_step": f"{manifest.volume_step:.12g}",
         "source_spread_points": f"{manifest.observed_spread_points:.12g}",
         "source_slippage_points": f"{manifest.slippage_points:.12g}",
         "source_round_turn_commission_per_lot": f"{manifest.round_turn_commission_per_lot:.12g}",

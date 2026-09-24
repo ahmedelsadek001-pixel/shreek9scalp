@@ -6,12 +6,14 @@ progress toward V5.3. It does not authorize execution.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 
 from research.research_run_artifact import (
     ResearchRunArtifact,
     validate_strategy_binding,
     validated_evidence_payload,
 )
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 @dataclass(frozen=True)
@@ -89,6 +91,47 @@ def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ..
             failures.append("research artifact lacks timestamped WFO windows")
         if config.get("purge_size", -1) < config.get("label_horizon", 0):
             failures.append("research artifact purge does not cover label horizon")
+        if (
+            type(config.get("slippage_multiplier")) not in (int, float)
+            or type(config.get("spread_multiplier")) not in (int, float)
+            or not isfinite(float(config["slippage_multiplier"]))
+            or not isfinite(float(config["spread_multiplier"]))
+            or config["slippage_multiplier"] <= 1.0
+            or config["spread_multiplier"] <= 1.0
+        ):
+            failures.append("research artifact lacks adverse execution-cost stress")
+    metadata = dict(artifact.metadata)
+    cost_keys = {
+        "source_broker", "source_server", "source_symbol",
+        "source_timezone_offset_minutes", "source_digits", "source_point_size",
+        "source_contract_size", "source_minimum_volume", "source_volume_step",
+        "source_spread_points", "source_slippage_points",
+        "source_round_turn_commission_per_lot",
+    }
+    if not cost_keys.issubset(metadata):
+        failures.append("research artifact lacks complete broker cost provenance")
+    else:
+        try:
+            manifest = XAUUSDSourceManifest(
+                metadata["source_broker"],
+                metadata["source_server"],
+                metadata["source_symbol"],
+                int(metadata["source_timezone_offset_minutes"]),
+                int(metadata["source_digits"]),
+                float(metadata["source_point_size"]),
+                float(metadata["source_contract_size"]),
+                float(metadata["source_minimum_volume"]),
+                float(metadata["source_volume_step"]),
+                float(metadata["source_spread_points"]),
+                float(metadata["source_round_turn_commission_per_lot"]),
+                float(metadata["source_slippage_points"]),
+            )
+            manifest.validate()
+        except (TypeError, ValueError, OverflowError):
+            failures.append("research artifact broker cost provenance is malformed")
+        else:
+            if manifest.observed_spread_points <= 0:
+                failures.append("research artifact observed spread must be positive")
     statistical = payload.get("statistical_evidence")
     if not isinstance(statistical, dict):
         failures.append("research artifact lacks statistical certification evidence")
