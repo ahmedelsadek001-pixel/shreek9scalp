@@ -6,6 +6,7 @@ import pytest
 
 from research.xauusd_audit_cli import audit_xauusd_csv_bundle, main
 from research.xauusd_dataset_quality import XAUUSDQualityPolicy
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 def _files(tmp_path):
@@ -63,3 +64,19 @@ def test_audit_rejects_malformed_csv_before_quality_decision(tmp_path):
         audit_xauusd_csv_bundle(paths)
     with pytest.raises(ValueError, match="exactly 5m, 15m and 1h"):
         audit_xauusd_csv_bundle({"5m": paths["5m"]})
+
+
+def test_audit_enforces_source_manifest_timezone(tmp_path):
+    paths = _files(tmp_path)
+    manifest = XAUUSDSourceManifest(
+        "broker", "server", "XAUUSD", 0, 2, 0.01, 100.0,
+        0.01, 0.01, 19.0, 7.0, 1.5,
+    )
+    result = audit_xauusd_csv_bundle(paths, source_manifest=manifest)
+    assert result.files[0].timeframe == "5m"
+    mismatch = XAUUSDSourceManifest(
+        "broker", "server", "XAUUSD", 180, 2, 0.01, 100.0,
+        0.01, 0.01, 19.0, 7.0, 1.5,
+    )
+    with pytest.raises(ValueError, match="offset does not match"):
+        audit_xauusd_csv_bundle(paths, source_manifest=mismatch)

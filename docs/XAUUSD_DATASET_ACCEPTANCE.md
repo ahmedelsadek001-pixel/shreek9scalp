@@ -34,6 +34,11 @@ external verification. Passing OHLC checks cannot prove genuine provenance or
 broker-accurate fills. The generic single-timeframe research runner is not a
 substitute for this three-timeframe acceptance gate.
 
+Library callers should pass the validated
+`research.xauusd_source_manifest.XAUUSDSourceManifest` as
+`source_manifest=` to `audit_xauusd_csv_bundle`. The audit then rejects every
+CSV whose timestamp offset disagrees with the declared broker/server offset.
+
 `research.xauusd_dataset_quality.require_xauusd_multitimeframe_quality` is the
 fail-closed entry gate. A failed audit blocks empirical WFO and robustness
 promotion. Rejected files may still be used as explicitly labelled synthetic

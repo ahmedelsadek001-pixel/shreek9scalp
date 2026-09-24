@@ -14,6 +14,7 @@ from research.xauusd_dataset_quality import (
     XAUUSDQualityPolicy,
     audit_xauusd_multitimeframe,
 )
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,9 @@ class XAUUSDCsvAudit:
 
 
 def audit_xauusd_csv_bundle(
-    paths: Mapping[str, str | Path], *, policy: XAUUSDQualityPolicy = XAUUSDQualityPolicy()
+    paths: Mapping[str, str | Path], *,
+    policy: XAUUSDQualityPolicy = XAUUSDQualityPolicy(),
+    source_manifest: XAUUSDSourceManifest | None = None,
 ) -> XAUUSDCsvAudit:
     """Hash the same bytes that are parsed, then check all three timeframes.
 
@@ -43,6 +46,10 @@ def audit_xauusd_csv_bundle(
     if not isinstance(paths, Mapping) or set(paths) != {"5m", "15m", "1h"}:
         raise ValueError("paths must contain exactly 5m, 15m and 1h")
     policy.validate()
+    if source_manifest is not None:
+        if not isinstance(source_manifest, XAUUSDSourceManifest):
+            raise ValueError("source_manifest must be an XAUUSDSourceManifest")
+        source_manifest.validate()
     datasets = {}
     file_evidence = []
     for timeframe in ("5m", "15m", "1h"):
@@ -51,6 +58,8 @@ def audit_xauusd_csv_bundle(
             raise ValueError(f"{timeframe} CSV path must reference an existing file")
         raw = path.read_bytes()
         bars, _ = load_ohlcv_csv(raw.decode("utf-8-sig"))
+        if source_manifest is not None:
+            source_manifest.validate_bars_timezone(bars)
         datasets[timeframe] = bars
         file_evidence.append(DatasetFileEvidence(
             timeframe, path.name, sha256(raw).hexdigest(), len(raw),
