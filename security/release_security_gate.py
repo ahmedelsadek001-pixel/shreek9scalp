@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from pathlib import Path
 import re
-from typing import Iterable
+from typing import Iterable, Union
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ _LIVE_FUNCTIONS = {
     "place_order",
     "submit_order",
 }
+DEFAULT_EXCLUDED_PARTS = frozenset({".git", ".venv", "venv", "__pycache__", "tests", "security"})
 
 
 def _has_live_order_call(content: str) -> bool:
@@ -98,5 +100,30 @@ def evaluate_tree(files: Iterable[tuple[str, str]]) -> tuple[bool, tuple[Securit
     findings: list[SecurityFinding] = []
     for path, content in files:
         findings.extend(scan_source(path, content))
+    return not findings, tuple(findings)
+
+
+def evaluate_paths(
+    paths: Iterable[Union[str, Path]],
+    *,
+    excluded_parts: Iterable[str] = DEFAULT_EXCLUDED_PARTS,
+) -> tuple[bool, tuple[SecurityFinding, ...]]:
+    """Scan Python files from a release tree and fail closed on read errors.
+
+    Keeping file discovery and source scanning together prevents CI callers
+    from silently skipping unreadable or malformed production files.
+    """
+    excluded = frozenset(excluded_parts)
+    findings: list[SecurityFinding] = []
+    for raw_path in paths:
+        path = Path(raw_path)
+        if path.suffix != ".py" or any(part in excluded for part in path.parts):
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            findings.append(SecurityFinding("read-error", str(path), f"source could not be read: {exc}"))
+            continue
+        findings.extend(scan_source(str(path), content))
     return not findings, tuple(findings)
 
