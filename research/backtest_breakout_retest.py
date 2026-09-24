@@ -80,11 +80,14 @@ def build_breakout_retest_orders(
     config.validate()
     if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
         raise ValueError("min_signal_index must be an integer within bars")
-    signals = detect_breakout_retest(
-        bars,
-        pip_size=config.pip_size,
-        config=config.signal,
-        min_signal_index=min_signal_index,
+    signals = sorted(
+        detect_breakout_retest(
+            bars,
+            pip_size=config.pip_size,
+            config=config.signal,
+            min_signal_index=min_signal_index,
+        ),
+        key=lambda signal: (signal.signal_time, signal.breakout_time),
     )
     return tuple(
         signal.to_backtest_order(

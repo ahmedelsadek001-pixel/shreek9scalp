@@ -9,7 +9,7 @@ from research.backtest_breakout_retest import (
     run_breakout_retest_backtest,
     to_backtest_bars,
 )
-from research.breakout_retest import ResearchBar
+from research.breakout_retest import BreakoutRetestSignal, ResearchBar
 
 
 def _bars() -> list[ResearchBar]:
@@ -45,6 +45,45 @@ def test_breakout_retest_builds_causal_order():
     assert len(orders) == 1
     assert orders[0].direction is Direction.BUY
     assert orders[0].signal_time == datetime(2026, 1, 1, 0, 27, tzinfo=timezone.utc)
+
+
+def test_orders_are_chronological_when_later_breakout_retests_first(monkeypatch):
+    bars = _bars()
+
+    def signal(signal_index, breakout_index, direction):
+        entry = 100.0
+        return BreakoutRetestSignal(
+            direction=direction,
+            signal_time=bars[signal_index].timestamp,
+            breakout_time=bars[breakout_index].timestamp,
+            breakout_level=entry,
+            entry_price=entry,
+            sl_price=99.0 if direction is Direction.BUY else 101.0,
+            tp1=101.5 if direction is Direction.BUY else 98.5,
+            tp2=102.5 if direction is Direction.BUY else 97.5,
+            tp3=104.0 if direction is Direction.BUY else 96.0,
+            body_pct=0.8,
+            volume_ratio=2.0,
+            confirmation="Pin Bar",
+        )
+
+    monkeypatch.setattr(
+        "research.backtest_breakout_retest.detect_breakout_retest",
+        lambda *_args, **_kwargs: (
+            signal(28, 26, Direction.BUY),
+            signal(27, 25, Direction.SELL),
+        ),
+    )
+
+    orders = build_breakout_retest_orders(
+        bars,
+        BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=1.0),
+    )
+
+    assert [order.signal_time for order in orders] == [
+        bars[27].timestamp,
+        bars[28].timestamp,
+    ]
 
 
 def test_breakout_retest_order_uses_configured_timeframe():
