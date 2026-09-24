@@ -17,7 +17,13 @@ from core.research_certification import (
     certify_research,
 )
 from core.statistical_evidence import MeanConfidenceInterval, mean_confidence_interval
-from research.backtest_wfo import BacktestEvaluator, BacktestWFOResult, MetricEvaluator, run_backtest_wfo
+from research.backtest_wfo import (
+    BacktestEvaluator,
+    BacktestWFOResult,
+    ContextBacktestEvaluator,
+    MetricEvaluator,
+    run_backtest_wfo,
+)
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult, evaluate_oos_evidence
 from research.evidence_report import OOSEvidenceReport, build_oos_evidence_report
 from research.robustness import RobustnessEvidence, run_oos_monte_carlo
@@ -47,6 +53,8 @@ class ResearchRunConfig:
     label_horizon: int
     objective_id: str
     candidate_parameters: tuple[Mapping[str, Any], ...]
+    context_size: int = 0
+    context_evaluator_id: str | None = None
 
     def validate(self) -> None:
         if any(type(value) is not int or value <= 0 for value in (
@@ -89,6 +97,13 @@ class ResearchRunConfig:
             not isinstance(params, Mapping) for params in self.candidate_parameters
         ):
             raise ValueError("research run candidate parameters must be non-empty mappings")
+        if type(self.context_size) is not int or self.context_size < 0:
+            raise ValueError("research run context_size must be a non-negative integer")
+        if self.context_size > 0:
+            if not isinstance(self.context_evaluator_id, str) or not self.context_evaluator_id.strip():
+                raise ValueError("research run warm-up context requires a context evaluator identity")
+        elif self.context_evaluator_id is not None:
+            raise ValueError("research run context evaluator identity requires warm-up context")
 
 
 @dataclass(frozen=True)
@@ -130,6 +145,9 @@ def run_evidence_pipeline(
     bootstrap_simulations: int = 2000,
     label_horizon: int = 0,
     certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy(),
+    context_size: int = 0,
+    context_evaluator: ContextBacktestEvaluator | None = None,
+    context_evaluator_id: str | None = None,
 ) -> EvidencePipelineResult:
     """Run the complete V5.2 evidence chain in causal order.
 
@@ -147,6 +165,18 @@ def run_evidence_pipeline(
         raise ValueError("default expectancy objective must use objective_id='expectancy'")
     else:
         resolved_objective_id = objective_id.strip()
+    if type(context_size) is not int or context_size < 0:
+        raise ValueError("context_size must be a non-negative integer")
+    if context_size > 0:
+        if not callable(context_evaluator):
+            raise ValueError("context_evaluator is required when context_size is positive")
+        if not isinstance(context_evaluator_id, str) or not context_evaluator_id.strip():
+            raise ValueError("context_evaluator_id is required for warm-up context")
+        resolved_context_evaluator_id = context_evaluator_id.strip()
+    else:
+        if context_evaluator is not None or context_evaluator_id is not None:
+            raise ValueError("context evaluator requires a positive context_size")
+        resolved_context_evaluator_id = None
     resolved_step = test_size if step is None else step
     run_config = ResearchRunConfig(
         train_size,
@@ -165,6 +195,8 @@ def run_evidence_pipeline(
         label_horizon,
         resolved_objective_id,
         tuple(dict(params) for params in parameter_sets),
+        context_size,
+        resolved_context_evaluator_id,
     )
     run_config.validate()
     wfo = run_backtest_wfo(
@@ -177,6 +209,8 @@ def run_evidence_pipeline(
         step=step,
         maximize=maximize,
         objective=objective,
+        context_size=context_size,
+        context_evaluator=context_evaluator,
         label_horizon=label_horizon,
     )
     robustness = run_oos_monte_carlo(

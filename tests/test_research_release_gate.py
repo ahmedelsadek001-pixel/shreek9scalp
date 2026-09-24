@@ -7,7 +7,11 @@ from core.enums import Direction
 from core.research_certification import ResearchCertificationPolicy
 from research.breakout_retest import ResearchBar
 from research.dataset_provenance import DatasetProvenance
-from research.dataset_runner import MANIFEST_BOUND_COST_APPLICATION_ID, run_dataset_research
+from research.dataset_runner import (
+    MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
+    MANIFEST_BOUND_COST_APPLICATION_ID,
+    run_dataset_research,
+)
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
@@ -110,7 +114,10 @@ def _release_artifact(strategy_id="breakout-retest", strategy_version="research-
     )
 
 
-def _promotion_artifact(*, include_cost_provenance=True, adverse_cost_stress=True, bound_costs=True):
+def _promotion_artifact(
+    *, include_cost_provenance=True, adverse_cost_stress=True,
+    bound_costs=True, causal_context=True,
+):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     bars = tuple(
         ResearchBar(
@@ -124,9 +131,9 @@ def _promotion_artifact(*, include_cost_provenance=True, adverse_cost_stress=Tru
         for index in range(13)
     )
 
-    def evaluator(rows, params):
+    def build_result(rows, params, start_index=0):
         pnl = 2.0 * params["mult"]
-        signal = rows[0].timestamp
+        signal = rows[start_index].timestamp
         exit_time = rows[-1].timestamp
         trade = BacktestTrade(
             signal,
@@ -158,6 +165,12 @@ def _promotion_artifact(*, include_cost_provenance=True, adverse_cost_stress=Tru
         )
         return BacktestResult((trade,), (10000.0, 10000.0 + pnl), stats)
 
+    def evaluator(rows, params):
+        return build_result(rows, params)
+
+    def context_evaluator(rows, params, start_index):
+        return build_result(rows, params, start_index)
+
     result = run_dataset_research(
         bars,
         ({"mult": 1.0},),
@@ -187,6 +200,11 @@ def _promotion_artifact(*, include_cost_provenance=True, adverse_cost_stress=Tru
             max_ruin_rate_pct=0.0,
             max_oos_expectancy_degradation_pct=0.0,
             min_parameter_stability_pct=100.0,
+        ),
+        context_size=1 if causal_context else 0,
+        context_evaluator=context_evaluator if causal_context else None,
+        context_evaluator_id=(
+            MANIFEST_BOUND_CONTEXT_EVALUATOR_ID if causal_context else None
         ),
         artifact_metadata={
             "strategy_id": "breakout-retest",
@@ -255,6 +273,19 @@ def test_release_package_blocks_unbound_broker_costs():
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
     assert "research artifact costs were not applied by the manifest-bound backtest" in decision.failures
+
+
+def test_release_package_blocks_missing_causal_oos_context():
+    package = ResearchReleasePackage(
+        complete(),
+        _promotion_artifact(causal_context=False),
+        "breakout-retest",
+        "research-v1",
+        CODE_REVISION,
+    )
+    decision = evaluate_research_release_package(package)
+    assert decision.ready is False
+    assert "research artifact lacks causal manifest-bound OOS warm-up context" in decision.failures
 
 
 def test_release_package_blocks_strategy_bound_but_non_empirical_artifact():

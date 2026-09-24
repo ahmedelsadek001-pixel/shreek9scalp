@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from core.research_certification import ResearchCertificationPolicy
-from research.backtest_wfo import BacktestEvaluator
+from research.backtest_wfo import BacktestEvaluator, ContextBacktestEvaluator
 from research.backtest_breakout_retest import run_breakout_retest_backtest
 from research.breakout_retest import BreakoutRetestConfig, ResearchBar
 from research.csv_adapter import load_ohlcv_csv
@@ -26,6 +26,7 @@ from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 MANIFEST_BOUND_COST_APPLICATION_ID = "manifest-bound-breakout-retest-v1"
+MANIFEST_BOUND_CONTEXT_EVALUATOR_ID = "manifest-bound-breakout-retest-context-v1"
 _SIGNAL_PARAMETER_NAMES = frozenset(field.name for field in fields(BreakoutRetestConfig))
 _ECONOMIC_PARAMETER_NAMES = frozenset({
     "pip_size", "volume", "spread", "slippage", "point_value",
@@ -97,6 +98,9 @@ def run_dataset_research(
     bootstrap_simulations: int = 2000,
     label_horizon: int = 0,
     certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy(),
+    context_size: int = 0,
+    context_evaluator: ContextBacktestEvaluator | None = None,
+    context_evaluator_id: str | None = None,
     artifact_metadata: Mapping[str, str] | None = None,
     source_manifest: XAUUSDSourceManifest | None = None,
 ) -> DatasetResearchResult:
@@ -127,6 +131,9 @@ def run_dataset_research(
         bootstrap_simulations=bootstrap_simulations,
         label_horizon=label_horizon,
         certification_policy=certification_policy,
+        context_size=context_size,
+        context_evaluator=context_evaluator,
+        context_evaluator_id=context_evaluator_id,
     )
     artifact = build_research_run_artifact(
         evidence, provenance,
@@ -203,6 +210,36 @@ def run_xauusd_breakout_retest_research(
         signal = _signal_config(params)
         return run_breakout_retest_backtest(rows, replace(base_config, signal=signal))
 
+    def context_evaluator(
+        rows: Sequence[ResearchBar], params: Mapping[str, Any], oos_start_index: int
+    ):
+        signal = _signal_config(params)
+        return run_breakout_retest_backtest(
+            rows,
+            replace(base_config, signal=signal),
+            min_signal_index=oos_start_index,
+            execution_end_index=len(rows) - 1,
+        )
+
+    # Enough causal history for the longest candidate's consolidation,
+    # volume baseline, retest horizon, and a preceding engulfing candle.
+    context_size = max(
+        config.volume_lookback
+        + config.consolidation_bars
+        + config.retest_max_bars
+        + 2
+        for config in signal_configs
+    )
+    forbidden_controls = {
+        "context_size", "context_evaluator", "context_evaluator_id", "source_manifest"
+    }
+    conflicts = forbidden_controls & set(kwargs)
+    if conflicts:
+        raise ValueError(
+            "manifest-bound runner controls causal context internally: "
+            + ", ".join(sorted(conflicts))
+        )
+
     metadata = dict(artifact_metadata or {})
     existing = metadata.get("cost_application_id")
     if existing is not None and existing != MANIFEST_BOUND_COST_APPLICATION_ID:
@@ -214,6 +251,9 @@ def run_xauusd_breakout_retest_research(
         evaluator,
         source_manifest=source_manifest,
         artifact_metadata=metadata,
+        context_size=context_size,
+        context_evaluator=context_evaluator,
+        context_evaluator_id=MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
         **kwargs,
     )
 

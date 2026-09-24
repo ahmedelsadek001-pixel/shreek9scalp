@@ -8,6 +8,7 @@ import pytest
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
 from core.research_certification import ResearchCertificationPolicy
+from research.breakout_retest import ResearchBar
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_export import build_evidence_export
 from research.evidence_gate import EvidenceGatePolicy
@@ -110,6 +111,75 @@ def test_pipeline_gate_remains_fail_closed_for_insufficient_oos_trades():
     assert "insufficient OOS trades" in result.certification.failures
 
 
+def test_pipeline_archives_and_uses_causal_warmup_context():
+    seen = []
+
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    bars = tuple(
+        ResearchBar(start + timedelta(minutes=5 * index), 1.0, 1.0, 1.0, 1.0, 1.0)
+        for index in range(9)
+    )
+
+    def timestamped_result(rows, start_index=0):
+        base = _result(1.0)
+        trade = replace(
+            base.trades[0],
+            signal_time=rows[start_index].timestamp,
+            entry_time=rows[start_index].timestamp,
+            exit_time=rows[-1].timestamp,
+        )
+        return replace(base, trades=(trade,))
+
+    def evaluator(rows, params):
+        return timestamped_result(rows)
+
+    def context_evaluator(rows, params, start_index):
+        seen.append((tuple(row.timestamp for row in rows), start_index))
+        return timestamped_result(rows, start_index)
+
+    result = run_evidence_pipeline(
+        bars,
+        ({"mult": 1.0},),
+        evaluator,
+        train_size=4,
+        test_size=2,
+        purge_size=1,
+        starting_equity=10000.0,
+        step=2,
+        simulations=10,
+        bootstrap_block_size=1,
+        bootstrap_simulations=10,
+        context_size=2,
+        context_evaluator=context_evaluator,
+        context_evaluator_id="fixture-context-v1",
+        certification_policy=ResearchCertificationPolicy(
+            min_oos_trades=2,
+            min_oos_windows=2,
+        ),
+    )
+    assert len(seen) == 2
+    assert [item[1] for item in seen] == [2, 2]
+    assert seen[0][0] == tuple(bar.timestamp for bar in bars[3:7])
+    assert seen[1][0] == tuple(bar.timestamp for bar in bars[5:9])
+    assert result.run_config.context_size == 2
+    assert result.run_config.context_evaluator_id == "fixture-context-v1"
+
+
+def test_pipeline_rejects_unidentified_warmup_context():
+    with pytest.raises(ValueError, match="context_evaluator_id"):
+        run_evidence_pipeline(
+            list(range(8)),
+            ({"mult": 1.0},),
+            lambda rows, params: _result(1.0),
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            starting_equity=10000.0,
+            context_size=1,
+            context_evaluator=lambda rows, params, start: _result(1.0),
+        )
+
+
 def _provenance():
     return DatasetProvenance(
         "1",
@@ -165,6 +235,8 @@ def test_export_archives_exact_wfo_windows_scores_and_selected_parameters():
     assert config["step"] == 2
     assert config["objective_id"] == "expectancy"
     assert config["candidate_parameters"] == [{"mult": 1.0}, {"mult": 2.0}]
+    assert config["context_size"] == 0
+    assert config["context_evaluator_id"] is None
 
 
 def test_export_rejects_wfo_cardinality_mismatch():

@@ -7,6 +7,7 @@ from core.enums import Direction
 from core.research_certification import ResearchCertificationPolicy
 from research.dataset_runner import (
     MANIFEST_BOUND_COST_APPLICATION_ID,
+    MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
     run_csv_research,
     run_dataset_research,
     run_xauusd_breakout_retest_research,
@@ -167,6 +168,11 @@ def test_manifest_bound_runner_applies_costs_and_marks_artifact(monkeypatch):
     def fake_pipeline(rows, parameters, evaluator, **kwargs):
         captured["parameters"] = parameters
         captured["result"] = evaluator(rows, parameters[0])
+        captured["context_size"] = kwargs["context_size"]
+        captured["context_evaluator_id"] = kwargs["context_evaluator_id"]
+        captured["context_result"] = kwargs["context_evaluator"](
+            rows, parameters[0], 2
+        )
         return _evidence()
 
     monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", fake_pipeline)
@@ -184,6 +190,9 @@ def test_manifest_bound_runner_applies_costs_and_marks_artifact(monkeypatch):
     )
     assert captured["parameters"][0]["consolidation_bars"] == 2
     assert isinstance(captured["result"], BacktestResult)
+    assert isinstance(captured["context_result"], BacktestResult)
+    assert captured["context_size"] == 18
+    assert captured["context_evaluator_id"] == MANIFEST_BOUND_CONTEXT_EVALUATOR_ID
     assert dict(result.artifact.metadata)["cost_application_id"] == MANIFEST_BOUND_COST_APPLICATION_ID
 
 
@@ -219,6 +228,26 @@ def test_manifest_bound_runner_enforces_broker_volume_step(monkeypatch):
             source_manifest=_utc_manifest(),
             pip_size=0.1,
             volume=0.015,
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            starting_equity=10000.0,
+        )
+
+
+def test_manifest_bound_runner_rejects_caller_context_override(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="controls causal context internally"):
+        run_xauusd_breakout_retest_research(
+            bars,
+            ({},),
+            source_manifest=_utc_manifest(),
+            pip_size=0.1,
+            volume=0.01,
+            context_size=0,
             train_size=3,
             test_size=2,
             purge_size=1,

@@ -13,7 +13,10 @@ from research.research_run_artifact import (
     validate_strategy_binding,
     validated_evidence_payload,
 )
-from research.dataset_runner import MANIFEST_BOUND_COST_APPLICATION_ID
+from research.dataset_runner import (
+    MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
+    MANIFEST_BOUND_COST_APPLICATION_ID,
+)
 from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
@@ -92,6 +95,12 @@ def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ..
             failures.append("research artifact lacks timestamped WFO windows")
         if config.get("purge_size", -1) < config.get("label_horizon", 0):
             failures.append("research artifact purge does not cover label horizon")
+        if (
+            type(config.get("context_size")) is not int
+            or config["context_size"] <= 0
+            or config.get("context_evaluator_id") != MANIFEST_BOUND_CONTEXT_EVALUATOR_ID
+        ):
+            failures.append("research artifact lacks causal manifest-bound OOS warm-up context")
         if (
             type(config.get("slippage_multiplier")) not in (int, float)
             or type(config.get("spread_multiplier")) not in (int, float)
