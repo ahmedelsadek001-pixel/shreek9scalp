@@ -451,6 +451,20 @@ class ResearchRunArtifact:
         if len(set(metadata_keys)) != len(metadata_keys):
             raise ValueError("metadata keys must be unique")
         metadata = dict(self.metadata)
+        identity = export_payload.get("artifact_identity")
+        identity_keys = {"strategy_id", "strategy_version", "code_revision"}
+        metadata_identity = {
+            key: metadata[key] for key in identity_keys if key in metadata
+        }
+        if metadata_identity:
+            if not isinstance(identity, dict) or any(
+                identity.get(key) != value for key, value in metadata_identity.items()
+            ):
+                raise ValueError("artifact identity does not match metadata")
+        if isinstance(identity, dict) and any(
+            metadata.get(key) != value for key, value in identity.items()
+        ):
+            raise ValueError("artifact identity metadata is incomplete or inconsistent")
         for name in ("strategy_id", "strategy_version"):
             if name in metadata and metadata[name] != metadata[name].strip():
                 raise ValueError(f"{name} metadata must be normalized")

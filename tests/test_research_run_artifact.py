@@ -159,6 +159,19 @@ def test_artifact_rejects_schema_tampering_even_when_export_is_rehashed():
         tampered.validate()
 
 
+def test_artifact_rejects_identity_metadata_mismatch_even_when_export_is_rehashed():
+    artifact = build_research_run_artifact(
+        _result(),
+        _provenance(),
+        metadata={"strategy_id": "alpha", "strategy_version": "v1"},
+    )
+    payload = json.loads(artifact.evidence_export)
+    payload["artifact_identity"]["strategy_version"] = "v2"
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="identity.*metadata"):
+        tampered.validate()
+
+
 def test_artifact_rejects_rehashed_gate_pass_failure_contradiction():
     artifact = build_research_run_artifact(_result(), _provenance())
     payload = json.loads(artifact.evidence_export)
