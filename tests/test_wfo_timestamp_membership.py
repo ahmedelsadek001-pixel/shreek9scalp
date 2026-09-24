@@ -37,8 +37,12 @@ def _result_at(signal_time, entry_time, exit_time):
 )
 def test_wfo_rejects_trade_timestamps_not_present_in_oos_bars(signal, entry, exit):
     data = [SimpleNamespace(timestamp=START + timedelta(minutes=i)) for i in range(9)]
+    calls = []
 
     def evaluator(rows, params):
+        calls.append(rows)
+        if len(calls) == 1:
+            return _result_at(rows[0].timestamp, rows[0].timestamp, rows[-1].timestamp)
         return _result(signal, entry, exit)
 
     with pytest.raises(ValueError, match="must match observed OOS bars"):

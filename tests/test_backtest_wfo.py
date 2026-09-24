@@ -57,7 +57,10 @@ def test_wfo_warmup_passes_timestamped_context_and_defines_oos_boundary():
     start = datetime(2026, 1, 1)
     data = [SimpleNamespace(value=i, timestamp=start + timedelta(minutes=i)) for i in range(9)]
     calls = []
-    def evaluator(rows, selected): return _result(sum(row.value for row in rows) * selected["mult"])
+    def evaluator(rows, selected):
+        if hasattr(rows[0], "timestamp"):
+            return _timed_result(0, 0, len(rows) - 1)
+        return _result(sum(row.value for row in rows) * selected["mult"])
     def context_evaluator(rows, selected, oos_start_index):
         calls.append((tuple(row.value for row in rows), oos_start_index))
         oos = rows[oos_start_index:]
@@ -86,8 +89,10 @@ def test_wfo_context_rejects_pre_oos_entry():
 def test_wfo_timestamped_oos_rejects_future_exit_without_context():
     start = datetime(2026, 1, 1)
     data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+    calls = []
     def evaluator(rows, selected):
-        return _timed_result(5, 5, 7)
+        calls.append(tuple(row.timestamp for row in rows))
+        return _timed_result(0, 0, 3) if len(calls) == 1 else _timed_result(5, 5, 7)
     with pytest.raises(ValueError, match="outside the OOS interval"):
         run_backtest_wfo(data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1, step=2)
 
@@ -95,8 +100,10 @@ def test_wfo_timestamped_oos_rejects_future_exit_without_context():
 def test_wfo_timestamped_oos_rejects_pre_oos_signal_without_context():
     start = datetime(2026, 1, 1)
     data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+    calls = []
     def evaluator(rows, selected):
-        return _timed_result(4, 5, 5)
+        calls.append(tuple(row.timestamp for row in rows))
+        return _timed_result(0, 0, 3) if len(calls) == 1 else _timed_result(4, 5, 5)
     with pytest.raises(ValueError, match="outside the OOS interval"):
         run_backtest_wfo(data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1, step=2)
 
