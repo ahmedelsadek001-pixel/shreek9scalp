@@ -7,6 +7,21 @@ def test_complete_tree_passes():
     assert result.missing_paths == ()
 
 
+def test_v53_execution_safety_layers_are_release_required():
+    required = set(REQUIRED_PATHS)
+    assert {
+        "core/promotion_gate.py",
+        "execution/broker_outcome.py",
+        "execution/execution_journal.py",
+        "execution/execution_lifecycle.py",
+        "execution/guarded_adapter.py",
+        "execution/idempotency.py",
+        "execution/quote_safety.py",
+        "execution/restart_recovery.py",
+        "execution/safety_gate.py",
+    } <= required
+
+
 def test_missing_required_path_blocks():
     result = audit_tree(REQUIRED_PATHS[:-1])
     assert not result.passed

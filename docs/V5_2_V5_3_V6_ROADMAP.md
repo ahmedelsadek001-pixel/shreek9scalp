@@ -25,6 +25,8 @@
   integrity, and the live-disabled invariant; it grants no MT5 authority.
 - V5.2→V5.3 promotion is blocked unless the validated research decision and
   the V5.3 safety decision both pass; a green CI run cannot bypass either.
+- The mechanical release-tree audit now requires every V5.3 safety boundary
+  and the V5.2→V5.3 promotion gate to exist in the candidate tree.
 - A `KILLED` risk state cannot be reset without explicit boolean operator
   approval and a non-empty audit reason; reset is not a live-execution grant.
 
