@@ -20,8 +20,15 @@ def test_live_order_marker_is_blocked():
     assert any(f.rule == "live-order-authority" for f in findings)
 
 
+def test_malformed_source_is_blocked_fail_closed():
+    passed, findings = evaluate_tree((("broken.py", "def incomplete(:\n"),))
+    assert not passed
+    assert any(f.rule == "syntax-error" for f in findings)
+
+
 def test_invalid_inputs_fail_explicitly():
     with pytest.raises(ValueError):
         scan_source("", "x")
     with pytest.raises(TypeError):
         scan_source("x.py", 123)
+

@@ -49,6 +49,14 @@ def scan_source(path: str, content: str) -> tuple[SecurityFinding, ...]:
     if not isinstance(content, str):
         raise TypeError("content must be str")
     findings: list[SecurityFinding] = []
+    # A security scanner must fail closed on unreadable production source.
+    # ``compileall`` remains a separate CI check, but this keeps the gate safe
+    # when it is called independently or from a release-review script.
+    try:
+        ast.parse(content, filename=path)
+    except SyntaxError as exc:
+        findings.append(SecurityFinding("syntax-error", path, f"source could not be parsed: {exc.msg}"))
+        return tuple(findings)
     for rule, pattern in _SECRET_PATTERNS:
         if pattern.search(content):
             findings.append(SecurityFinding(rule, path, "credential-like material detected"))
@@ -63,3 +71,4 @@ def evaluate_tree(files: Iterable[tuple[str, str]]) -> tuple[bool, tuple[Securit
     for path, content in files:
         findings.extend(scan_source(path, content))
     return not findings, tuple(findings)
+
