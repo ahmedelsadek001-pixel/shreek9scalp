@@ -40,7 +40,7 @@ jobs:
         from pathlib import Path
         from security.release_security_gate import evaluate_paths
 
-        files = Path('.').rglob('*.py')
+        files = list(Path('.').rglob('*.py'))
         passed, findings = evaluate_paths(files)
         if not passed:
             for finding in findings:
