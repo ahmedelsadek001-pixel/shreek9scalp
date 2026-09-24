@@ -2,10 +2,13 @@
 
 V5.2 is the evidence-generation phase. Passing software tests does not mean the trading edge has been proven.
 
-The [2026-09-24 XAUUSD input audit](V5_2_XAUUSD_2026_09_24_AUDIT.md)
-failed its three-timeframe acceptance gate. Its separate, explicitly
-development-only WFO diagnostic also failed the OOS and certification gates;
-none of the empirical items below is cleared by that diagnostic.
+The short-M5 diagnostic in [the earlier audit](V5_2_XAUUSD_2026_09_24_AUDIT.md)
+is superseded by the full-M5 run in
+[V5_2_XAUUSD_2026_09_24_FULL_DATASET.md](V5_2_XAUUSD_2026_09_24_FULL_DATASET.md).
+The full bundle passes structural data quality, but its causal WFO and
+robustness evidence still fail research certification: the stressed Monte
+Carlo ruin rate is 100%, and uncertainty bounds do not exclude a non-positive
+expectancy. No empirical release item below is therefore cleared.
 
 ## Software gates
 
