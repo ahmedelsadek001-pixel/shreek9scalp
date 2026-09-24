@@ -71,6 +71,17 @@ class RiskStateMachine:
     def kill(self) -> None:
         self.state = RiskState.KILLED
 
-    def reset(self) -> None:
+    def reset(self, *, operator_approved: bool = False, reason: str = "") -> None:
+        """Reset only after explicit, auditable operator approval.
+
+        A killed risk state is a safety boundary, not a cooldown timer. The
+        default therefore fails closed; a caller must provide an explicit
+        boolean approval and a non-empty reason before re-arming the machine.
+        This method has no broker or live-execution authority.
+        """
+        if type(operator_approved) is not bool or not operator_approved:
+            raise RuntimeError("risk reset requires explicit operator approval")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("risk reset requires a non-empty reason")
         self.consecutive_losses = 0
         self.state = RiskState.ARMED

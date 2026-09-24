@@ -16,6 +16,8 @@
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
+- A `KILLED` risk state cannot be reset without explicit boolean operator
+  approval and a non-empty audit reason; reset is not a live-execution grant.
 
 ## V6.0 Release Boundary
 - Final release evidence bundle.

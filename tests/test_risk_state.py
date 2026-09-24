@@ -8,7 +8,7 @@ def test_losses_enter_cooldown_then_kill():
     machine.record_result(-1)
     assert machine.state is RiskState.COOLDOWN
     assert not machine.can_open()
-    machine.reset()
+    machine.reset(operator_approved=True, reason="reviewed cooldown")
     machine.record_result(-1)
     machine.record_result(-1)
     machine.record_result(-1)
@@ -30,8 +30,32 @@ def test_killed_state_requires_explicit_reset():
     assert machine.state is RiskState.KILLED
     with pytest.raises(RuntimeError):
         machine.arm()
-    machine.reset()
+    machine.reset(operator_approved=True, reason="operator reviewed kill")
     assert machine.can_open()
+
+
+def test_reset_without_explicit_approval_fails_closed_and_preserves_kill():
+    machine = RiskStateMachine(max_consecutive_losses=1)
+    machine.record_result(-1)
+    with pytest.raises(RuntimeError, match="explicit operator approval"):
+        machine.reset()
+    assert machine.state is RiskState.KILLED
+    assert not machine.can_open()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"operator_approved": False, "reason": "reviewed"},
+     {"operator_approved": True, "reason": ""},
+     {"operator_approved": True, "reason": "   "},
+     {"operator_approved": True, "reason": None}],
+)
+def test_reset_rejects_missing_or_malformed_approval(kwargs):
+    machine = RiskStateMachine(state=RiskState.COOLDOWN, consecutive_losses=1)
+    with pytest.raises((RuntimeError, ValueError)):
+        machine.reset(**kwargs)
+    assert machine.state is RiskState.COOLDOWN
+    assert machine.consecutive_losses == 1
 
 
 @pytest.mark.parametrize(
