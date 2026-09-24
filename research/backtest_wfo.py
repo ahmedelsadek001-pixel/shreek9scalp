@@ -70,18 +70,20 @@ def _score_metric(metrics: ResearchMetrics, objective: MetricEvaluator) -> float
         raise ValueError("objective scores must be finite")
     return score
 
-def _validate_context_result(result: BacktestResult, contextual_data: Sequence[Any], oos_start_index: int, oos_end_index: int) -> None:
-    """Reject trades outside OOS and timestamps not represented by its bars."""
+def _validate_context_result(result: BacktestResult, contextual_data: Sequence[Any], oos_start_index: int, oos_end_index: int, *, scope: str = "OOS") -> None:
+    """Reject trades outside a validated interval and timestamps absent from its bars."""
+    if scope not in {"OOS", "training"}:
+        raise ValueError("scope must be OOS or training")
     if type(oos_start_index) is not int or type(oos_end_index) is not int:
-        raise ValueError("OOS boundaries must be integers")
+        raise ValueError(f"{scope} boundaries must be integers")
     if not contextual_data or not 0 <= oos_start_index < oos_end_index <= len(contextual_data):
-        raise ValueError("invalid contextual OOS boundaries")
+        raise ValueError(f"invalid contextual {scope} boundaries")
     if not all(hasattr(item, "timestamp") for item in contextual_data):
-        raise ValueError("contextual OOS data must expose timestamp")
+        raise ValueError(f"contextual {scope} data must expose timestamp")
     try:
         timestamps = [item.timestamp for item in contextual_data]
         if any(a >= b for a, b in zip(timestamps, timestamps[1:])):
-            raise ValueError("contextual OOS timestamps must be chronological")
+            raise ValueError(f"contextual {scope} timestamps must be chronological")
         oos_timestamps = timestamps[oos_start_index:oos_end_index]
         oos_start, oos_end = oos_timestamps[0], oos_timestamps[-1]
         valid_times = set(oos_timestamps)
@@ -91,18 +93,18 @@ def _validate_context_result(result: BacktestResult, contextual_data: Sequence[A
             entry_time = getattr(trade, "entry_time", None)
             exit_time = getattr(trade, "exit_time", None)
             if signal_time is None or entry_time is None or exit_time is None:
-                raise ValueError("OOS trades must expose signal_time, entry_time and exit_time")
+                raise ValueError(f"{scope} trades must expose signal_time, entry_time and exit_time")
             if signal_time < oos_start or entry_time < oos_start or exit_time > oos_end:
-                raise ValueError("OOS backtest produced a trade outside the OOS interval")
+                raise ValueError(f"{scope} backtest produced a trade outside the {scope} interval")
             if any(value not in valid_times for value in (signal_time, entry_time, exit_time)):
-                raise ValueError("OOS trade timestamps must match observed OOS bars")
+                raise ValueError(f"{scope} trade timestamps must match observed {scope} bars")
             if entry_time < signal_time or exit_time < entry_time:
-                raise ValueError("OOS backtest produced non-chronological trade timestamps")
+                raise ValueError(f"{scope} backtest produced non-chronological trade timestamps")
             if previous_signal is not None and signal_time < previous_signal:
-                raise ValueError("OOS trades must be chronologically ordered")
+                raise ValueError(f"{scope} trades must be chronologically ordered")
             previous_signal = signal_time
     except TypeError as exc:
-        raise ValueError("OOS timestamps must be mutually comparable") from exc
+        raise ValueError(f"{scope} timestamps must be mutually comparable") from exc
 
 def _validate_timestamped_oos_result(result: BacktestResult, oos_data: Sequence[Any]) -> None:
     """Validate timestamped inputs, rejecting mixed timestamp availability."""
@@ -113,6 +115,16 @@ def _validate_timestamped_oos_result(result: BacktestResult, oos_data: Sequence[
         raise ValueError("OOS data must expose timestamps consistently")
     if all(timestamp_flags):
         _validate_context_result(result, oos_data, 0, len(oos_data))
+
+def _validate_timestamped_training_result(result: BacktestResult, train_data: Sequence[Any]) -> None:
+    """Validate training trades before their metrics can influence selection."""
+    if not train_data:
+        return
+    timestamp_flags = [hasattr(item, "timestamp") for item in train_data]
+    if any(timestamp_flags) and not all(timestamp_flags):
+        raise ValueError("training data must expose timestamps consistently")
+    if all(timestamp_flags):
+        _validate_context_result(result, train_data, 0, len(train_data), scope="training")
 
 def _validate_input_timeline(data: Sequence[Any]) -> None:
     """Reject ambiguous timestamped datasets before any WFO evaluation."""
@@ -174,6 +186,8 @@ def run_backtest_wfo(data: Sequence[Any], parameter_sets: Sequence[Mapping[str, 
             train_result = evaluator(train, params)
             if not isinstance(train_result, BacktestResult):
                 raise ValueError("evaluator must return a BacktestResult")
+            if timestamped:
+                _validate_timestamped_training_result(train_result, train)
             metrics = calculate_research_metrics(train_result)
             scored.append((_score_metric(metrics, objective), params, metrics, train_result))
         scored.sort(key=lambda item: item[0], reverse=maximize)

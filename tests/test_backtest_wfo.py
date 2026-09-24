@@ -101,6 +101,17 @@ def test_wfo_timestamped_oos_rejects_pre_oos_signal_without_context():
         run_backtest_wfo(data, ({"x": 1},), evaluator, train_size=4, test_size=2, purge_size=1, step=2)
 
 
+def test_wfo_timestamped_training_rejects_future_trade_before_selection():
+    start = datetime(2026, 1, 1)
+    data = [SimpleNamespace(timestamp=start + timedelta(minutes=i)) for i in range(9)]
+
+    def leaking(rows, selected):
+        return _timed_result(5, 5, 5)
+
+    with pytest.raises(ValueError, match="outside the training interval"):
+        run_backtest_wfo(data, ({"x": 1},), leaking, train_size=4, test_size=2, purge_size=1, step=2)
+
+
 def test_wfo_context_rejects_missing_timestamps_fail_closed():
     def evaluator(rows, selected): return _result(1.0)
     def context(rows, selected, index): return _result(1.0)
