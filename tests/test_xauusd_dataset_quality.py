@@ -139,3 +139,41 @@ def test_policy_and_dataset_keys_are_validated():
         XAUUSDQualityPolicy(minimum_aggregation_match_pct=101.0).validate()
     with pytest.raises(ValueError, match="exactly 5m, 15m and 1h"):
         audit_xauusd_multitimeframe({"5m": _bundle()["5m"]}, policy=_policy())
+    with pytest.raises(ValueError, match="minimum_weekday_coverage_pct"):
+        XAUUSDQualityPolicy(minimum_weekday_coverage_pct=float("nan")).validate()
+
+
+def test_long_timestamp_span_with_sparse_trading_days_fails_coverage():
+    early = _bars(timedelta(minutes=5), 72, start=datetime(2022, 1, 3, tzinfo=timezone.utc))
+    late = _bars(timedelta(minutes=5), 72, start=datetime(2025, 1, 6, tzinfo=timezone.utc))
+    five = early + late
+    datasets = {"5m": five, "15m": _aggregate(five, 3), "1h": _aggregate(five, 12)}
+    result = audit_xauusd_multitimeframe(datasets, policy=_policy(minimum_span=timedelta(days=1065)))
+    assert not result.passed
+    assert "insufficient_span" not in {finding.code for finding in result.findings}
+    assert "insufficient_weekday_coverage" in {finding.code for finding in result.findings}
+    assert all(summary.weekday_coverage_pct < 1 for summary in result.summaries)
+
+
+def test_shifted_hourly_labels_fail_even_when_ohlc_matches():
+    datasets = dict(_bundle())
+    datasets["1h"] = tuple(
+        ResearchBar(bar.timestamp + timedelta(minutes=5), bar.open, bar.high,
+                    bar.low, bar.close, bar.volume)
+        for bar in datasets["1h"]
+    )
+    result = audit_xauusd_multitimeframe(datasets, policy=_policy())
+    assert not result.passed
+    assert "off_timeframe_grid" in {finding.code for finding in result.findings}
+    assert "insufficient_aggregation_sample" in {finding.code for finding in result.findings}
+    assert result.aggregation[-1].compared_bars == 0
+
+
+def test_saturday_is_checked_in_utc_not_source_timezone():
+    from datetime import timezone as tz
+    source_zone = tz(timedelta(hours=-3))
+    # Friday evening in -03:00 is Saturday in UTC.
+    five = _bars(timedelta(minutes=5), 72, start=datetime(2026, 9, 18, 22, tzinfo=source_zone))
+    datasets = {"5m": five, "15m": _aggregate(five, 3), "1h": _aggregate(five, 12)}
+    result = audit_xauusd_multitimeframe(datasets, policy=_policy())
+    assert "saturday_market_data" in {finding.code for finding in result.findings}

@@ -2,6 +2,11 @@
 
 V5.2 is the evidence-generation phase. Passing software tests does not mean the trading edge has been proven.
 
+The [2026-09-24 XAUUSD input audit](V5_2_XAUUSD_2026_09_24_AUDIT.md)
+failed its three-timeframe acceptance gate. Its separate, explicitly
+development-only WFO diagnostic also failed the OOS and certification gates;
+none of the empirical items below is cleared by that diagnostic.
+
 ## Software gates
 
 - [x] MAE/MFE measurement is deterministic and direction-aware.

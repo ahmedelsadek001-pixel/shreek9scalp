@@ -7,8 +7,8 @@ be treated as empirical XAUUSD evidence.  It has no broker or execution access.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
-from math import isfinite
+from datetime import datetime, timedelta, timezone
+from math import ceil, floor, isfinite
 from typing import Mapping, Sequence
 
 from research.breakout_retest import ResearchBar
@@ -31,6 +31,7 @@ class XAUUSDQualityPolicy:
     minimum_pair_overlap: timedelta = timedelta(days=90)
     minimum_aggregation_bars: int = 100
     minimum_aggregation_match_pct: float = 99.0
+    minimum_weekday_coverage_pct: float = 80.0
     maximum_reused_volume_prefix_pct: float = 95.0
     price_tolerance: float = 1e-9
 
@@ -48,6 +49,7 @@ class XAUUSDQualityPolicy:
             raise ValueError("minimum_aggregation_bars must be a positive integer")
         for value, name in (
             (self.minimum_aggregation_match_pct, "minimum_aggregation_match_pct"),
+            (self.minimum_weekday_coverage_pct, "minimum_weekday_coverage_pct"),
             (self.maximum_reused_volume_prefix_pct, "maximum_reused_volume_prefix_pct"),
         ):
             if type(value) not in (int, float) or not isfinite(value) or not 0.0 <= value <= 100.0:
@@ -67,6 +69,8 @@ class DatasetQualitySummary:
     span_days: float
     saturday_bars: int
     unexpected_intervals: int
+    off_grid_bars: int
+    weekday_coverage_pct: float
 
 
 @dataclass(frozen=True)
@@ -100,10 +104,31 @@ def _unexpected_interval_count(
     expected_seconds = int(expected_interval.total_seconds())
     count = 0
     for previous, current in zip(bars, bars[1:]):
-        seconds = int((current.timestamp - previous.timestamp).total_seconds())
+        seconds = (current.timestamp - previous.timestamp).total_seconds()
         if seconds < expected_seconds or seconds % expected_seconds:
             count += 1
     return count
+
+
+def _weekday_coverage_pct(bars: Sequence[ResearchBar], interval: timedelta) -> float:
+    """Measure observed UTC weekday slots, not just first-to-last span.
+
+    A sparse export with two years missing cannot pass by retaining only its
+    earliest and latest bars. Normal daily/holiday closures remain tolerated.
+    """
+    first = bars[0].timestamp.astimezone(timezone.utc)
+    last = bars[-1].timestamp.astimezone(timezone.utc)
+    width = int(interval.total_seconds())
+    day = datetime(first.year, first.month, first.day, tzinfo=timezone.utc)
+    expected = 0
+    observed = sum(bar.timestamp.astimezone(timezone.utc).weekday() < 5 for bar in bars)
+    while day <= last:
+        if day.weekday() < 5:
+            first_slot = ceil(max(day, first).timestamp() / width)
+            last_slot = floor(min(day + timedelta(days=1) - timedelta(seconds=1), last).timestamp() / width)
+            expected += max(0, last_slot - first_slot + 1)
+        day += timedelta(days=1)
+    return min(100.0, 100.0 * observed / expected) if expected else 0.0
 
 
 def _bucket_start_seconds(timestamp: object, interval: timedelta) -> int:
@@ -144,10 +169,12 @@ def _aggregation_quality(
             continue
         key = _bucket_start_seconds(bar.timestamp, higher_interval)
         group = buckets.get(key, ())
-        if len(group) != ratio:
+        if len(group) != ratio or _bucket_start_seconds(bar.timestamp, higher_interval) != int(bar.timestamp.timestamp()):
             continue
         timestamps = [int(item.timestamp.timestamp()) for item in group]
-        if any(right - left != lower_seconds for left, right in zip(timestamps, timestamps[1:])):
+        if timestamps[0] != key or any(
+            right - left != lower_seconds for left, right in zip(timestamps, timestamps[1:])
+        ):
             continue
         compared += 1
         expected = (group[0].open, max(item.high for item in group),
@@ -175,14 +202,19 @@ def _audit_series(
 ) -> tuple[DatasetQualitySummary, tuple[DatasetQualityFinding, ...]]:
     validate_market_data(bars)
     span = bars[-1].timestamp - bars[0].timestamp
-    saturday_bars = sum(bar.timestamp.weekday() == 5 for bar in bars)
+    saturday_bars = sum(bar.timestamp.astimezone(timezone.utc).weekday() == 5 for bar in bars)
     unexpected = _unexpected_interval_count(bars, expected_interval)
+    width = expected_interval.total_seconds()
+    off_grid = sum(bar.timestamp.timestamp() % width != 0 for bar in bars)
+    coverage = _weekday_coverage_pct(bars, expected_interval)
     summary = DatasetQualitySummary(
         name,
         len(bars),
         span.total_seconds() / 86400.0,
         saturday_bars,
         unexpected,
+        off_grid,
+        coverage,
     )
     findings = []
     if span < policy.minimum_span:
@@ -207,6 +239,18 @@ def _audit_series(
                 "unexpected_interval",
                 name,
                 f"found {unexpected} intervals off the expected timeframe grid",
+            )
+        )
+    if off_grid:
+        findings.append(
+            DatasetQualityFinding("off_timeframe_grid", name, f"found {off_grid} off-grid timestamps")
+        )
+    if coverage < policy.minimum_weekday_coverage_pct:
+        findings.append(
+            DatasetQualityFinding(
+                "insufficient_weekday_coverage",
+                name,
+                f"UTC weekday coverage {coverage:.3f}% is below minimum",
             )
         )
     return summary, tuple(findings)
