@@ -87,3 +87,9 @@ Broker reference for the contract/tick convention: [OW Markets commodities
 specification](https://www.owmarkets.com/commodities). The supplied $7
 commission and 1.5-point slippage remain user-provided assumptions, not claims
 verified by that public page.
+
+The repository now provides `research.xauusd_source_manifest.XAUUSDSourceManifest`
+to validate this metadata and convert spread, slippage, contract value and
+round-turn commission into the exact research-engine units. It rejects a CSV
+whose timezone offset disagrees with the manifest. Account identifiers are not
+accepted by this schema.
