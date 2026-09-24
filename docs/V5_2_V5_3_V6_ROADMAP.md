@@ -23,6 +23,8 @@
 - V5.3 promotion uses an explicit execution-safety evidence gate covering
   quote safety, idempotency, outcomes, reconciliation, recovery, journal
   integrity, and the live-disabled invariant; it grants no MT5 authority.
+- V5.2→V5.3 promotion is blocked unless the validated research decision and
+  the V5.3 safety decision both pass; a green CI run cannot bypass either.
 - A `KILLED` risk state cannot be reset without explicit boolean operator
   approval and a non-empty audit reason; reset is not a live-execution grant.
 
