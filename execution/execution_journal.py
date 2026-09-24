@@ -18,7 +18,11 @@ def build_snapshot(records:tuple[SubmissionRecord,...])->JournalSnapshot:
     seen=set()
     for r in records:
         if not isinstance(r,SubmissionRecord): raise TypeError("invalid journal record")
-        if not r.order_id.strip() or r.order_id in seen or type(r.attempts) is not int or r.attempts<1:
+        if type(r.order_id) is not str or not r.order_id.strip() or r.order_id != r.order_id.strip():
+            raise ValueError("invalid journal order identity")
+        if not isinstance(r.state,SubmissionState):
+            raise ValueError("invalid journal submission state")
+        if r.order_id in seen or type(r.attempts) is not int or r.attempts<1:
             raise ValueError("invalid or duplicate journal record")
         seen.add(r.order_id)
     raw=json.dumps(_payload(records),sort_keys=True,separators=(",",":"))

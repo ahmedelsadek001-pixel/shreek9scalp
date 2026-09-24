@@ -49,7 +49,7 @@ class ShadowRecovery:
             return None
         if len(pending) != len(set(pending)):
             return None
-        return pending
+        return tuple(sorted(pending))
 
     def disconnect(self) -> RecoveryDecision:
         self._state = RecoveryState.DISCONNECTED

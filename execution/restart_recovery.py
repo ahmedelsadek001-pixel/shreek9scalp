@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from execution.idempotency import IdempotencyLedger, SubmissionState
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,8 @@ def snapshot_unresolved(ledger: IdempotencyLedger) -> RecoverySnapshot:
     for key, record in records.items():
         if type(key) is not str or not key.strip():
             raise ValueError("ledger contains malformed order identity")
+        if not isinstance(record, SubmissionRecord):
+            raise ValueError("ledger contains malformed submission record")
         state = getattr(record, "state", None)
         if not isinstance(state, SubmissionState):
             raise ValueError("ledger contains malformed submission state")

@@ -53,3 +53,14 @@ def test_snapshot_unresolved_rejects_corrupt_submission_state():
         assert "malformed submission state" in str(exc)
     else:
         raise AssertionError("corrupt submission state must fail closed")
+
+
+def test_snapshot_unresolved_rejects_corrupt_submission_record():
+    ledger = IdempotencyLedger()
+    ledger._records["A"] = object()
+    try:
+        snapshot_unresolved(ledger)
+    except ValueError as exc:
+        assert "malformed submission record" in str(exc)
+    else:
+        raise AssertionError("corrupt submission record must fail closed")

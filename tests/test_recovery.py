@@ -94,6 +94,17 @@ def test_complete_recovery_rejects_duplicate_or_blank_pending_identity(monkeypat
         assert decision.state is RecoveryState.RECOVERING
 
 
+def test_recovery_normalizes_pending_identity_order(monkeypatch):
+    shadow = ShadowExecution()
+    recovery = ShadowRecovery(shadow)
+    recovery.disconnect()
+    recovery.begin_recovery()
+    monkeypatch.setattr(shadow, "pending_order_ids", lambda: ("B", "A"))
+    decision = recovery.complete_recovery()
+    assert not decision.can_submit
+    assert decision.reason == "pending shadow orders require reconciliation"
+
+
 def test_recovery_state_and_shadow_cannot_be_replaced_directly():
     shadow = ShadowExecution()
     recovery = ShadowRecovery(shadow)
