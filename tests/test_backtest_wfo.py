@@ -59,7 +59,7 @@ def test_wfo_warmup_passes_timestamped_context_and_defines_oos_boundary():
     calls = []
     def evaluator(rows, selected):
         if hasattr(rows[0], "timestamp"):
-            return _timed_result(0, 0, len(rows) - 1)
+            return _timed_result(rows[0].value, rows[0].value, rows[-1].value)
         return _result(sum(row.value for row in rows) * selected["mult"])
     def context_evaluator(rows, selected, oos_start_index):
         calls.append((tuple(row.value for row in rows), oos_start_index))
