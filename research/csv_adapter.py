@@ -27,8 +27,16 @@ def _parse_timestamp(
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
         timestamp = datetime.fromisoformat(normalized)
-    except ValueError as exc:
-        raise ValueError(f"row {row_number}: invalid timestamp") from exc
+    except ValueError as iso_error:
+        timestamp = None
+        for pattern in ("%Y.%m.%dT%H:%M:%S%z", "%Y.%m.%dT%H:%M:%S"):
+            try:
+                timestamp = datetime.strptime(text, pattern)
+                break
+            except ValueError:
+                continue
+        if timestamp is None:
+            raise ValueError(f"row {row_number}: invalid timestamp") from iso_error
     if timestamp.tzinfo is None:
         if assume_timezone is None:
             raise ValueError(f"row {row_number}: timestamp must be timezone-aware")
@@ -52,9 +60,10 @@ def load_ohlcv_csv(
     """Load strict OHLCV CSV text or a text stream and validate it.
 
     Required header: ``timestamp,open,high,low,close,volume``. Timestamps
-    must be ISO-8601 with an explicit timezone (``Z`` is accepted). For
-    broker exports containing naive timestamps, ``assume_timezone`` must be
-    supplied explicitly; the adapter never guesses a timezone.
+    must be ISO-8601 with an explicit timezone (``Z`` is accepted), or the
+    strict MT5 form ``YYYY.MM.DDTHH:MM:SS+HH:MM``. For broker exports
+    containing naive timestamps, ``assume_timezone`` must be supplied
+    explicitly; the adapter never guesses a timezone.
     """
     if hasattr(source, "read"):
         reader = csv.DictReader(source)
