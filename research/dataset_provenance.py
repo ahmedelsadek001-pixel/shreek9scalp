@@ -27,9 +27,11 @@ class DatasetProvenance:
     def validate(self) -> None:
         if self.schema_version != PROVENANCE_SCHEMA_VERSION:
             raise ValueError("unsupported provenance schema version")
+        if type(self.sha256) is not str:
+            raise ValueError("dataset sha256 must be a string")
         if len(self.sha256) != 64 or any(c not in "0123456789abcdef" for c in self.sha256):
             raise ValueError("dataset sha256 must be a lowercase SHA-256 digest")
-        if self.bar_count <= 0:
+        if type(self.bar_count) is not int or self.bar_count <= 0:
             raise ValueError("dataset bar_count must be positive")
         for value in (self.first_timestamp, self.last_timestamp):
             if (

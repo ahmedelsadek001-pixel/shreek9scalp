@@ -75,3 +75,25 @@ def test_provenance_rejects_non_aware_timestamps(timestamp):
     )
     with pytest.raises(ValueError, match="timezone-aware"):
         provenance.validate()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("sha256", None, "sha256 must be a string"),
+        ("sha256", 123, "sha256 must be a string"),
+        ("bar_count", True, "bar_count must be positive"),
+        ("bar_count", 2.0, "bar_count must be positive"),
+    ],
+)
+def test_provenance_rejects_ambiguous_scalar_types(field, value, message):
+    provenance = DatasetProvenance(
+        "1",
+        "a" * 64,
+        2,
+        datetime(2026, 1, 1, tzinfo=timezone.utc),
+        datetime(2026, 1, 2, tzinfo=timezone.utc),
+    )
+    object.__setattr__(provenance, field, value)
+    with pytest.raises(ValueError, match=message):
+        provenance.validate()
