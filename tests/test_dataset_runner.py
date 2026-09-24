@@ -9,6 +9,7 @@ from research.dataset_runner import run_csv_research, run_dataset_research
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 CSV = """timestamp,open,high,low,close,volume
@@ -113,3 +114,39 @@ def test_dataset_runner_forwards_causal_and_statistical_controls(monkeypatch):
     assert captured["bootstrap_simulations"] == 321
     assert captured["label_horizon"] == 2
     assert captured["certification_policy"] is certification_policy
+
+
+def _utc_manifest(offset=0):
+    return XAUUSDSourceManifest(
+        "broker", "server", "XAUUSD", offset, 2, 0.01, 100.0,
+        0.01, 0.01, 19.0, 7.0, 1.5,
+    )
+
+
+def test_dataset_runner_binds_manifest_timezone_and_safe_artifact_metadata(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    result = run_dataset_research(
+        bars, ({"x": 1},), lambda rows, params: _result(1.0),
+        train_size=3, test_size=2, purge_size=1, starting_equity=10000.0,
+        source_manifest=_utc_manifest(),
+    )
+    metadata = dict(result.artifact.metadata)
+    assert metadata["source_symbol"] == "XAUUSD"
+    assert metadata["source_timezone_offset_minutes"] == "0"
+    assert "account" not in " ".join(metadata).lower()
+
+
+def test_dataset_runner_rejects_manifest_timezone_mismatch(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="offset does not match"):
+        run_dataset_research(
+            bars, ({"x": 1},), lambda rows, params: _result(1.0),
+            train_size=3, test_size=2, purge_size=1, starting_equity=10000.0,
+            source_manifest=_utc_manifest(180),
+        )

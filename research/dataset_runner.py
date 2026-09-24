@@ -20,6 +20,7 @@ from research.data_validation import MarketDataValidation, validate_market_data
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
 from research.research_run_artifact import ResearchRunArtifact, build_research_run_artifact
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,36 @@ class DatasetResearchResult:
     provenance: DatasetProvenance
     evidence: EvidencePipelineResult
     artifact: ResearchRunArtifact
+
+
+def _manifest_metadata(manifest: XAUUSDSourceManifest) -> dict[str, str]:
+    """Return safe, non-account metadata bound into the research artifact."""
+    return {
+        "source_broker": manifest.broker.strip(),
+        "source_server": manifest.server.strip(),
+        "source_symbol": manifest.symbol.strip().upper(),
+        "source_timezone_offset_minutes": str(manifest.timezone_offset_minutes),
+        "source_digits": str(manifest.digits),
+        "source_point_size": f"{manifest.point_size:.12g}",
+        "source_contract_size": f"{manifest.contract_size:.12g}",
+        "source_spread_points": f"{manifest.observed_spread_points:.12g}",
+        "source_slippage_points": f"{manifest.slippage_points:.12g}",
+        "source_round_turn_commission_per_lot": f"{manifest.round_turn_commission_per_lot:.12g}",
+    }
+
+
+def _merge_manifest_metadata(
+    metadata: Mapping[str, str] | None, manifest: XAUUSDSourceManifest | None
+) -> Mapping[str, str] | None:
+    if manifest is None:
+        return metadata
+    manifest.validate()
+    merged = dict(metadata or {})
+    for key, value in _manifest_metadata(manifest).items():
+        if key in merged and merged[key] != value:
+            raise ValueError(f"artifact metadata conflicts with source manifest: {key}")
+        merged[key] = value
+    return merged
 
 
 def run_dataset_research(
@@ -55,9 +86,14 @@ def run_dataset_research(
     label_horizon: int = 0,
     certification_policy: ResearchCertificationPolicy = ResearchCertificationPolicy(),
     artifact_metadata: Mapping[str, str] | None = None,
+    source_manifest: XAUUSDSourceManifest | None = None,
 ) -> DatasetResearchResult:
     """Validate, fingerprint, research, and package one deterministic run."""
     validation = validate_market_data(bars, max_gap=max_gap)
+    if source_manifest is not None:
+        if not isinstance(source_manifest, XAUUSDSourceManifest):
+            raise ValueError("source_manifest must be an XAUUSDSourceManifest")
+        source_manifest.validate_bars_timezone(bars)
     provenance = fingerprint_bars(bars, validation)
     evidence = run_evidence_pipeline(
         bars,
@@ -81,7 +117,8 @@ def run_dataset_research(
         certification_policy=certification_policy,
     )
     artifact = build_research_run_artifact(
-        evidence, provenance, metadata=artifact_metadata
+        evidence, provenance,
+        metadata=_merge_manifest_metadata(artifact_metadata, source_manifest),
     )
     return DatasetResearchResult(validation, provenance, evidence, artifact)
 
@@ -92,6 +129,7 @@ def run_csv_research(
     evaluator: BacktestEvaluator,
     *,
     assume_timezone: tzinfo | None = None,
+    source_manifest: XAUUSDSourceManifest | None = None,
     **kwargs: Any,
 ) -> DatasetResearchResult:
     """Load a local CSV through the strict adapter, then run research.
@@ -107,4 +145,8 @@ def run_csv_research(
     except (OSError, UnicodeError) as exc:
         raise ValueError("unable to read CSV dataset") from exc
     bars, _ = load_ohlcv_csv(text, assume_timezone=assume_timezone)
-    return run_dataset_research(bars, parameter_sets, evaluator, **kwargs)
+    return run_dataset_research(
+        bars, parameter_sets, evaluator,
+        source_manifest=source_manifest,
+        **kwargs,
+    )

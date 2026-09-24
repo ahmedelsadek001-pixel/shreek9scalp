@@ -92,4 +92,6 @@ The repository now provides `research.xauusd_source_manifest.XAUUSDSourceManifes
 to validate this metadata and convert spread, slippage, contract value and
 round-turn commission into the exact research-engine units. It rejects a CSV
 whose timezone offset disagrees with the manifest. Account identifiers are not
-accepted by this schema.
+accepted by this schema. Passing the manifest to `run_csv_research` also binds
+the safe source fields into the immutable research artifact, so later evidence
+cannot silently change broker-cost assumptions.
