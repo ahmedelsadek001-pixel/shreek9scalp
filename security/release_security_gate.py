@@ -24,7 +24,16 @@ _SECRET_PATTERNS = (
     ("telegram-bot-token", re.compile(r"\b\d{8,12}:[A-Za-z0-9_-]{30,}\b")),
     ("openai-key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
 )
-_LIVE_FUNCTIONS = {"order_send"}
+_LIVE_FUNCTIONS = {
+    # MT5/native broker transport names.
+    "order_send",
+    "positions_send",
+    "trade_transaction",
+    # Generic transport aliases that must remain behind the guarded adapter.
+    "send_order",
+    "place_order",
+    "submit_order",
+}
 
 
 def _has_live_order_call(content: str) -> bool:
@@ -61,7 +70,7 @@ def scan_source(path: str, content: str) -> tuple[SecurityFinding, ...]:
         if pattern.search(content):
             findings.append(SecurityFinding(rule, path, "credential-like material detected"))
     if _has_live_order_call(content):
-        findings.append(SecurityFinding("live-order-authority", path, "live order_send call detected"))
+        findings.append(SecurityFinding("live-order-authority", path, "live broker transport call detected"))
     return tuple(findings)
 
 

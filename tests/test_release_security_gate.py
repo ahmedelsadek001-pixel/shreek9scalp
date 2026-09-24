@@ -20,6 +20,12 @@ def test_live_order_marker_is_blocked():
     assert any(f.rule == "live-order-authority" for f in findings)
 
 
+@pytest.mark.parametrize("function_name", ["positions_send", "trade_transaction", "send_order", "place_order", "submit_order"])
+def test_alternate_transport_markers_are_blocked(function_name):
+    findings = scan_source("bad.py", f"result = broker.{function_name}(request)\n")
+    assert any(f.rule == "live-order-authority" for f in findings)
+
+
 def test_malformed_source_is_blocked_fail_closed():
     passed, findings = evaluate_tree((("broken.py", "def incomplete(:\n"),))
     assert not passed
