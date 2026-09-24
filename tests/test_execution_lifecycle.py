@@ -1,6 +1,7 @@
 import pytest
 from core.enums import Direction
 from execution.broker_outcome import classify_broker_outcome
+from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
 from execution.execution_lifecycle import ExecutionLifecycleCoordinator
 from execution.idempotency import IdempotencyLedger,SubmissionState
 from execution.reconciliation import ExecutionReport,OrderIntent
@@ -40,3 +41,18 @@ def test_explicit_retryable_rejection_still_requires_new_identity():
     d=c.apply_outcome(i,classify_broker_outcome(acknowledged=True,accepted=False,rejection_code="REQUOTE"))
     assert d.state is SubmissionState.REJECTED
     with pytest.raises(ValueError,match="new identity"): ledger.begin(i)
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        BrokerOutcomeDecision(BrokerOutcome.REJECTED_FINAL, True, "bad retry flag"),
+        BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, ""),
+        BrokerOutcomeDecision(BrokerOutcome.UNKNOWN, False, "   "),
+    ],
+)
+def test_inconsistent_or_empty_broker_outcome_is_rejected_before_state_change(outcome):
+    ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
+    c=ExecutionLifecycleCoordinator(ledger)
+    with pytest.raises(ValueError):
+        c.apply_outcome(i, outcome)
+    assert ledger.get("O1").state is SubmissionState.IN_FLIGHT

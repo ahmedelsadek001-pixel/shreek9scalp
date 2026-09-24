@@ -18,6 +18,8 @@
 - Duplicate-order protection and fail-closed submission boundaries.
 - Strict broker-bound submission requires an explicit quote-freshness and
   deviation decision; missing quote evidence is rejected before transport.
+- Broker outcome decisions are schema-checked before mutating idempotency
+  state; inconsistent retry flags fail closed.
 - A `KILLED` risk state cannot be reset without explicit boolean operator
   approval and a non-empty audit reason; reset is not a live-execution grant.
 

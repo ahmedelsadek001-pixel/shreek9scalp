@@ -18,9 +18,23 @@ class ExecutionLifecycleCoordinator:
         if not isinstance(ledger,IdempotencyLedger): raise TypeError("ledger must be IdempotencyLedger")
         self.ledger=ledger
 
+    @staticmethod
+    def _validate_outcome(outcome: BrokerOutcomeDecision) -> None:
+        if not isinstance(outcome, BrokerOutcomeDecision):
+            raise ValueError("outcome must be BrokerOutcomeDecision")
+        if not isinstance(outcome.outcome, BrokerOutcome):
+            raise ValueError("broker outcome is invalid")
+        if type(outcome.retry_allowed) is not bool:
+            raise ValueError("retry_allowed must be bool")
+        if not isinstance(outcome.reason, str) or not outcome.reason.strip():
+            raise ValueError("broker outcome reason is required")
+        expected_retry = outcome.outcome is BrokerOutcome.REJECTED_RETRYABLE
+        if outcome.retry_allowed is not expected_retry:
+            raise ValueError("broker outcome retry policy is inconsistent")
+
     def apply_outcome(self,intent:OrderIntent,outcome:BrokerOutcomeDecision)->LifecycleDecision:
         if not isinstance(intent,OrderIntent): raise ValueError("intent must be OrderIntent")
-        if not isinstance(outcome,BrokerOutcomeDecision): raise ValueError("outcome must be BrokerOutcomeDecision")
+        self._validate_outcome(outcome)
         current=self.ledger.get(intent.order_id)
         if current is None or current.state is not SubmissionState.IN_FLIGHT:
             raise ValueError("intent has no in-flight submission")
