@@ -43,10 +43,39 @@ def _has_live_order_call(content: str) -> bool:
         tree = ast.parse(content)
     except SyntaxError:
         return False
+    dangerous_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+            value = node.value
+            dangerous = False
+            if isinstance(value, ast.Attribute) and value.attr in _LIVE_FUNCTIONS:
+                dangerous = True
+            elif (
+                isinstance(value, ast.Subscript)
+                and isinstance(value.slice, ast.Constant)
+                and value.slice.value in _LIVE_FUNCTIONS
+            ):
+                dangerous = True
+            elif (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id == "getattr"
+                and len(value.args) >= 2
+                and isinstance(value.args[1], ast.Constant)
+                and value.args[1].value in _LIVE_FUNCTIONS
+            ):
+                dangerous = True
+            if dangerous:
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                dangerous_aliases.update(
+                    target.id for target in targets if isinstance(target, ast.Name)
+                )
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
             function = node.func
-            if isinstance(function, ast.Name) and function.id in _LIVE_FUNCTIONS:
+            if isinstance(function, ast.Name) and (
+                function.id in _LIVE_FUNCTIONS or function.id in dangerous_aliases
+            ):
                 return True
             if isinstance(function, ast.Attribute) and function.attr in _LIVE_FUNCTIONS:
                 return True
@@ -126,4 +155,3 @@ def evaluate_paths(
             continue
         findings.extend(scan_source(str(path), content))
     return not findings, tuple(findings)
-

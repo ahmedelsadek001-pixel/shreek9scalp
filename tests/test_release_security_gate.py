@@ -37,6 +37,19 @@ def test_subscript_transport_dispatch_is_blocked():
     assert any(f.rule == "live-order-authority" for f in findings)
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "send = broker.order_send\nresult = send(request)\n",
+        "send = broker[\"order_send\"]\nresult = send(request)\n",
+        "send = getattr(broker, \"order_send\")\nresult = send(request)\n",
+    ],
+)
+def test_aliased_transport_dispatch_is_blocked(source):
+    findings = scan_source("bad.py", source)
+    assert any(f.rule == "live-order-authority" for f in findings)
+
+
 def test_malformed_source_is_blocked_fail_closed():
     passed, findings = evaluate_tree((("broken.py", "def incomplete(:\n"),))
     assert not passed
@@ -67,4 +80,3 @@ def test_path_scan_excludes_test_and_security_trees(tmp_path):
     passed, findings = evaluate_paths((test_file, security_file))
     assert passed
     assert findings == ()
-
