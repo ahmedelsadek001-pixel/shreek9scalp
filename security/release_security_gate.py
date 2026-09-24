@@ -59,6 +59,14 @@ def _has_live_order_call(content: str) -> bool:
                 and function.args[1].value in _LIVE_FUNCTIONS
             ):
                 return True
+            # Catch mapping-style dynamic dispatch such as
+            # ``broker["order_send"](request)``.
+            if (
+                isinstance(function, ast.Subscript)
+                and isinstance(function.slice, ast.Constant)
+                and function.slice.value in _LIVE_FUNCTIONS
+            ):
+                return True
     return False
 
 

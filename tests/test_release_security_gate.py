@@ -31,6 +31,11 @@ def test_dynamic_transport_dispatch_is_blocked():
     assert any(f.rule == "live-order-authority" for f in findings)
 
 
+def test_subscript_transport_dispatch_is_blocked():
+    findings = scan_source("bad.py", 'result = broker["order_send"](request)\n')
+    assert any(f.rule == "live-order-authority" for f in findings)
+
+
 def test_malformed_source_is_blocked_fail_closed():
     passed, findings = evaluate_tree((("broken.py", "def incomplete(:\n"),))
     assert not passed
