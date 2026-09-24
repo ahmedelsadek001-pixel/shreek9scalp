@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from datetime import datetime
 from hashlib import sha256
 from math import isclose, isfinite
 from typing import Any, Mapping
@@ -75,6 +76,43 @@ def _build_wfo_evidence(wfo: BacktestWFOResult, expected_windows: int) -> dict[s
         "selected_parameters": _canonical_selected_parameters(validation.selected_parameters),
     }
     if wfo.window_timestamps:
+        previous_train_first = None
+        previous_test_first = None
+        previous_test_last = None
+        for row in wfo.window_timestamps:
+            values = {name: getattr(row, name) for name in (
+                "train_first", "train_last", "purge_first", "purge_last", "test_first", "test_last"
+            )}
+            parsed = {}
+            for name, value in values.items():
+                if value is None and name in {"purge_first", "purge_last"}:
+                    parsed[name] = None
+                    continue
+                if type(value) is not str or not value:
+                    raise ValueError("WFO timestamps must be non-empty ISO datetime strings")
+                try:
+                    parsed[name] = datetime.fromisoformat(value)
+                except ValueError as exc:
+                    raise ValueError("WFO timestamps must be valid ISO datetimes") from exc
+                if parsed[name].tzinfo is None or parsed[name].utcoffset() is None:
+                    raise ValueError("WFO timestamps must be timezone-aware")
+            if (parsed["purge_first"] is None) != (parsed["purge_last"] is None):
+                raise ValueError("WFO purge timestamps must both be present or absent")
+            if not parsed["train_first"] <= parsed["train_last"] < parsed["test_first"] <= parsed["test_last"]:
+                raise ValueError("WFO timestamp chronology is invalid")
+            if parsed["purge_first"] is not None and not (
+                parsed["train_last"] < parsed["purge_first"] <= parsed["purge_last"] < parsed["test_first"]
+            ):
+                raise ValueError("WFO purge timestamp chronology is invalid")
+            if previous_train_first is not None and parsed["train_first"] <= previous_train_first:
+                raise ValueError("WFO training timestamps must be chronological")
+            if previous_test_first is not None and parsed["test_first"] <= previous_test_first:
+                raise ValueError("WFO OOS starts must be chronological")
+            if previous_test_last is not None and parsed["test_first"] <= previous_test_last:
+                raise ValueError("WFO OOS timestamps must not overlap")
+            previous_train_first = parsed["train_first"]
+            previous_test_first = parsed["test_first"]
+            previous_test_last = parsed["test_last"]
         evidence["window_timestamps"] = [asdict(window) for window in wfo.window_timestamps]
     return evidence
 

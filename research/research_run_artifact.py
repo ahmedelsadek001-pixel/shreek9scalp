@@ -183,6 +183,8 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                 "train_first", "train_last", "purge_first", "purge_last", "test_first", "test_last"
             }
             previous_test_last = None
+            previous_train_first = None
+            previous_test_first = None
             for row in timestamp_windows:
                 if not isinstance(row, dict) or set(row) != timestamp_fields:
                     raise ValueError("archived WFO timestamp structure is invalid")
@@ -211,11 +213,17 @@ def _validate_embedded_export(payload: dict[str, Any]) -> None:
                     raise ValueError("archived WFO purge timestamp chronology is invalid")
                 if previous_test_last is not None and parsed["test_first"] <= previous_test_last:
                     raise ValueError("archived WFO timestamped OOS windows must not overlap")
+                if previous_train_first is not None and parsed["train_first"] <= previous_train_first:
+                    raise ValueError("archived WFO timestamped training windows must be chronological")
+                if previous_test_first is not None and parsed["test_first"] <= previous_test_first:
+                    raise ValueError("archived WFO timestamped OOS starts must be chronological")
                 dataset_first = datetime.fromisoformat(dataset["first_timestamp"])
                 dataset_last = datetime.fromisoformat(dataset["last_timestamp"])
                 if parsed["train_first"] < dataset_first or parsed["test_last"] > dataset_last:
                     raise ValueError("archived WFO timestamps fall outside dataset provenance")
                 previous_test_last = parsed["test_last"]
+                previous_train_first = parsed["train_first"]
+                previous_test_first = parsed["test_first"]
     config_payload = payload.get("research_config")
     if (wfo is None) != (config_payload is None):
         raise ValueError("archived WFO evidence and research config must be present together")

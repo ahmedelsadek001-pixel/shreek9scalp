@@ -248,3 +248,34 @@ def test_artifact_rejects_rehashed_shifted_wfo_geometry_even_when_sizes_match():
     )
     with pytest.raises(ValueError, match="windows do not match dataset and research config"):
         forged.validate()
+
+
+def test_artifact_rejects_rehashed_nonchronological_timestamped_training_windows():
+    artifact = build_research_run_artifact(_pipeline_for_export(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["wfo_evidence"]["window_timestamps"] = [
+        {
+            "train_first": "2026-01-01T00:02:00+00:00",
+            "train_last": "2026-01-01T00:03:00+00:00",
+            "purge_first": "2026-01-01T00:04:00+00:00",
+            "purge_last": "2026-01-01T00:04:00+00:00",
+            "test_first": "2026-01-01T00:05:00+00:00",
+            "test_last": "2026-01-01T00:06:00+00:00",
+        },
+        {
+            "train_first": "2026-01-01T00:01:00+00:00",
+            "train_last": "2026-01-01T00:03:30+00:00",
+            "purge_first": "2026-01-01T00:07:00+00:00",
+            "purge_last": "2026-01-01T00:07:00+00:00",
+            "test_first": "2026-01-01T00:08:00+00:00",
+            "test_last": "2026-01-01T00:09:00+00:00",
+        },
+    ]
+    export = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    forged = replace(
+        artifact,
+        evidence_export=export,
+        evidence_export_sha256=sha256(export.encode("utf-8")).hexdigest(),
+    )
+    with pytest.raises(ValueError, match="timestamped training windows must be chronological"):
+        forged.validate()
