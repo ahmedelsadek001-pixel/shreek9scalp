@@ -227,6 +227,37 @@ def test_no_direct_order_transport_call_outside_guarded_adapter() -> None:
     assert violations == []
 
 
+def test_no_direct_guarded_adapter_entrypoint_outside_adapter() -> None:
+    """Keep the guarded adapter as the sole production submission boundary."""
+    violations: list[str] = []
+    forbidden = {"execute_intent", "execute_intent_strict"}
+    for path in _production_python_files():
+        relative = path.relative_to(ROOT)
+        if relative == GUARDED_PATH:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in forbidden:
+                violations.append(f"{relative}:{node.lineno}")
+    assert violations == []
+
+
+def test_safety_and_promotion_gates_have_no_transport_authority() -> None:
+    """Evidence gates must stay pure policy code, never broker adapters."""
+    violations: list[str] = []
+    protected = (ROOT / "execution/safety_gate.py", ROOT / "core/promotion_gate.py")
+    for path in protected:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import) and any(alias.name == "MetaTrader5" or alias.name.startswith("MetaTrader5.") for alias in node.names):
+                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:MetaTrader5")
+            elif isinstance(node, ast.ImportFrom) and (node.module == "MetaTrader5" or (node.module and node.module.startswith("MetaTrader5."))):
+                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:MetaTrader5")
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {"order_send", "send_order", "place_order", "submit_order"}:
+                violations.append(f"{path.relative_to(ROOT)}:{node.lineno}:{node.func.attr}")
+    assert violations == []
+
+
 def test_idempotency_ledger_blocks_second_transport_attempt() -> None:
     from execution.idempotency import IdempotencyLedger
     calls: list[str] = []
@@ -254,3 +285,4 @@ def test_transport_exception_marks_intent_unknown_and_blocks_retry() -> None:
     second = adapter.execute_intent(_ready_gate(), _intent())
     assert second.executed is False
     assert calls == ["ORD-001"]
+
