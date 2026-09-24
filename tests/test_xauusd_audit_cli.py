@@ -33,7 +33,9 @@ def test_audit_binds_exact_file_bytes_and_rejects_short_data(tmp_path, capsys):
     paths = _files(tmp_path)
     result = audit_xauusd_csv_bundle(paths)
     assert not result.quality.passed
-    assert {finding.code for finding in result.quality.findings} == {"insufficient_span"}
+    assert {finding.code for finding in result.quality.findings} == {
+        "insufficient_span", "insufficient_pair_overlap",
+    }
     assert result.files[0].sha256 == sha256(paths["5m"].read_bytes()).hexdigest()
     assert all(item.match_pct == 100 for item in result.quality.aggregation)
 
