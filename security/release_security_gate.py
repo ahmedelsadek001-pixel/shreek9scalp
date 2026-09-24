@@ -48,6 +48,17 @@ def _has_live_order_call(content: str) -> bool:
                 return True
             if isinstance(function, ast.Attribute) and function.attr in _LIVE_FUNCTIONS:
                 return True
+            # Catch dynamic attribute dispatch such as
+            # ``getattr(broker, "order_send")(request)``.
+            if (
+                isinstance(function, ast.Call)
+                and isinstance(function.func, ast.Name)
+                and function.func.id == "getattr"
+                and len(function.args) >= 2
+                and isinstance(function.args[1], ast.Constant)
+                and function.args[1].value in _LIVE_FUNCTIONS
+            ):
+                return True
     return False
 
 
