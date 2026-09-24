@@ -20,6 +20,9 @@
   deviation decision; missing quote evidence is rejected before transport.
 - Broker outcome decisions are schema-checked before mutating idempotency
   state; inconsistent retry flags fail closed.
+- V5.3 promotion uses an explicit execution-safety evidence gate covering
+  quote safety, idempotency, outcomes, reconciliation, recovery, journal
+  integrity, and the live-disabled invariant; it grants no MT5 authority.
 - A `KILLED` risk state cannot be reset without explicit boolean operator
   approval and a non-empty audit reason; reset is not a live-execution grant.
 
