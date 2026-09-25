@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 from execution.broker_safety import BrokerSafetyPolicy, authorize_environment
 from execution.operational_guard import OperationalPolicy, OperationalSnapshot, evaluate_operational_readiness
 from execution.recovery import RecoveryDecision, RecoveryState
+from execution.decision_provenance import IssuedDecisionRegistry
 
 
 _EXECUTION_ADMISSION_CAPABILITY = object()
+_ISSUED_DECISIONS = IssuedDecisionRegistry()
 
 
 @dataclass(frozen=True)
@@ -26,12 +28,16 @@ class ExecutionGateDecision:
 
 def _issue_decision(allowed: bool, reasons: tuple[str, ...]) -> ExecutionGateDecision:
     """Issue an admission decision with an internal capability for execution."""
-    return ExecutionGateDecision(allowed, reasons, _EXECUTION_ADMISSION_CAPABILITY)
+    decision = ExecutionGateDecision(allowed, reasons, _EXECUTION_ADMISSION_CAPABILITY)
+    _ISSUED_DECISIONS.issue(decision, (allowed, reasons))
+    return decision
 
 
 def is_gate_issued(decision: ExecutionGateDecision) -> bool:
     """Return whether the decision originated from this gate implementation."""
-    return isinstance(decision, ExecutionGateDecision) and decision._capability is _EXECUTION_ADMISSION_CAPABILITY
+    return (isinstance(decision, ExecutionGateDecision)
+            and decision._capability is _EXECUTION_ADMISSION_CAPABILITY
+            and _ISSUED_DECISIONS.is_issued(decision, (decision.allowed, decision.reasons)))
 
 
 def evaluate_execution_gate(

@@ -71,6 +71,37 @@ def test_fabricated_allowed_gate_is_rejected_and_never_invokes_executor() -> Non
     assert calls == []
 
 
+def test_cloned_rejected_gate_cannot_bypass_kill_switch() -> None:
+    calls = []
+    rejected = evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        kill_switch_active=True,
+    )
+    cloned = replace(rejected, allowed=True, reasons=())
+    adapter = GuardedExecutionAdapter(
+        lambda intent: calls.append(intent), IdempotencyLedger(),
+    )
+    result = adapter.execute_intent(cloned, _intent(), _safe_quote())
+    assert not result.executed
+    assert result.reasons == ("execution gate decision not issued by execution gate",)
+    assert calls == []
+
+
+def test_in_place_modified_gate_is_rejected() -> None:
+    decision = evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        kill_switch_active=True,
+    )
+    object.__setattr__(decision, "allowed", True)
+    object.__setattr__(decision, "reasons", ())
+    adapter = GuardedExecutionAdapter(lambda intent: None, IdempotencyLedger())
+    result = adapter.execute_intent(decision, _intent(), _safe_quote())
+    assert not result.executed
+    assert result.reasons == ("execution gate decision not issued by execution gate",)
+
+
 def test_malformed_gate_is_fail_closed() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed"))

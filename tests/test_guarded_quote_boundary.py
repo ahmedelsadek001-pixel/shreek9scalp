@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime,timedelta,timezone
 from core.enums import Direction
 from execution.execution_gate import evaluate_execution_gate
@@ -53,4 +54,16 @@ def test_forged_positive_quote_and_mismatched_price_never_reach_transport():
                                 market_price=2501.0,max_age_seconds=2,
                                 max_deviation_points=3,point_size=.1)
     assert "does not match intent" in adapter.execute_intent(gate(),intent(),wrong).reasons[0]
+    assert calls==[]
+
+def test_cloned_or_mutated_issued_quote_cannot_change_intended_price():
+    calls=[]; now=datetime.now(timezone.utc)
+    issued=evaluate_quote_safety(quote_time=now,now=now,intended_price=2501.0,
+                                 market_price=2501.0,max_age_seconds=2,
+                                 max_deviation_points=3,point_size=.1)
+    adapter=GuardedExecutionAdapter(lambda x:calls.append(x),IdempotencyLedger())
+    copied=replace(issued,intended_price=2500.0)
+    assert "not issued" in adapter.execute_intent(gate(),intent(),copied).reasons[0]
+    object.__setattr__(issued,"intended_price",2500.0)
+    assert "not issued" in adapter.execute_intent(gate(),intent(),issued).reasons[0]
     assert calls==[]

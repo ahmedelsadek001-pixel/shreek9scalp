@@ -21,6 +21,11 @@
   an explicit idempotency ledger. A fabricated, missing, or mismatched quote
   and a missing ledger are rejected before transport. Legacy unscoped
   `execute()` calls are blocked, including with an otherwise allowed gate.
+- Admission and quote approvals are bound to the exact in-process decision
+  object and its original fields. Copying a rejection and changing `allowed`,
+  or copying a fresh quote to change its intended price, fails before
+  transport. This is an in-process consistency check, not independent broker
+  verification or a live authorization credential.
 - Broker outcome decisions are schema-checked before mutating idempotency
   state; inconsistent retry flags fail closed.
 - V5.3 promotion uses an explicit execution-safety evidence gate covering

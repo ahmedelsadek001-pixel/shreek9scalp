@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from math import isfinite
+from execution.decision_provenance import IssuedDecisionRegistry
 
 _QUOTE_DECISION_CAPABILITY = object()
+_ISSUED_QUOTES = IssuedDecisionRegistry()
 
 @dataclass(frozen=True)
 class QuoteSafetyDecision:
@@ -19,6 +21,9 @@ def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
     return (
         isinstance(decision, QuoteSafetyDecision)
         and decision._capability is _QUOTE_DECISION_CAPABILITY
+        and _ISSUED_QUOTES.is_issued(
+            decision, (decision.allowed, decision.reason, decision.intended_price),
+        )
     )
 
 def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:float, market_price:float, max_age_seconds:float, max_deviation_points:float, point_size:float)->QuoteSafetyDecision:
@@ -41,4 +46,6 @@ def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:f
     deviation=abs(market-intended)/point
     if deviation>max_dev:
         return QuoteSafetyDecision(False,"market price deviation exceeds limit")
-    return QuoteSafetyDecision(True,"quote freshness and deviation accepted",intended,_QUOTE_DECISION_CAPABILITY)
+    decision = QuoteSafetyDecision(True,"quote freshness and deviation accepted",intended,_QUOTE_DECISION_CAPABILITY)
+    _ISSUED_QUOTES.issue(decision, (decision.allowed, decision.reason, decision.intended_price))
+    return decision
