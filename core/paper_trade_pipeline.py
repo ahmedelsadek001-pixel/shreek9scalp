@@ -38,6 +38,10 @@ def admit_and_submit_paper(
     news_policy: NewsFirewallPolicy = NewsFirewallPolicy(),
 ) -> PipelineDecision:
     """Require strategy admission and risk admission before paper submission."""
+    if not isinstance(engine, PaperTradingEngine):
+        return PipelineDecision(False, "order_validation", "paper engine required")
+    if not isinstance(timestamp, datetime):
+        return PipelineDecision(False, "order_validation", "timestamp must be a datetime")
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         return PipelineDecision(False, "order_validation", "timestamp must be timezone-aware")
 
@@ -59,8 +63,9 @@ def admit_and_submit_paper(
     if direction is Direction.SELL and normalized_sl <= normalized_entry:
         return PipelineDecision(False, "order_validation", "SELL stop must be above entry")
 
-    modeled_loss = abs(normalized_entry - normalized_sl) * normalized_volume
-    if not math.isfinite(modeled_loss) or modeled_loss <= 0:
+    try:
+        modeled_loss = engine.modeled_loss(normalized_entry, normalized_sl, normalized_volume)
+    except ValueError:
         return PipelineDecision(False, "order_validation", "invalid modeled loss")
 
     admission: IntegrationDecision = evaluate_pre_trade(

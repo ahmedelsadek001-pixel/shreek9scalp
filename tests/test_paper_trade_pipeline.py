@@ -6,6 +6,7 @@ from core.enums import Direction
 from core.paper_trade_pipeline import admit_and_submit_paper
 from core.setup_quality import SetupQualityInput
 from paper_trading.engine import PaperTradingEngine
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 from risk.news_firewall import NewsFirewallPolicy
 
 
@@ -113,4 +114,17 @@ def test_pipeline_rejects_naive_timestamp_without_submission():
     result = _call(engine, timestamp=datetime(2026, 9, 12, 10, 2))
     assert not result.allowed
     assert result.stage == "order_validation"
+    assert engine.open_order is None
+
+
+def test_pipeline_uses_contract_risk_before_paper_submission():
+    manifest = XAUUSDSourceManifest(
+        "research-broker", "research-server", "XAUUSD", 0,
+        2, 0.01, 100.0, 0.01, 0.01, 19.0, 7.0, 1.5,
+    )
+    engine = PaperTradingEngine.from_xauusd_manifest(
+        manifest, starting_equity=1000, max_daily_loss_pct=0.05,
+    )
+    result = _call(engine, entry=100, sl=99, volume=1.0)
+    assert not result.allowed and result.stage == "risk"
     assert engine.open_order is None

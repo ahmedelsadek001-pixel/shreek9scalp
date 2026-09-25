@@ -113,6 +113,8 @@ class TradeOrchestrator:
             return OrchestrationDecision(False, "risk", "risk inputs must be numeric")
         if not all(isfinite(value) and value > 0 for value in (entry, stop, numeric_point_value)):
             return OrchestrationDecision(False, "risk", "invalid risk inputs")
+        if numeric_point_value != self.engine.point_value:
+            return OrchestrationDecision(False, "risk", "point value differs from paper engine")
 
         if volume is None:
             try:
@@ -135,6 +137,11 @@ class TradeOrchestrator:
             return OrchestrationDecision(False, "risk", "position volume must be positive and finite")
         if not self.risk_budget.allows(entry, stop, volume, numeric_point_value):
             return OrchestrationDecision(False, "risk", "risk budget exceeded", volume)
+        try:
+            if self.engine.modeled_loss(entry, stop, volume) > self.risk_budget.risk_amount:
+                return OrchestrationDecision(False, "risk", "risk budget exceeded", volume)
+        except ValueError:
+            return OrchestrationDecision(False, "risk", "invalid modeled paper loss", volume)
 
         try:
             fingerprint = signal_fingerprint(symbol, signal)

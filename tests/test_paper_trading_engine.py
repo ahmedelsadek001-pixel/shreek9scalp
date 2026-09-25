@@ -4,6 +4,7 @@ import pytest
 
 from core.enums import Direction
 from paper_trading.engine import PaperOrder, PaperTradingEngine
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 def order(direction=Direction.BUY, entry=100.0, sl=99.0):
@@ -143,3 +144,43 @@ def test_close_strips_reason_whitespace():
     engine.submit(order())
     fill = engine.close(101.0, datetime(2026, 9, 12, 11, tzinfo=timezone.utc), " TP ")
     assert fill.reason == "TP"
+
+
+def _manifest():
+    return XAUUSDSourceManifest(
+        "research-broker", "research-server", "XAUUSD", 0,
+        2, 0.01, 100.0, 0.01, 0.01, 19.0, 7.0, 1.5,
+    )
+
+
+def test_manifest_bound_paper_risk_and_net_pnl_use_contract_value():
+    engine = PaperTradingEngine.from_xauusd_manifest(
+        _manifest(), starting_equity=1000, max_daily_loss_pct=0.05,
+    )
+    stamp = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    assert engine.modeled_loss(2500, 2498, 0.03) == pytest.approx(6.21)
+    engine.submit(PaperOrder("XAUUSD", Direction.BUY, 2500, 2498, 0.03, stamp))
+    fill = engine.close(2503, datetime(2026, 9, 12, 11, tzinfo=timezone.utc))
+    assert fill.pnl == pytest.approx(8.79)
+    assert engine.ledger.realized(stamp.date()) == pytest.approx(8.79)
+
+
+def test_manifest_bound_paper_rejects_lot_risk_and_other_symbol():
+    engine = PaperTradingEngine.from_xauusd_manifest(
+        _manifest(), starting_equity=1000, max_daily_loss_pct=0.05,
+    )
+    stamp = datetime(2026, 9, 12, 10, tzinfo=timezone.utc)
+    with pytest.raises(RuntimeError, match="daily risk budget"):
+        engine.submit(PaperOrder("XAUUSD", Direction.BUY, 2500, 2480, 0.03, stamp))
+    with pytest.raises(ValueError, match="differs from source manifest"):
+        engine.submit(PaperOrder("EURUSD", Direction.BUY, 2500, 2498, 0.03, stamp))
+    assert engine.open_order is None
+
+
+def test_paper_fill_must_follow_entry_without_mutation():
+    engine = PaperTradingEngine()
+    engine.submit(order())
+    with pytest.raises(ValueError, match="cannot precede"):
+        engine.close(101, datetime(2026, 9, 12, 9, tzinfo=timezone.utc))
+    assert engine.open_order == order()
+    assert engine.fills == []

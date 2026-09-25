@@ -6,6 +6,7 @@ from core.setup_quality import SetupQualityInput
 from core.trade_orchestrator import TradeOrchestrator
 from paper_trading.engine import PaperTradingEngine
 from risk.risk_budget import RiskBudget
+from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 TIMESTAMP = datetime(2026, 9, 12, 10, 2, tzinfo=timezone.utc)
@@ -64,6 +65,30 @@ def test_orchestrator_admits_sizes_and_submits():
     assert result.volume == 10.0
     assert result.fingerprint
     assert engine.open_order is not None
+
+
+def test_orchestrator_requires_matching_contract_and_counts_commission():
+    manifest = XAUUSDSourceManifest(
+        "research-broker", "research-server", "XAUUSD", 0,
+        2, 0.01, 100.0, 0.01, 0.01, 19.0, 7.0, 1.5,
+    )
+    engine = PaperTradingEngine.from_xauusd_manifest(
+        manifest, starting_equity=1000,
+    )
+    orchestrator = TradeOrchestrator(engine, RiskBudget(1000, risk_pct=0.01))
+    mismatch = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP,
+        symbol="XAUUSD", setup_min_score=70, volume=0.1,
+    )
+    assert not mismatch.allowed and mismatch.stage == "risk"
+    assert "point value differs" in mismatch.reason
+    with_commission = orchestrator.evaluate_and_submit(
+        _signal(), _bars(), _setup(), timestamp=TIMESTAMP,
+        symbol="XAUUSD", setup_min_score=70, point_value=100, volume=0.1,
+    )
+    assert not with_commission.allowed and with_commission.stage == "risk"
+    assert "budget exceeded" in with_commission.reason
+    assert engine.open_order is None
 
 
 def test_orchestrator_blocks_duplicate_signal_identity():
