@@ -44,4 +44,12 @@ fail-closed entry gate. A failed audit blocks empirical WFO and robustness
 promotion. Rejected files may still be used as explicitly labelled synthetic
 software fixtures, but their results are not evidence of profitability.
 
+For a research run, use
+`research.dataset_runner.run_audited_xauusd_breakout_retest_research` with the
+three CSV paths and a source manifest. It rejects a failed default quality
+audit before WFO, passes the exact hashed M5 bar snapshot to the manifest-bound
+runner, and embeds the M5/M15/H1 source hashes in the research artifact.
+Single-timeframe runners remain useful for diagnostics but do not enforce this
+three-timeframe acceptance rule.
+
 The gate performs no broker connection, order routing, or live authorization.

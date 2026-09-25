@@ -16,6 +16,7 @@ from research.research_run_artifact import (
 from research.dataset_runner import (
     MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
     MANIFEST_BOUND_COST_APPLICATION_ID,
+    XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID,
 )
 from research.xauusd_source_manifest import XAUUSDSourceManifest
 
@@ -111,6 +112,14 @@ def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ..
         ):
             failures.append("research artifact lacks adverse execution-cost stress")
     metadata = dict(artifact.metadata)
+    source_hashes = tuple(metadata.get(f"xauusd_{frame}_source_sha256") for frame in ("5m", "15m", "1h"))
+    if metadata.get("xauusd_quality_gate") != XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID or any(
+        type(digest) is not str
+        or len(digest) != 64
+        or any(char not in "0123456789abcdef" for char in digest)
+        for digest in source_hashes
+    ):
+        failures.append("research artifact lacks accepted three-timeframe XAUUSD source fingerprints")
     if metadata.get("cost_application_id") != MANIFEST_BOUND_COST_APPLICATION_ID:
         failures.append("research artifact costs were not applied by the manifest-bound backtest")
     cost_keys = {

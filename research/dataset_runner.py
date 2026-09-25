@@ -22,11 +22,13 @@ from research.data_validation import MarketDataValidation, validate_market_data
 from research.evidence_gate import EvidenceGatePolicy
 from research.evidence_pipeline import EvidencePipelineResult, run_evidence_pipeline
 from research.research_run_artifact import ResearchRunArtifact, build_research_run_artifact
+from research.xauusd_audit_cli import XAUUSDCsvAudit, load_and_audit_xauusd_csv_bundle
 from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 MANIFEST_BOUND_COST_APPLICATION_ID = "manifest-bound-breakout-retest-v1"
 MANIFEST_BOUND_CONTEXT_EVALUATOR_ID = "manifest-bound-breakout-retest-context-v1"
+XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID = "m5-m15-h1-default-v1"
 _SIGNAL_PARAMETER_NAMES = frozenset(field.name for field in fields(BreakoutRetestConfig))
 _ECONOMIC_PARAMETER_NAMES = frozenset({
     "pip_size", "volume", "spread", "slippage", "point_value",
@@ -42,6 +44,14 @@ class DatasetResearchResult:
     provenance: DatasetProvenance
     evidence: EvidencePipelineResult
     artifact: ResearchRunArtifact
+
+
+@dataclass(frozen=True)
+class AuditedXAUUSDResearchResult:
+    """Three-timeframe source acceptance plus the research-only M5 run."""
+
+    audit: XAUUSDCsvAudit
+    research: DatasetResearchResult
 
 
 def _manifest_metadata(manifest: XAUUSDSourceManifest) -> dict[str, str]:
@@ -256,6 +266,45 @@ def run_xauusd_breakout_retest_research(
         context_evaluator_id=MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
         **kwargs,
     )
+
+
+def run_audited_xauusd_breakout_retest_research(
+    paths: Mapping[str, str | Path],
+    parameter_sets: Sequence[Mapping[str, Any]],
+    *,
+    source_manifest: XAUUSDSourceManifest,
+    pip_size: float,
+    volume: float = 1.0,
+    artifact_metadata: Mapping[str, str] | None = None,
+    **kwargs: Any,
+) -> AuditedXAUUSDResearchResult:
+    """Run WFO only after the default three-timeframe XAUUSD quality gate.
+
+    The accepted M5 bars are the same in-memory snapshot whose source bytes
+    were hashed alongside M15 and H1. This research path has no broker or
+    live-order authority; low-level single-series runners remain diagnostics.
+    """
+    audit, datasets = load_and_audit_xauusd_csv_bundle(
+        paths, source_manifest=source_manifest,
+    )
+    if not audit.quality.passed:
+        codes = sorted({finding.code for finding in audit.quality.findings})
+        raise ValueError("XAUUSD three-timeframe quality gate failed: " + ", ".join(codes))
+    metadata = dict(artifact_metadata or {})
+    required = {"xauusd_quality_gate": XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID}
+    required.update(
+        {f"xauusd_{item.timeframe}_source_sha256": item.sha256 for item in audit.files}
+    )
+    for key, value in required.items():
+        if key in metadata and metadata[key] != value:
+            raise ValueError(f"artifact metadata conflicts with XAUUSD audit: {key}")
+        metadata[key] = value
+    research = run_xauusd_breakout_retest_research(
+        datasets["5m"], parameter_sets,
+        source_manifest=source_manifest, pip_size=pip_size, volume=volume,
+        artifact_metadata=metadata, **kwargs,
+    )
+    return AuditedXAUUSDResearchResult(audit, research)
 
 
 def run_csv_research(

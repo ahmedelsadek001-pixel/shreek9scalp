@@ -12,6 +12,7 @@ from research.dataset_provenance import DatasetProvenance
 from research.dataset_runner import (
     MANIFEST_BOUND_CONTEXT_EVALUATOR_ID,
     MANIFEST_BOUND_COST_APPLICATION_ID,
+    XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID,
     run_dataset_research,
 )
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult
@@ -118,7 +119,7 @@ def _release_artifact(strategy_id="breakout-retest", strategy_version="research-
 
 def _promotion_artifact(
     *, include_cost_provenance=True, adverse_cost_stress=True,
-    bound_costs=True, causal_context=True,
+    bound_costs=True, causal_context=True, audited_sources=True,
 ):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     bars = tuple(
@@ -212,6 +213,12 @@ def _promotion_artifact(
             "strategy_id": "breakout-retest",
             "strategy_version": "research-v1",
             "code_revision": CODE_REVISION,
+            **({
+                "xauusd_quality_gate": XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID,
+                "xauusd_5m_source_sha256": "a" * 64,
+                "xauusd_15m_source_sha256": "b" * 64,
+                "xauusd_1h_source_sha256": "c" * 64,
+            } if audited_sources else {}),
             **({"cost_application_id": MANIFEST_BOUND_COST_APPLICATION_ID} if bound_costs else {}),
         },
         source_manifest=(
@@ -259,6 +266,16 @@ def test_release_package_blocks_missing_broker_cost_provenance():
     )
     assert promotion.ready is False
     assert "V5.2 promotion blocked: research artifact lacks complete broker cost provenance" in promotion.failures
+
+
+def test_release_package_blocks_missing_three_timeframe_source_fingerprints():
+    package = ResearchReleasePackage(
+        complete(), _promotion_artifact(audited_sources=False),
+        "breakout-retest", "research-v1", CODE_REVISION,
+    )
+    decision = evaluate_research_release_package(package)
+    assert decision.ready is False
+    assert "research artifact lacks accepted three-timeframe XAUUSD source fingerprints" in decision.failures
 
 
 def test_release_package_blocks_unstressed_execution_costs():

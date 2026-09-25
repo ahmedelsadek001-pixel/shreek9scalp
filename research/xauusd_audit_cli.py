@@ -8,6 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from research.breakout_retest import ResearchBar
 from research.csv_adapter import load_ohlcv_csv
 from research.xauusd_dataset_quality import (
     XAUUSDDatasetAudit,
@@ -43,6 +44,22 @@ def audit_xauusd_csv_bundle(
     A passing structural audit is necessary, not sufficient: source identity,
     spread, fills, contract value and broker costs need external evidence.
     """
+    audit, _ = load_and_audit_xauusd_csv_bundle(
+        paths, policy=policy, source_manifest=source_manifest,
+    )
+    return audit
+
+
+def load_and_audit_xauusd_csv_bundle(
+    paths: Mapping[str, str | Path], *,
+    policy: XAUUSDQualityPolicy = XAUUSDQualityPolicy(),
+    source_manifest: XAUUSDSourceManifest | None = None,
+) -> tuple[XAUUSDCsvAudit, dict[str, tuple[ResearchBar, ...]]]:
+    """Return the validated bars from the exact bytes hashed by the audit.
+
+    Research callers can use this snapshot without reopening a file that may
+    change between dataset acceptance and the WFO run.
+    """
     if not isinstance(paths, Mapping) or set(paths) != {"5m", "15m", "1h"}:
         raise ValueError("paths must contain exactly 5m, 15m and 1h")
     policy.validate()
@@ -60,12 +77,13 @@ def audit_xauusd_csv_bundle(
         bars, _ = load_ohlcv_csv(raw.decode("utf-8-sig"))
         if source_manifest is not None:
             source_manifest.validate_bars_timezone(bars)
-        datasets[timeframe] = bars
+        datasets[timeframe] = tuple(bars)
         file_evidence.append(DatasetFileEvidence(
             timeframe, path.name, sha256(raw).hexdigest(), len(raw),
             bars[0].timestamp.isoformat(), bars[-1].timestamp.isoformat(),
         ))
-    return XAUUSDCsvAudit(tuple(file_evidence), audit_xauusd_multitimeframe(datasets, policy=policy))
+    audit = XAUUSDCsvAudit(tuple(file_evidence), audit_xauusd_multitimeframe(datasets, policy=policy))
+    return audit, datasets
 
 
 def main(argv: Sequence[str] | None = None) -> int:
