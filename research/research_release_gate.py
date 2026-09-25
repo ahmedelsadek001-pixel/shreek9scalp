@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from pathlib import Path
+from typing import Mapping
 
 from research.research_run_artifact import (
     ResearchRunArtifact,
@@ -19,6 +21,9 @@ from research.dataset_runner import (
     XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID,
 )
 from research.xauusd_source_manifest import XAUUSDSourceManifest
+from research.xauusd_audit_cli import load_and_audit_xauusd_csv_bundle
+from research.data_validation import validate_market_data
+from research.dataset_provenance import fingerprint_bars
 
 
 @dataclass(frozen=True)
@@ -75,6 +80,39 @@ class ResearchReleasePackage:
     strategy_id: str
     strategy_version: str
     code_revision: str
+    source_paths: Mapping[str, str | Path] | None = None
+
+
+def _source_bundle_failures(package: ResearchReleasePackage) -> tuple[str, ...]:
+    """Re-read the default three-frame audit and bind its M5 bars to WFO."""
+    if package.source_paths is None:
+        return ("research release lacks source files for independent quality recheck",)
+    metadata = dict(package.artifact.metadata)
+    try:
+        manifest = XAUUSDSourceManifest(
+            metadata["source_broker"], metadata["source_server"],
+            metadata["source_symbol"], int(metadata["source_timezone_offset_minutes"]),
+            int(metadata["source_digits"]), float(metadata["source_point_size"]),
+            float(metadata["source_contract_size"]), float(metadata["source_minimum_volume"]),
+            float(metadata["source_volume_step"]), float(metadata["source_spread_points"]),
+            float(metadata["source_round_turn_commission_per_lot"]),
+            float(metadata["source_slippage_points"]),
+        )
+        audit, datasets = load_and_audit_xauusd_csv_bundle(
+            package.source_paths, source_manifest=manifest,
+        )
+        if not audit.quality.passed:
+            return ("research release source files fail default three-timeframe quality audit",)
+        for item in audit.files:
+            if metadata.get(f"xauusd_{item.timeframe}_source_sha256") != item.sha256:
+                return ("research release source file fingerprints disagree with artifact",)
+        bars = datasets["5m"]
+        provenance = fingerprint_bars(bars, validate_market_data(bars))
+        if provenance != package.artifact.dataset:
+            return ("research release M5 bars disagree with artifact dataset",)
+    except (KeyError, TypeError, ValueError, OSError, UnicodeError, OverflowError):
+        return ("research release source files cannot be independently verified",)
+    return ()
 
 
 def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ...]:
@@ -187,7 +225,8 @@ def evaluate_research_release_package(package: ResearchReleasePackage) -> Resear
     except (TypeError, ValueError):
         return ResearchReleaseDecision(False, ("research artifact identity validation failed",))
     manual = evaluate_research_release(package.evidence)
+    source_failures = _source_bundle_failures(package)
     failures = manual.failures + tuple(
-        failure for failure in artifact_failures if failure not in manual.failures
+        failure for failure in artifact_failures + source_failures if failure not in manual.failures
     )
     return ResearchReleaseDecision(not failures, failures)

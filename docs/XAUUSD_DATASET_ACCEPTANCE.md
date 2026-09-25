@@ -52,4 +52,13 @@ runner, and embeds the M5/M15/H1 source hashes in the research artifact.
 Single-timeframe runners remain useful for diagnostics but do not enforce this
 three-timeframe acceptance rule.
 
+To evaluate a `ResearchReleasePackage` for V5.2 promotion, pass its
+`source_paths` mapping with the same M5, M15, and H1 CSV files. Promotion
+re-reads all three files under the default quality policy, compares their
+SHA-256 hashes with the artifact metadata, and compares the independently
+fingerprinted M5 bars with the artifact dataset. Missing, changed, invalid,
+or insufficient files block promotion. The hashes and quality marker in
+artifact metadata alone cannot authorize promotion. This local verification
+does not establish external broker provenance, real fills, or profitability.
+
 The gate performs no broker connection, order routing, or live authorization.

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -232,7 +233,7 @@ def _promotion_artifact(
     return result.artifact
 
 
-def test_release_package_accepts_complete_artifact_derived_evidence():
+def test_release_package_requires_independent_source_recheck():
     package = ResearchReleasePackage(
         complete(),
         _promotion_artifact(),
@@ -241,13 +242,56 @@ def test_release_package_accepts_complete_artifact_derived_evidence():
         CODE_REVISION,
     )
     decision = evaluate_research_release_package(package)
-    assert decision.ready is True
-    assert decision.failures == ()
+    assert decision.ready is False
+    assert decision.failures == ("research release lacks source files for independent quality recheck",)
     promotion = evaluate_v53_promotion(
         package, ExecutionSafetyEvidence(True, True, True, True, True, True, True)
     )
-    assert promotion.ready is True
-    assert promotion.failures == ()
+    assert promotion.ready is False
+    assert "V5.2 promotion blocked: research release lacks source files for independent quality recheck" in promotion.failures
+
+
+def test_release_package_rejects_unavailable_source_files():
+    package = ResearchReleasePackage(
+        complete(), _promotion_artifact(), "breakout-retest", "research-v1",
+        CODE_REVISION, {"5m": "/missing/m5.csv", "15m": "/missing/m15.csv", "1h": "/missing/h1.csv"},
+    )
+    decision = evaluate_research_release_package(package)
+    assert not decision.ready
+    assert "research release source files cannot be independently verified" in decision.failures
+
+
+def test_release_package_rechecks_source_hashes_and_m5_bars(monkeypatch):
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    bars = tuple(ResearchBar(start + timedelta(minutes=5 * index), 100.0 + index,
+                             101.0 + index, 99.0 + index, 100.5 + index, 10.0 + index)
+                 for index in range(13))
+    files = tuple(SimpleNamespace(timeframe=frame, sha256=digest * 64)
+                  for frame, digest in (("5m", "a"), ("15m", "b"), ("1h", "c")))
+    from research import research_release_gate
+
+    def audited(_paths, *, source_manifest):
+        assert source_manifest.symbol == "XAUUSD"
+        return SimpleNamespace(quality=SimpleNamespace(passed=True), files=files), {"5m": bars}
+
+    monkeypatch.setattr(research_release_gate, "load_and_audit_xauusd_csv_bundle", audited)
+    base = ResearchReleasePackage(
+        complete(), _promotion_artifact(), "breakout-retest", "research-v1",
+        CODE_REVISION, {"5m": "m5", "15m": "m15", "1h": "h1"},
+    )
+    assert evaluate_research_release_package(base).ready is True
+
+    files = tuple(SimpleNamespace(timeframe=frame, sha256="d" * 64 if frame == "5m" else digest * 64)
+                  for frame, digest in (("5m", "a"), ("15m", "b"), ("1h", "c")))
+    assert "research release source file fingerprints disagree with artifact" in (
+        evaluate_research_release_package(base).failures
+    )
+    files = tuple(SimpleNamespace(timeframe=frame, sha256=digest * 64)
+                  for frame, digest in (("5m", "a"), ("15m", "b"), ("1h", "c")))
+    bars = bars[:-1]
+    assert "research release M5 bars disagree with artifact dataset" in (
+        evaluate_research_release_package(base).failures
+    )
 
 
 def test_release_package_blocks_missing_broker_cost_provenance():
