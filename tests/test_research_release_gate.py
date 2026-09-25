@@ -4,7 +4,9 @@ import pytest
 
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
+from core.promotion_gate import evaluate_v53_promotion
 from core.research_certification import ResearchCertificationPolicy
+from execution.safety_gate import ExecutionSafetyEvidence
 from research.breakout_retest import ResearchBar
 from research.dataset_provenance import DatasetProvenance
 from research.dataset_runner import (
@@ -234,6 +236,11 @@ def test_release_package_accepts_complete_artifact_derived_evidence():
     decision = evaluate_research_release_package(package)
     assert decision.ready is True
     assert decision.failures == ()
+    promotion = evaluate_v53_promotion(
+        package, ExecutionSafetyEvidence(True, True, True, True, True, True, True)
+    )
+    assert promotion.ready is True
+    assert promotion.failures == ()
 
 
 def test_release_package_blocks_missing_broker_cost_provenance():
@@ -247,6 +254,11 @@ def test_release_package_blocks_missing_broker_cost_provenance():
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
     assert "research artifact lacks complete broker cost provenance" in decision.failures
+    promotion = evaluate_v53_promotion(
+        package, ExecutionSafetyEvidence(True, True, True, True, True, True, True)
+    )
+    assert promotion.ready is False
+    assert "V5.2 promotion blocked: research artifact lacks complete broker cost provenance" in promotion.failures
 
 
 def test_release_package_blocks_unstressed_execution_costs():

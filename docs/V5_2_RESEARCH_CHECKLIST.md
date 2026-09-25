@@ -46,3 +46,4 @@ The following must be generated from real historical/paper datasets and retained
 ## Promotion rule
 
 V5.2 is not promoted to V5.3 based on a single favorable backtest. Promotion requires the complete evidence bundle and an explicit research release decision. The promotion decision must be evaluated against the exact research artifact and its expected strategy ID/version; manually asserted evidence flags alone are not sufficient promotion evidence.
+The V5.3 promotion boundary validates a `ResearchReleasePackage` in-process. A standalone positive `ResearchReleaseDecision` is rejected, even if all manually supplied flags are true; a failed decision can still report diagnostic reasons. This admits only the paper/shadow V5.3 stage, never live order routing.
