@@ -62,3 +62,15 @@ artifact metadata alone cannot authorize promotion. This local verification
 does not establish external broker provenance, real fills, or profitability.
 
 The gate performs no broker connection, order routing, or live authorization.
+
+An explicit, reproducible read-only WFO run is available through
+`python -m research.xauusd_study_cli --spec docs/xauusd_study_spec.example.json
+--m5 /path/to/m5.csv --m15 /path/to/m15.csv --h1 /path/to/h1.csv
+--output /path/to/new-result.json`. The example describes the earlier
+diagnostic assumptions; its broker identity and costs remain unverified.
+The command rejects a dirty Git tree, binds the artifact to HEAD and
+the SHA-256 of the specification, checks the default three-timeframe audit,
+and writes one complete JSON bundle without overwriting existing evidence.
+An exit code of zero means a diagnostic bundle was written; inspect
+`summary.certification.passed` and `summary.oos_gate.passed` for the actual
+research decision. A diagnostic result never permits live trading.
