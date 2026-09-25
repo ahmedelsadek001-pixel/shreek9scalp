@@ -1,4 +1,6 @@
 import ast
+from datetime import datetime, timezone
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,8 @@ from execution.execution_gate import ExecutionGateDecision, evaluate_execution_g
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.reconciliation import ExecutionReport, OrderIntent
 from execution.recovery import RecoveryDecision, RecoveryState, ShadowRecovery
+from execution.quote_safety import evaluate_quote_safety
+from execution.idempotency import IdempotencyLedger
 from execution.shadow import ShadowExecution
 from core.enums import Direction
 
@@ -25,6 +29,16 @@ def _intent() -> OrderIntent:
     return OrderIntent("ORD-001", "XAUUSD", Direction.BUY, 0.03, 2500.0)
 
 
+def _safe_quote(intent: OrderIntent | None = None):
+    price = (intent or _intent()).expected_price
+    now = datetime(2026, 9, 21, tzinfo=timezone.utc)
+    return evaluate_quote_safety(
+        quote_time=now, now=now, intended_price=price,
+        market_price=price, max_age_seconds=2,
+        max_deviation_points=3, point_size=0.01,
+    )
+
+
 def test_rejected_gate_never_invokes_executor() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed"))
@@ -35,14 +49,14 @@ def test_rejected_gate_never_invokes_executor() -> None:
     assert calls == []
 
 
-def test_allowed_gate_invokes_executor_once() -> None:
+def test_allowed_gate_cannot_execute_without_intent() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed") or "accepted")
     result = adapter.execute(_ready_gate())
-    assert result.executed is True
-    assert result.result == "accepted"
-    assert result.reasons == ()
-    assert calls == ["executed"]
+    assert result.executed is False
+    assert result.result is None
+    assert result.reasons == ("unscoped execution disabled",)
+    assert calls == []
 
 
 def test_fabricated_allowed_gate_is_rejected_and_never_invokes_executor() -> None:
@@ -79,12 +93,12 @@ def test_internally_inconsistent_allowed_gate_is_fail_closed() -> None:
 def test_executor_failure_is_reported_without_retry() -> None:
     calls: list[str] = []
 
-    def fail() -> None:
+    def fail(_intent: OrderIntent) -> None:
         calls.append("executed")
         raise RuntimeError("transport failure")
 
-    adapter = GuardedExecutionAdapter(fail)
-    result = adapter.execute(_ready_gate())
+    adapter = GuardedExecutionAdapter(fail, IdempotencyLedger())
+    result = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
     assert result.executed is False
     assert result.result is None
     assert result.reasons == ("downstream execution failed: transport failure",)
@@ -93,9 +107,9 @@ def test_executor_failure_is_reported_without_retry() -> None:
 
 def test_intent_aware_execution_passes_exact_identity_to_executor() -> None:
     received: list[OrderIntent] = []
-    adapter = GuardedExecutionAdapter(lambda intent: received.append(intent) or intent.order_id)
+    adapter = GuardedExecutionAdapter(lambda intent: received.append(intent) or intent.order_id, IdempotencyLedger())
     intent = _intent()
-    result = adapter.execute_intent(_ready_gate(), intent)
+    result = adapter.execute_intent(_ready_gate(), intent, _safe_quote(intent))
     assert result.executed is True
     assert result.result == "ORD-001"
     assert received == [intent]
@@ -109,6 +123,20 @@ def test_intent_aware_execution_rejects_malformed_intent_without_transport() -> 
     assert result.executed is False
     assert result.result is None
     assert result.reasons == ("order intent malformed",)
+    assert calls == []
+
+
+@pytest.mark.parametrize("changes", [
+    {"volume": float("nan")}, {"volume": 0.0},
+    {"volume": True}, {"expected_price": float("inf")},
+    {"direction": Direction.UNKNOWN}, {"direction": "BUY"},
+])
+def test_intent_aware_execution_rejects_invalid_economics_and_direction(changes) -> None:
+    calls = []
+    intent = replace(_intent(), **changes)
+    adapter = GuardedExecutionAdapter(lambda received: calls.append(received), IdempotencyLedger())
+    result = adapter.execute_intent(_ready_gate(), intent, _safe_quote())
+    assert not result.executed
     assert calls == []
 
 
@@ -127,7 +155,7 @@ def test_recovery_pending_order_blocks_guarded_execution_until_reconciled() -> N
     recovery = ShadowRecovery(shadow)
     intent = _intent()
     shadow.submit_intent(intent)
-    adapter = GuardedExecutionAdapter(lambda received: received.order_id)
+    adapter = GuardedExecutionAdapter(lambda received: received.order_id, IdempotencyLedger())
 
     blocked_gate = evaluate_execution_gate(
         operational=(True, ()),
@@ -147,7 +175,7 @@ def test_recovery_pending_order_blocks_guarded_execution_until_reconciled() -> N
         recovery=recovery.admission(),
         kill_switch_active=False,
     )
-    admitted = adapter.execute_intent(ready_gate, intent)
+    admitted = adapter.execute_intent(ready_gate, intent, _safe_quote(intent))
     assert admitted.executed is True
     assert admitted.result == intent.order_id
 
@@ -155,7 +183,7 @@ def test_recovery_pending_order_blocks_guarded_execution_until_reconciled() -> N
 def test_recovery_transition_blocks_execution_until_clean_recovery() -> None:
     shadow = ShadowExecution()
     recovery = ShadowRecovery(shadow)
-    adapter = GuardedExecutionAdapter(lambda received: received.order_id)
+    adapter = GuardedExecutionAdapter(lambda received: received.order_id, IdempotencyLedger())
     intent = _intent()
 
     recovery.disconnect()
@@ -181,7 +209,7 @@ def test_recovery_transition_blocks_execution_until_clean_recovery() -> None:
             recovery=recovery.admission(),
             kill_switch_active=False,
         ),
-        intent,
+        intent, _safe_quote(intent),
     )
     assert admitted.executed is True
     assert admitted.result == intent.order_id
@@ -263,8 +291,8 @@ def test_idempotency_ledger_blocks_second_transport_attempt() -> None:
     calls: list[str] = []
     ledger = IdempotencyLedger()
     adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent.order_id) or "sent", ledger)
-    first = adapter.execute_intent(_ready_gate(), _intent())
-    second = adapter.execute_intent(_ready_gate(), _intent())
+    first = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
+    second = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
     assert first.executed is True
     assert second.executed is False
     assert "idempotency rejected" in second.reasons[0]
@@ -279,10 +307,20 @@ def test_transport_exception_marks_intent_unknown_and_blocks_retry() -> None:
         calls.append(intent.order_id)
         raise TimeoutError("broker timeout")
     adapter = GuardedExecutionAdapter(fail, ledger)
-    first = adapter.execute_intent(_ready_gate(), _intent())
+    first = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
     assert first.executed is False
     assert ledger.get("ORD-001").state is SubmissionState.UNKNOWN
-    second = adapter.execute_intent(_ready_gate(), _intent())
+    second = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
     assert second.executed is False
     assert calls == ["ORD-001"]
 
+
+def test_missing_ledger_blocks_transport() -> None:
+    calls = []
+    adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent.order_id))
+    blocked = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
+    assert not blocked.executed
+    assert blocked.reasons == ("idempotency ledger required",)
+    blocked = adapter.execute_intent(_ready_gate(), _intent(), _safe_quote())
+    assert not blocked.executed
+    assert calls == []

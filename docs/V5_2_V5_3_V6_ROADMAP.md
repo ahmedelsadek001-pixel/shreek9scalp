@@ -16,8 +16,11 @@
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
-- Strict broker-bound submission requires an explicit quote-freshness and
-  deviation decision; missing quote evidence is rejected before transport.
+- Every guarded intent submission requires a quote-freshness and deviation
+  decision issued by the quote gate for that intent's expected price, plus
+  an explicit idempotency ledger. A fabricated, missing, or mismatched quote
+  and a missing ledger are rejected before transport. Legacy unscoped
+  `execute()` calls are blocked, including with an otherwise allowed gate.
 - Broker outcome decisions are schema-checked before mutating idempotency
   state; inconsistent retry flags fail closed.
 - V5.3 promotion uses an explicit execution-safety evidence gate covering

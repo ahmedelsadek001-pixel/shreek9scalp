@@ -1,13 +1,25 @@
 """Fail-closed quote freshness and execution deviation gate for SHREEK V5.3."""
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from math import isfinite
+
+_QUOTE_DECISION_CAPABILITY = object()
 
 @dataclass(frozen=True)
 class QuoteSafetyDecision:
     allowed: bool
     reason: str
+    intended_price: float | None = None
+    _capability: object | None = field(default=None, repr=False, compare=False)
+
+
+def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
+    """Reject caller-created approval flags at the transport boundary."""
+    return (
+        isinstance(decision, QuoteSafetyDecision)
+        and decision._capability is _QUOTE_DECISION_CAPABILITY
+    )
 
 def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:float, market_price:float, max_age_seconds:float, max_deviation_points:float, point_size:float)->QuoteSafetyDecision:
     if not isinstance(quote_time,datetime) or not isinstance(now,datetime) or quote_time.tzinfo is None or now.tzinfo is None:
@@ -29,4 +41,4 @@ def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:f
     deviation=abs(market-intended)/point
     if deviation>max_dev:
         return QuoteSafetyDecision(False,"market price deviation exceeds limit")
-    return QuoteSafetyDecision(True,"quote freshness and deviation accepted")
+    return QuoteSafetyDecision(True,"quote freshness and deviation accepted",intended,_QUOTE_DECISION_CAPABILITY)

@@ -6,6 +6,8 @@ from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.recovery import RecoveryState, ShadowRecovery
 from execution.shadow import ShadowExecution
 from execution.shadow_pipeline import PaperShadowBridge
+from execution.quote_safety import evaluate_quote_safety
+from execution.idempotency import IdempotencyLedger
 from paper_trading.engine import PaperFill, PaperOrder
 
 
@@ -45,7 +47,7 @@ def test_shadow_reconciliation_recovery_reaches_transport_only_after_all_guards(
         kill_switch_active=False,
     )
     calls: list[str] = []
-    adapter = GuardedExecutionAdapter(lambda received: calls.append(received.order_id) or "sent")
+    adapter = GuardedExecutionAdapter(lambda received: calls.append(received.order_id) or "sent", IdempotencyLedger())
     blocked_result = adapter.execute_intent(blocked_gate, intent)
     assert blocked_result.executed is False
     assert calls == []
@@ -64,7 +66,13 @@ def test_shadow_reconciliation_recovery_reaches_transport_only_after_all_guards(
     assert recovered.can_submit is True
 
     gate = _ready_gate(recovery)
-    result = adapter.execute_intent(gate, intent)
+    now = datetime(2026, 9, 13, 10, 1, tzinfo=timezone.utc)
+    quote = evaluate_quote_safety(
+        quote_time=now, now=now, intended_price=intent.expected_price,
+        market_price=intent.expected_price, max_age_seconds=2,
+        max_deviation_points=3, point_size=0.01,
+    )
+    result = adapter.execute_intent(gate, intent, quote)
     assert result.executed is True
     assert result.result == "sent"
     assert calls == ["e2e-001"]
