@@ -1,6 +1,7 @@
 """Fail-closed execution adapter boundary for SHREEK V5.3."""
 from __future__ import annotations
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from math import isfinite
 from typing import Callable, Generic, TypeVar, cast
 from core.enums import Direction
@@ -12,6 +13,11 @@ from execution.quote_safety import QuoteSafetyDecision, is_quote_issued
 T=TypeVar("T")
 IntentExecutor=Callable[[OrderIntent],T]
 Executor=Callable[...,T]
+
+
+def utc_now() -> datetime:
+    """Use wall time again at submission; a quote can expire after evaluation."""
+    return datetime.now(timezone.utc)
 
 @dataclass(frozen=True)
 class GuardedExecutionResult(Generic[T]):
@@ -38,6 +44,8 @@ class GuardedExecutionAdapter(Generic[T]):
             return ("execution gate reasons malformed",)
         if decision.allowed and decision.reasons: return ("execution gate decision internally inconsistent",)
         if not decision.allowed: return decision.reasons or ("execution gate rejected without reason",)
+        if decision.admitted_symbol is None or decision.admitted_volume is None:
+            return ("execution requires evaluated environment",)
         return None
 
     def execute(self,decision:ExecutionGateDecision)->GuardedExecutionResult[T]:
@@ -58,6 +66,8 @@ class GuardedExecutionAdapter(Generic[T]):
                 or intent.volume <= 0 or type(intent.expected_price) not in (int,float)
                 or not isfinite(intent.expected_price) or intent.expected_price <= 0):
             return GuardedExecutionResult(False,None,("order intent economics invalid",))
+        if decision.admitted_symbol != intent.symbol or decision.admitted_volume != intent.volume:
+            return GuardedExecutionResult(False,None,("evaluated environment does not match intent",))
         if quote_safety is None:
             return GuardedExecutionResult(False,None,("quote safety decision required",))
         if not isinstance(quote_safety,QuoteSafetyDecision) or type(quote_safety.allowed) is not bool or not isinstance(quote_safety.reason,str):
@@ -68,6 +78,14 @@ class GuardedExecutionAdapter(Generic[T]):
             return GuardedExecutionResult(False,None,("quote safety decision not issued by quote gate",))
         if quote_safety.intended_price != intent.expected_price:
             return GuardedExecutionResult(False,None,("quote safety price does not match intent",))
+        now = utc_now()
+        if (quote_safety.quote_time is None or quote_safety.evaluated_at is None
+                or quote_safety.max_age_seconds is None):
+            return GuardedExecutionResult(False,None,("quote timing evidence missing",))
+        if (now - quote_safety.evaluated_at).total_seconds() < 0:
+            return GuardedExecutionResult(False,None,("quote evaluated in the future",))
+        if (now - quote_safety.quote_time).total_seconds() > quote_safety.max_age_seconds:
+            return GuardedExecutionResult(False,None,("quote expired before submission",))
         if self._ledger is None:
             return GuardedExecutionResult(False,None,("idempotency ledger required",))
         try: self._ledger.begin(intent)

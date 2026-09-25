@@ -26,6 +26,11 @@
   or copying a fresh quote to change its intended price, fails before
   transport. This is an in-process consistency check, not independent broker
   verification or a live authorization credential.
+- Caller-supplied positive operational/broker tuples remain diagnostic only.
+  Guarded submission requires a policy-evaluated environment decision for
+  the same symbol and volume as the intent, and rechecks quote age at the
+  instant of submission. These supplied environment facts are still not
+  independently observed broker state or live authority.
 - Broker outcome decisions are schema-checked before mutating idempotency
   state; inconsistent retry flags fail closed.
 - V5.3 promotion uses an explicit execution-safety evidence gate covering

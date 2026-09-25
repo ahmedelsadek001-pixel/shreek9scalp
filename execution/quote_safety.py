@@ -14,6 +14,9 @@ class QuoteSafetyDecision:
     reason: str
     intended_price: float | None = None
     _capability: object | None = field(default=None, repr=False, compare=False)
+    quote_time: datetime | None = None
+    evaluated_at: datetime | None = None
+    max_age_seconds: float | None = None
 
 
 def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
@@ -22,7 +25,10 @@ def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
         isinstance(decision, QuoteSafetyDecision)
         and decision._capability is _QUOTE_DECISION_CAPABILITY
         and _ISSUED_QUOTES.is_issued(
-            decision, (decision.allowed, decision.reason, decision.intended_price),
+            decision, (
+                decision.allowed, decision.reason, decision.intended_price,
+                decision.quote_time, decision.evaluated_at, decision.max_age_seconds,
+            ),
         )
     )
 
@@ -46,6 +52,12 @@ def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:f
     deviation=abs(market-intended)/point
     if deviation>max_dev:
         return QuoteSafetyDecision(False,"market price deviation exceeds limit")
-    decision = QuoteSafetyDecision(True,"quote freshness and deviation accepted",intended,_QUOTE_DECISION_CAPABILITY)
-    _ISSUED_QUOTES.issue(decision, (decision.allowed, decision.reason, decision.intended_price))
+    decision = QuoteSafetyDecision(
+        True,"quote freshness and deviation accepted",intended,
+        _QUOTE_DECISION_CAPABILITY,quote_time,now,max_age,
+    )
+    _ISSUED_QUOTES.issue(decision, (
+        decision.allowed, decision.reason, decision.intended_price,
+        decision.quote_time, decision.evaluated_at, decision.max_age_seconds,
+    ))
     return decision

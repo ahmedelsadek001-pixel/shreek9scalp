@@ -24,12 +24,19 @@ class ExecutionGateDecision:
     allowed: bool
     reasons: tuple[str, ...]
     _capability: object | None = field(default=None, repr=False, compare=False)
+    admitted_symbol: str | None = None
+    admitted_volume: float | None = None
 
 
-def _issue_decision(allowed: bool, reasons: tuple[str, ...]) -> ExecutionGateDecision:
+def _issue_decision(
+    allowed: bool, reasons: tuple[str, ...], *,
+    symbol: str | None = None, volume: float | None = None,
+) -> ExecutionGateDecision:
     """Issue an admission decision with an internal capability for execution."""
-    decision = ExecutionGateDecision(allowed, reasons, _EXECUTION_ADMISSION_CAPABILITY)
-    _ISSUED_DECISIONS.issue(decision, (allowed, reasons))
+    decision = ExecutionGateDecision(
+        allowed, reasons, _EXECUTION_ADMISSION_CAPABILITY, symbol, volume,
+    )
+    _ISSUED_DECISIONS.issue(decision, (allowed, reasons, symbol, volume))
     return decision
 
 
@@ -37,7 +44,10 @@ def is_gate_issued(decision: ExecutionGateDecision) -> bool:
     """Return whether the decision originated from this gate implementation."""
     return (isinstance(decision, ExecutionGateDecision)
             and decision._capability is _EXECUTION_ADMISSION_CAPABILITY
-            and _ISSUED_DECISIONS.is_issued(decision, (decision.allowed, decision.reasons)))
+            and _ISSUED_DECISIONS.is_issued(decision, (
+                decision.allowed, decision.reasons,
+                decision.admitted_symbol, decision.admitted_volume,
+            )))
 
 
 def evaluate_execution_gate(
@@ -50,8 +60,8 @@ def evaluate_execution_gate(
     """Combine independent safety decisions with a mandatory kill switch.
 
     Any malformed decision or non-boolean kill-switch value fails closed.
-    This function grants only *admission* to a downstream adapter; it has no
-    broker authority and cannot itself place an order.
+    This function combines diagnostics supplied by a caller. A positive
+    result is not transport admission: it has no checked symbol or volume.
     """
     reasons: list[str] = []
     for name, decision in (("operational", operational), ("broker", broker)):
@@ -111,9 +121,14 @@ def evaluate_environment_gate(
         )
     except (TypeError, ValueError, OverflowError) as exc:
         return _issue_decision(False, (f"safety evaluation error: {exc}",))
-    return evaluate_execution_gate(
+    combined = evaluate_execution_gate(
         operational=operational,
         broker=broker,
         recovery=recovery,
         kill_switch_active=kill_switch_active,
+    )
+    # Only this path derives both checks from policies and snapshots. Keep
+    # the checked symbol and volume so an unrelated intent cannot reuse it.
+    return _issue_decision(
+        combined.allowed, combined.reasons, symbol=symbol, volume=volume,
     )

@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from execution.execution_gate import ExecutionGateDecision, evaluate_execution_gate
+from execution.execution_gate import (
+    ExecutionGateDecision, evaluate_environment_gate, evaluate_execution_gate,
+)
+from execution.broker_safety import BrokerSafetyPolicy
+from execution.operational_guard import OperationalPolicy, OperationalSnapshot
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.reconciliation import ExecutionReport, OrderIntent
 from execution.recovery import RecoveryDecision, RecoveryState, ShadowRecovery
@@ -23,8 +27,19 @@ COMPAT_PATH = Path("utils/mt5_compat.py")
 GUARDED_PATH = Path("execution/guarded_adapter.py")
 
 
-def _ready_gate() -> ExecutionGateDecision:
-    return evaluate_execution_gate(operational=(True, ()), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=False)
+def _ready_gate(
+    recovery: RecoveryDecision | None = None, *,
+    symbol: str = "XAUUSD", volume: float = 0.03,
+) -> ExecutionGateDecision:
+    now = datetime(2026, 9, 21, tzinfo=timezone.utc)
+    return evaluate_environment_gate(
+        operational_policy=OperationalPolicy(),
+        operational_snapshot=OperationalSnapshot(now, now, now, True, True),
+        broker_policy=BrokerSafetyPolicy(frozenset({"XAUUSD", "EURUSD"}), 1.0, 0.01, 1.0, 0.5),
+        symbol=symbol, spread=0.2, volume=volume, slippage=0.1,
+        recovery=recovery or RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        kill_switch_active=False,
+    )
 
 
 def _intent() -> OrderIntent:
@@ -33,7 +48,7 @@ def _intent() -> OrderIntent:
 
 def _safe_quote(intent: OrderIntent | None = None):
     price = (intent or _intent()).expected_price
-    now = datetime(2026, 9, 21, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     return evaluate_quote_safety(
         quote_time=now, now=now, intended_price=price,
         market_price=price, max_age_seconds=2,
@@ -58,6 +73,33 @@ def test_allowed_gate_cannot_execute_without_intent() -> None:
     assert result.executed is False
     assert result.result is None
     assert result.reasons == ("unscoped execution disabled",)
+    assert calls == []
+
+
+def test_caller_supplied_positive_layers_cannot_invoke_transport() -> None:
+    calls = []
+    decision = evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        kill_switch_active=False,
+    )
+    assert decision.allowed
+    adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent), IdempotencyLedger())
+    result = adapter.execute_intent(decision, _intent(), _safe_quote())
+    assert not result.executed
+    assert result.reasons == ("execution requires evaluated environment",)
+    assert calls == []
+
+
+@pytest.mark.parametrize("admitted", [
+    {"symbol": "EURUSD"}, {"volume": 0.04},
+])
+def test_environment_admission_is_bound_to_intent(admitted) -> None:
+    calls = []
+    adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent), IdempotencyLedger())
+    result = adapter.execute_intent(_ready_gate(**admitted), _intent(), _safe_quote())
+    assert not result.executed
+    assert result.reasons == ("evaluated environment does not match intent",)
     assert calls == []
 
 
@@ -202,12 +244,7 @@ def test_recovery_pending_order_blocks_guarded_execution_until_reconciled() -> N
     assert "recovery: execution channel is not ready" in blocked.reasons
 
     shadow.observe(ExecutionReport(intent.order_id, intent.symbol, intent.direction, intent.volume, intent.expected_price))
-    ready_gate = evaluate_execution_gate(
-        operational=(True, ()),
-        broker=(True, ()),
-        recovery=recovery.admission(),
-        kill_switch_active=False,
-    )
+    ready_gate = _ready_gate(recovery.admission())
     admitted = adapter.execute_intent(ready_gate, intent, _safe_quote(intent))
     assert admitted.executed is True
     assert admitted.result == intent.order_id
@@ -222,12 +259,7 @@ def test_recovery_transition_blocks_execution_until_clean_recovery() -> None:
     recovery.disconnect()
     assert recovery.begin_recovery().state is RecoveryState.RECOVERING
     blocked = adapter.execute_intent(
-        evaluate_execution_gate(
-            operational=(True, ()),
-            broker=(True, ()),
-            recovery=recovery.admission(),
-            kill_switch_active=False,
-        ),
+        _ready_gate(recovery.admission()),
         intent,
     )
     assert blocked.executed is False
@@ -236,12 +268,7 @@ def test_recovery_transition_blocks_execution_until_clean_recovery() -> None:
 
     assert recovery.complete_recovery().can_submit
     admitted = adapter.execute_intent(
-        evaluate_execution_gate(
-            operational=(True, ()),
-            broker=(True, ()),
-            recovery=recovery.admission(),
-            kill_switch_active=False,
-        ),
+        _ready_gate(recovery.admission()),
         intent, _safe_quote(intent),
     )
     assert admitted.executed is True

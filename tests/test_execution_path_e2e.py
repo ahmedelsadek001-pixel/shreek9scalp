@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 
 from core.enums import Direction
-from execution.execution_gate import evaluate_execution_gate
+from execution.execution_gate import evaluate_environment_gate, evaluate_execution_gate
+from execution.broker_safety import BrokerSafetyPolicy
+from execution.operational_guard import OperationalPolicy, OperationalSnapshot
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.recovery import RecoveryState, ShadowRecovery
 from execution.shadow import ShadowExecution
@@ -20,9 +22,12 @@ def _order() -> PaperOrder:
 
 def _ready_gate(recovery: ShadowRecovery):
     decision = recovery.admission()
-    return evaluate_execution_gate(
-        operational=(True, ()),
-        broker=(True, ()),
+    now = datetime.now(timezone.utc)
+    return evaluate_environment_gate(
+        operational_policy=OperationalPolicy(),
+        operational_snapshot=OperationalSnapshot(now, now, now, True, True),
+        broker_policy=BrokerSafetyPolicy(frozenset({"XAUUSD"}), 1.0, .01, 1.0, .5),
+        symbol="XAUUSD", spread=.2, volume=.03, slippage=.1,
         recovery=decision,
         kill_switch_active=False,
     )
@@ -66,7 +71,7 @@ def test_shadow_reconciliation_recovery_reaches_transport_only_after_all_guards(
     assert recovered.can_submit is True
 
     gate = _ready_gate(recovery)
-    now = datetime(2026, 9, 13, 10, 1, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     quote = evaluate_quote_safety(
         quote_time=now, now=now, intended_price=intent.expected_price,
         market_price=intent.expected_price, max_age_seconds=2,
