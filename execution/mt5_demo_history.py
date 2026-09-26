@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
 from math import isfinite
 from pathlib import Path
 import sqlite3
@@ -58,14 +59,16 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
     report = refused("DEMO broker history unavailable")
     try:
         with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as db:
-            rows = db.execute("SELECT intent_id, broker_order_id, symbol, side, volume "
+            rows = db.execute("SELECT account_hash, intent_id, broker_order_id, symbol, side, volume "
                               "FROM attempts WHERE status='ACCEPTED' ORDER BY reserved_at").fetchall()
         initialized = api.initialize(config.terminal_path, timeout=config.timeout_ms) is True
         if not initialized or not _active_demo(api, config):
             return refused("DEMO account changed or disconnected")
+        fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
-        for intent_id, order_id, symbol, side, volume in rows:
-            if (type(order_id) is not int or order_id <= 0 or symbol != config.symbol
+        for account_hash, intent_id, order_id, symbol, side, volume in rows:
+            if (account_hash != fingerprint or type(order_id) is not int or order_id <= 0
+                    or symbol != config.symbol
                     or side not in ("BUY", "SELL") or type(volume) not in (int, float)
                     or not isfinite(volume) or volume <= 0):
                 return refused("DEMO ledger identity malformed")

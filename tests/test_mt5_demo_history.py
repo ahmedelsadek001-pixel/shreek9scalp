@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import sqlite3
 
 from execution.mt5_demo_history import inspect_demo_history
 from execution.mt5_demo_transport import submit_demo_order
@@ -54,3 +55,15 @@ def test_real_account_or_missing_broker_history_refused(tmp_path):
     api.history_deals_get = lambda **kwargs: None
     api.DEAL_ENTRY_IN = 0
     assert not inspect_demo_history(api, CONFIG, ledger).verified_demo
+
+
+def test_mixed_account_ledger_never_reports_another_demo_as_ours(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    with sqlite3.connect(ledger) as db:
+        db.execute("UPDATE attempts SET account_hash=?", ("0" * 64,))
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert "ledger identity malformed" in report.reason
