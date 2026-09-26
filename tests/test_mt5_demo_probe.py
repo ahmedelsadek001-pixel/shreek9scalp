@@ -132,3 +132,28 @@ def test_binding_is_explicit_and_cli_never_prints_account(monkeypatch, capsys):
     assert "10123" not in output
     with pytest.raises(ValueError, match="positive integer"):
         DemoTerminalConfig("terminal.exe", True, "Sandbox-Demo").validate()
+
+
+def test_cli_verified_demo_redacts_login_and_never_enables_transport(monkeypatch, capsys):
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setattr(mt5_demo_probe_cli, "read_only_mt5_runtime", lambda: FakeMT5())
+    assert mt5_demo_probe_cli.main() == 0
+    import json
+    output = capsys.readouterr().out
+    assert "10123" not in output and "Sandbox-Demo" not in output
+    report = json.loads(output)
+    assert report["connected_demo"] is True
+    assert report["order_transport_enabled"] is False
+
+
+def test_cli_refuses_real_account_without_exposing_it(monkeypatch, capsys):
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setattr(mt5_demo_probe_cli, "read_only_mt5_runtime",
+                        lambda: FakeMT5(account=Account(trade_mode=2)))
+    assert mt5_demo_probe_cli.main() == 2
+    output = capsys.readouterr().out
+    assert "10123" not in output and '"connected_demo": false' in output
