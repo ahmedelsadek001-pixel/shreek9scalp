@@ -59,16 +59,20 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
     report = refused("DEMO broker history unavailable")
     try:
         with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as db:
-            rows = db.execute("SELECT account_hash, intent_id, broker_order_id, broker_deal_id, "
+            rows = db.execute("SELECT account_hash, intent_id, status, broker_order_id, broker_deal_id, "
                               "symbol, side, volume "
-                              "FROM attempts WHERE status='ACCEPTED' ORDER BY reserved_at").fetchall()
+                              "FROM attempts ORDER BY reserved_at").fetchall()
         initialized = api.initialize(config.terminal_path, timeout=config.timeout_ms) is True
         if not initialized or not _active_demo(api, config):
             return refused("DEMO account changed or disconnected")
         fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
-        for account_hash, intent_id, order_id, deal_id, symbol, side, volume in rows:
-            if (account_hash != fingerprint or type(order_id) is not int or order_id <= 0
+        for account_hash, intent_id, status, order_id, deal_id, symbol, side, volume in rows:
+            if account_hash != fingerprint or status not in ("UNKNOWN", "ACCEPTED"):
+                return refused("DEMO ledger identity malformed")
+            if status == "UNKNOWN":
+                return refused("unresolved DEMO submission; reconcile broker history")
+            if (type(order_id) is not int or order_id <= 0
                     or (deal_id is not None and (type(deal_id) is not int or deal_id <= 0))
                     or symbol != config.symbol
                     or side not in ("BUY", "SELL") or type(volume) not in (int, float)

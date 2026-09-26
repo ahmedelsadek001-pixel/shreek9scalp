@@ -94,8 +94,10 @@ broker prices, volumes, and broker profit/commission/swap/fee fields. A manual
 close is marked `manual_intervention=true`. `closed_observed` means the broker
 history has a matching opening deal and fully offsetting exit volume; it does
 not assert strategy authorship or profitability. A history read error, REAL
-account, missing DEMO identity, missing opening deal, or account switch causes
-the entire read to fail closed. Store broker exports and local SQLite records
+account, missing DEMO identity, unresolved `UNKNOWN` submission, missing opening
+deal, or account switch causes the entire read to fail closed. An uncertain
+submission needs independent broker reconciliation; never delete the ledger
+or resubmit its intent. Store broker exports and local SQLite records
 privately outside the repository; account IDs and passwords never belong in
 Git or the chat.
 

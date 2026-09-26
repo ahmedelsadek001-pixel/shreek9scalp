@@ -85,3 +85,15 @@ def test_wrong_broker_fill_cannot_validate_ledger_order(tmp_path, override):
     report = inspect_demo_history(api, CONFIG, ledger)
     assert report.verified_demo is False
     assert report.attempts == ()
+
+
+def test_unknown_broker_submission_cannot_disappear_from_history_report(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    api.order_send = lambda request: None
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+    assert result.sent and not result.accepted
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert "unresolved DEMO submission" in report.reason
