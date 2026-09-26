@@ -99,6 +99,10 @@ the entire read to fail closed. Store broker exports and local SQLite records
 privately outside the repository; account IDs and passwords never belong in
 Git or the chat.
 
+The optional bounded automatic research runner is documented separately in
+[MT5_DEMO_AUTOMATION.md](MT5_DEMO_AUTOMATION.md). It remains DEMO-only and
+cannot promote failed strategy research to an approved live strategy.
+
 Broker references: [Python account_info](https://www.mql5.com/en/docs/python_metatrader5/mt5accountinfo_py),
 [account trade modes](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),
 and [Python initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py).

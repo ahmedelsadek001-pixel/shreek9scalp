@@ -162,6 +162,13 @@ def test_no_broker_approval_or_read_error_never_reserves(tmp_path):
     assert not api.sends
 
 
+def test_strategy_expected_price_deviation_is_checked_at_transport(tmp_path):
+    order = DemoOrder("auto-price-1", "XAUUSD.s", "BUY", .01, 3998, 4002, 3999.0)
+    api = FakeMT5()
+    result = submit_demo_order(api, CONFIG, order, tmp_path / "demo.sqlite3")
+    assert not result.sent and not api.sends
+
+
 def test_unknown_outcome_stays_reserved_and_blocks_following_orders(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     api = FakeMT5()

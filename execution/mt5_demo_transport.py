@@ -25,6 +25,7 @@ class DemoOrder:
     volume: float
     stop_loss: float
     take_profit: float
+    expected_price: float | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +120,9 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
     if (not isinstance(ledger, Path) or not re.fullmatch(r"[A-Za-z0-9_-]{8,48}", order.intent_id)
             or order.symbol != config.symbol or order.side not in ("BUY", "SELL")
             or not all(_number(x) for x in (order.volume, order.stop_loss, order.take_profit))
-            or order.volume <= 0 or order.volume > 0.01):
+            or order.volume <= 0 or order.volume > 0.01
+            or (order.expected_price is not None
+                and (not _number(order.expected_price) or order.expected_price <= 0))):
         return refused("invalid or oversized DEMO intent")
     clock = now or datetime.now(timezone.utc)
     if clock.tzinfo is None:
@@ -156,6 +159,8 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
                 or tick.ask - tick.bid > 0.50):
             return refused("missing, stale or wide DEMO quote")
         price = tick.ask if order.side == "BUY" else tick.bid
+        if order.expected_price is not None and abs(price - order.expected_price) > 0.10:
+            return refused("DEMO quote moved beyond strategy signal price")
         if (order.side == "BUY" and not (order.stop_loss < price < order.take_profit)
                 or order.side == "SELL" and not (order.take_profit < price < order.stop_loss)):
             return refused("protective stop or target invalid")
