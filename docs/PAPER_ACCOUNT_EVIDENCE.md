@@ -60,3 +60,8 @@ can be marked true. Passing CI or the local audit is not trading profitability.
 `build_paper_account_evidence` emits a negative V5.1 release evidence record
 even when the CSV audit passes, so this local route cannot promote a phase.
 Live MT5 order routing stays disabled.
+
+The isolated DEMO-only order sandbox is a manual broker-transport check. Its
+durable SQLite acknowledgements do not attribute orders to SHREEK strategy
+signals, provide independent broker-exported closed fills, or change
+`paper_trading_validated=false`.

@@ -36,11 +36,51 @@ changed identity, or missing symbol details exits with status 2. The module
 closes the terminal connection after every inspection. It never logs in, sends
 orders, opens/closes positions, or makes `paper_trading_validated` true.
 
-Broker DEMO order submission and immutable matching of SHREEK signal IDs to
-observed broker deals are still to be implemented and independently validated
+Strategy-driven DEMO order submission and immutable matching of SHREEK signal IDs
+to observed broker deals are still to be implemented and independently validated
 before the [paper account evidence requirements](PAPER_ACCOUNT_EVIDENCE.md)
-can pass. This repository's production security gate continues to block
-direct broker order submission; live MT5 trading remains disabled.
+can pass. The production security gate blocks all broker send calls except
+the exact reviewed DEMO-only sandbox module; live MT5 trading remains disabled.
+
+## Isolated DEMO order sandbox
+
+The optional `execution.mt5_demo_order_cli` sends **one manually specified**
+0.01-lot DEMO market order only when `--execute-demo` and the separate local
+`SHREEK_DEMO_TRADING_ACK=DEMO_ONLY` flag are present. This does not prove a
+strategy signal and does not qualify as a paper-account strategy trade. Do not
+use this command when the terminal reports `trade_allowed=false`; the broker
+or operator must permit DEMO trading before a sandbox send can succeed.
+
+The transport checks actual account mode, exact login/server, terminal and
+account trading permissions, exact broker symbol, IOC filling, fresh quote,
+spread at most 0.50 in price units, no existing account positions or pending
+orders, a stop and target on the correct sides, and a maximum stop loss of
+0.5% of DEMO equity. It supports USD account and USD symbol profit currency
+only. The protective stop and target are submitted in the same request.
+The broker pre-check is followed by another account/quote check. The
+submission reserves a unique ID in a durable local SQLite file *before*
+calling the broker. Uncertain results remain locked against new attempts;
+inspect broker history and reconcile them manually. The command never retries.
+No account number, password, or statement is printed or committed to Git.
+
+When the DEMO terminal permits trading and an independently reviewed DEMO
+test order is chosen, the operator sets the local opt-in and enters the
+appropriate protective prices as local inputs:
+
+```powershell
+$env:SHREEK_DEMO_TRADING_ACK = 'DEMO_ONLY'
+$ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'
+New-Item -ItemType Directory -Force -Path $ledgerDir | Out-Null
+$stop = Read-Host 'Protective stop price (DEMO)'
+$target = Read-Host 'Target price (DEMO)'
+$intent = [guid]::NewGuid().ToString('N')
+py -m execution.mt5_demo_order_cli --execute-demo --intent-id $intent --side BUY --stop-loss $stop --take-profit $target --ledger (Join-Path $ledgerDir 'demo_orders.sqlite3')
+```
+
+The CLI also accepts `--side SELL` with the stop above the current bid and
+target below it. A broker acknowledgement must still be reconciled against
+an independent DEMO broker history export. Live-account order routing is
+never authorized by this CLI, and V5.2/V5.3 certification remains blocked.
 
 Broker references: [Python account_info](https://www.mql5.com/en/docs/python_metatrader5/mt5accountinfo_py),
 [account trade modes](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),

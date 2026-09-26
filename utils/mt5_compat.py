@@ -33,3 +33,8 @@ AVAILABLE = _mt5 is not None
 def read_only_mt5_runtime():
     """Return the native runtime only; never substitute the CI stub for a broker probe."""
     return _mt5
+
+
+def demo_only_mt5_runtime():
+    """Return native MT5 for the isolated, account-attested DEMO transport."""
+    return _mt5

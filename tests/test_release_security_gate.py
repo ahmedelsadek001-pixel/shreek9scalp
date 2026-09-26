@@ -21,6 +21,14 @@ def test_live_order_marker_is_blocked():
     assert any(f.rule == "live-order-authority" for f in findings)
 
 
+def test_only_exact_reviewed_demo_transport_is_authorized():
+    path = Path("execution/mt5_demo_transport.py")
+    source = path.read_text(encoding="utf-8")
+    assert not scan_source(str(path), source)
+    assert any(f.rule == "live-order-authority" for f in scan_source(str(path), source + "\n"))
+    assert any(f.rule == "live-order-authority" for f in scan_source("execution/other.py", source))
+
+
 @pytest.mark.parametrize("function_name", ["positions_send", "trade_transaction", "send_order", "place_order", "submit_order"])
 def test_alternate_transport_markers_are_blocked(function_name):
     findings = scan_source("bad.py", f"result = broker.{function_name}(request)\n")

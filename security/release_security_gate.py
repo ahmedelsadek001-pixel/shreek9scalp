@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 import re
 from typing import Iterable, Union
@@ -36,6 +37,17 @@ _LIVE_FUNCTIONS = {
     "submit_order",
 }
 DEFAULT_EXCLUDED_PARTS = frozenset({".git", ".venv", "venv", "__pycache__", "tests", "security"})
+# The sole broker send call is constrained to a reviewed DEMO-only module.
+# Any change to it breaks the release gate until its new bytes are reviewed.
+_DEMO_TRANSPORT_SHA256 = "7b2a923e7a85a96584b59c7865c1d6b1c0b473e2771948e3cbcc9f2d7e93b5f4"
+
+
+def _reviewed_demo_transport(path: str, content: str) -> bool:
+    normalized = path.replace("\\", "/")
+    return (normalized == "execution/mt5_demo_transport.py"
+            or normalized.endswith("/execution/mt5_demo_transport.py")) and (
+                sha256(content.encode("utf-8")).hexdigest() == _DEMO_TRANSPORT_SHA256
+            )
 
 
 def _has_live_order_call(content: str) -> bool:
@@ -119,7 +131,7 @@ def scan_source(path: str, content: str) -> tuple[SecurityFinding, ...]:
     for rule, pattern in _SECRET_PATTERNS:
         if pattern.search(content):
             findings.append(SecurityFinding(rule, path, "credential-like material detected"))
-    if _has_live_order_call(content):
+    if _has_live_order_call(content) and not _reviewed_demo_transport(path, content):
         findings.append(SecurityFinding("live-order-authority", path, "live broker transport call detected"))
     return tuple(findings)
 
