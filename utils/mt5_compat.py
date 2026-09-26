@@ -28,3 +28,8 @@ class _UnavailableMT5:
 
 mt5 = _mt5 if _mt5 is not None else _UnavailableMT5()
 AVAILABLE = _mt5 is not None
+
+
+def read_only_mt5_runtime():
+    """Return the native runtime only; never substitute the CI stub for a broker probe."""
+    return _mt5
