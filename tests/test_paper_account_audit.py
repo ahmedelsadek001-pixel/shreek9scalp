@@ -4,6 +4,7 @@ from hashlib import sha256
 import json
 
 from research.paper_account_audit import audit_paper_account, FILL_COLUMNS, INTENT_COLUMNS
+from core.release_evidence import build_paper_account_evidence
 
 
 def _write_csv(path, columns, rows):
@@ -46,6 +47,9 @@ def test_reconciled_demo_requires_external_provenance_even_when_structurally_sou
     assert not report.paper_trading_validated
     assert report.net_pnl == "1.86"
     assert report.worst_entry_slippage == "0.10"
+    release_record = build_paper_account_evidence(report, "paper-audit-001", "a" * 40)
+    assert release_record.name == "paper_trading_validated"
+    assert release_record.passed is False
 
 
 def test_real_account_is_rejected(tmp_path):

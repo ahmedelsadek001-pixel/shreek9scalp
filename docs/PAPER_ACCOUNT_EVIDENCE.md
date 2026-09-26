@@ -54,4 +54,6 @@ prove broker provenance or prevent fabricated records. Independent verification
 of account type, broker origin, strategy attribution, costs, operating window,
 and an operator's signed review remains required before any release evidence
 can be marked true. Passing CI or the local audit is not trading profitability.
+`build_paper_account_evidence` emits a negative V5.1 release evidence record
+even when the CSV audit passes, so this local route cannot promote a phase.
 Live MT5 order routing stays disabled.

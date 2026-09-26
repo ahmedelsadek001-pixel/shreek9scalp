@@ -10,6 +10,7 @@ from typing import Mapping
 from core.live_authorization import REQUIRED_EVIDENCE
 from core.release_gate import ReleaseDecision, ReleaseEvidence, evaluate_release
 from core.robustness import RobustnessReport
+from research.paper_account_audit import PaperAccountAudit
 
 
 _V51_RELEASE_NAMES = tuple(ReleaseEvidence.__dataclass_fields__)
@@ -135,6 +136,28 @@ def build_robustness_evidence(report: RobustnessReport, run_id: str, commit_sha:
         name="robustness_passed",
         passed=report.passed,
         source="core.robustness.build_robustness_report",
+        run_id=run_id,
+        recorded_at=datetime.now(timezone.utc),
+        commit_sha=normalized_sha,
+    )
+
+
+def build_paper_account_evidence(report: PaperAccountAudit, run_id: str,
+                                 commit_sha: str) -> EvidenceRecord:
+    """Record audit results without claiming unverified broker provenance.
+
+    Only an independently verified account evidence process can eventually
+    produce a positive paper-trading release record. Local CSVs never can.
+    """
+    if not isinstance(report, PaperAccountAudit):
+        raise TypeError("report must be PaperAccountAudit")
+    if type(run_id) is not str or not run_id.strip() or run_id != run_id.strip():
+        raise ValueError("run_id is required and must be normalized")
+    normalized_sha = _validate_commit_sha(commit_sha)
+    return EvidenceRecord(
+        name="paper_trading_validated",
+        passed=False,
+        source="research.paper_account_audit.audit_paper_account",
         run_id=run_id,
         recorded_at=datetime.now(timezone.utc),
         commit_sha=normalized_sha,
