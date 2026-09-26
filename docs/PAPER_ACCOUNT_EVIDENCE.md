@@ -4,6 +4,9 @@ The historical XAUUSD CSV files are market data, and local `PaperTradingEngine`
 fills are simulations. Neither is an observed DEMO broker fill. Previously
 uploaded OW Markets/Myfxbook account statements identify the account as **REAL**;
 they are excluded from paper account validation and must not be committed here.
+The owner's later REAL account report is registered as private-source context
+in [REAL_ACCOUNT_OBSERVATION_2026_09_26.md](REAL_ACCOUNT_OBSERVATION_2026_09_26.md);
+ownership confirmation does not turn it into DEMO or strategy evidence.
 
 `python -m research.audit_paper_account --manifest manifest.json --intents intents.csv --fills fills.csv`
 is read-only. It requires two independent UTF-8 CSV exports, one for the SHREEK
