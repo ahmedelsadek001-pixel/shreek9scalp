@@ -18,6 +18,10 @@ the account mode/login/server, applies its 0.01-lot and risk/stop/spread gates,
 and durably reserves the signal ID before the broker call. After one attempted
 broker submission, the bounded watcher stops, including uncertain outcomes.
 Repeated scans cannot re-submit the same signal ID.
+The local SQLite ledger labels these attempts `strategy_experiment`; manually
+entered sandbox attempts are `manual_sandbox`, and migrated older rows remain
+`legacy_unattributed`. These local labels help separate observations but are
+not broker authentication or independent proof of strategy performance.
 
 On the Windows machine, download the latest `v5.1-development` snapshot.
 Open the already selected DEMO terminal and configure the four private

@@ -63,16 +63,18 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
     report = refused("DEMO broker history unavailable")
     try:
         with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as db:
+            columns = {row[1] for row in db.execute("PRAGMA table_info(attempts)")}
+            source = "source_kind" if "source_kind" in columns else "'legacy_unattributed'"
             rows = db.execute("SELECT account_hash, intent_id, status, broker_order_id, broker_deal_id, "
-                              "symbol, side, volume "
-                              "FROM attempts ORDER BY reserved_at").fetchall()
+                              "symbol, side, volume, " + source + " FROM attempts ORDER BY reserved_at").fetchall()
         initialized = api.initialize(config.terminal_path, timeout=config.timeout_ms) is True
         if not initialized or not _active_demo(api, config):
             return refused("DEMO account changed or disconnected")
         fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
-        for account_hash, intent_id, status, order_id, deal_id, symbol, side, volume in rows:
-            if account_hash != fingerprint or status not in ("UNKNOWN", "ACCEPTED"):
+        for account_hash, intent_id, status, order_id, deal_id, symbol, side, volume, source_kind in rows:
+            if (account_hash != fingerprint or status not in ("UNKNOWN", "ACCEPTED")
+                    or source_kind not in ("manual_sandbox", "strategy_experiment", "legacy_unattributed")):
                 return refused("DEMO ledger identity malformed")
             if status == "UNKNOWN":
                 return refused("unresolved DEMO submission; reconcile broker history")
@@ -90,7 +92,8 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                         and getattr(d, "magic", None) == 521000
                         and getattr(d, "entry", None) == api.DEAL_ENTRY_IN]
             item: dict[str, Any] = {"intent_id": intent_id, "broker_order_id": order_id,
-                                    "symbol": symbol, "side": side, "status": "opening_not_verified",
+                                    "symbol": symbol, "side": side, "local_source_kind": source_kind,
+                                    "status": "opening_not_verified",
                                     "broker_deals": []}
             if len(matching) == 1:
                 opened = matching[0]

@@ -111,10 +111,29 @@ def test_one_real_demo_ack_is_durable_and_duplicate_never_sends(tmp_path):
     assert api.stops == 1 and len(api.sends) == 1
     with sqlite3.connect(ledger) as db:
         assert db.execute("SELECT status, broker_order_id, broker_deal_id, broker_price, "
-                          "symbol, side, volume, stop_loss, take_profit FROM attempts").fetchall() == [
-                              ("ACCEPTED", 9001, 456, 4000.1, "XAUUSD.s", "BUY", 0.01, 3998, 4002)]
+                          "symbol, side, volume, stop_loss, take_profit, source_kind FROM attempts").fetchall() == [
+                              ("ACCEPTED", 9001, 456, 4000.1, "XAUUSD.s", "BUY", 0.01, 3998, 4002,
+                               "manual_sandbox")]
     again = submit_demo_order(api, CONFIG, ORDER, ledger)
     assert not again.sent and len(api.sends) == 1
+
+
+def test_old_ledger_rows_remain_unattributed_when_source_column_is_migrated(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    with sqlite3.connect(ledger) as db:
+        db.execute("CREATE TABLE attempts (account_hash TEXT NOT NULL, intent_id TEXT NOT NULL, "
+                   "status TEXT NOT NULL, broker_order_id INTEGER, broker_deal_id INTEGER, "
+                   "broker_price REAL, symbol TEXT NOT NULL, side TEXT NOT NULL, volume REAL NOT NULL, "
+                   "stop_loss REAL NOT NULL, take_profit REAL NOT NULL, reserved_at TEXT NOT NULL, "
+                   "PRIMARY KEY (account_hash, intent_id))")
+        db.execute("INSERT INTO attempts (account_hash, intent_id, status, broker_order_id, "
+                   "symbol, side, volume, stop_loss, take_profit, reserved_at) "
+                   "VALUES (?, 'old-intent', 'ACCEPTED', 9000, 'XAUUSD.s', 'BUY', 0.01, 3998, 4002, ?)",
+                   ("0" * 64, datetime.now(timezone.utc).isoformat()))
+    assert submit_demo_order(FakeMT5(), CONFIG, ORDER, ledger).accepted
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT source_kind FROM attempts ORDER BY intent_id").fetchall() == [
+            ("legacy_unattributed",), ("manual_sandbox",)]
 
 
 def test_real_account_disallowed_even_when_login_and_server_match(tmp_path):

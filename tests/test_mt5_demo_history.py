@@ -41,6 +41,7 @@ def test_broker_history_observes_closed_demo_order_without_strategy_attribution(
     assert report.verified_demo and len(report.attempts) == 1
     item = report.attempts[0]
     assert item["status"] == "closed_observed"
+    assert item["local_source_kind"] == "manual_sandbox"
     assert item["manual_intervention"] is True
     assert item["broker_deals"][1]["profit"] == 1.90
     assert item["realized_net_usd"] == pytest.approx(1.70)

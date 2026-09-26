@@ -129,7 +129,8 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
     if ledger.with_suffix(".stop").exists():
         return DemoAutoResult(True, False, False, "automatic DEMO stop file active", signal_id)
     order = DemoOrder(signal_id, config.symbol, side, 0.01,
-                      signal.sl_price, signal.tp1, expected_execution_price)
+                      signal.sl_price, signal.tp1, expected_execution_price,
+                      source_kind="strategy_experiment")
     submission = submit_demo_order(api, config, order, ledger)
     return DemoAutoResult(True, submission.sent, submission.accepted,
                           submission.reason, signal_id, submission.broker_order_id)

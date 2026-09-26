@@ -63,6 +63,9 @@ def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):
     assert dry.signal_detected and not dry.sent and not ledger.exists()
     done = scan_and_submit_demo(api, CONFIG, ledger, execute=True, kill_switch_off=True, now=clock)
     assert done.accepted and done.signal_id == dry.signal_id and len(api.sends) == 1
+    import sqlite3
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT source_kind FROM attempts").fetchone() == ("strategy_experiment",)
     assert api.sends[0]["price"] == 4000.1
     replay = scan_and_submit_demo(api, CONFIG, ledger, execute=True, kill_switch_off=True, now=clock)
     assert not replay.sent and len(api.sends) == 1
