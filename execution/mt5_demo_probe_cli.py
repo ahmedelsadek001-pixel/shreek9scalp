@@ -13,10 +13,11 @@ def main() -> int:
     terminal_path = os.environ.get("SHREEK_DEMO_TERMINAL_PATH", "")
     server = os.environ.get("SHREEK_DEMO_SERVER", "")
     login_text = os.environ.get("SHREEK_DEMO_LOGIN", "")
+    symbol = os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD")
     try:
         if not login_text.isdecimal():
             raise ValueError("expected demo login is not configured")
-        config = DemoTerminalConfig(terminal_path, int(login_text), server)
+        config = DemoTerminalConfig(terminal_path, int(login_text), server, symbol=symbol)
         config.validate()
     except ValueError:
         report = DemoTerminalProbe(False, "DEMO terminal binding is incomplete")

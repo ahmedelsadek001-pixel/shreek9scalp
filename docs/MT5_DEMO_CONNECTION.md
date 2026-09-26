@@ -15,8 +15,13 @@ and `SHREEK_DEMO_SERVER` privately, then run:
 $env:SHREEK_DEMO_TERMINAL_PATH = Read-Host 'Path to DEMO terminal64.exe'
 $env:SHREEK_DEMO_LOGIN = Read-Host 'DEMO account login number'
 $env:SHREEK_DEMO_SERVER = Read-Host 'Exact DEMO server name'
+$env:SHREEK_DEMO_SYMBOL = 'XAUUSD.s' # use the exact symbol from the DEMO terminal
 python -m execution.mt5_demo_probe_cli
 ```
+
+The symbol defaults to `XAUUSD` if `SHREEK_DEMO_SYMBOL` is unset. Brokers may
+use suffixes such as `XAUUSD.s`; use the exact DEMO symbol. A missing symbol
+rejects the probe. The CLI never guesses a replacement instrument.
 
 First open that dedicated terminal and log into the DEMO account there.
 Do not supply the broker password to SHREEK or paste any of these values into

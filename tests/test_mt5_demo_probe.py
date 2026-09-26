@@ -138,6 +138,7 @@ def test_cli_verified_demo_redacts_login_and_never_enables_transport(monkeypatch
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
     monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.delenv("SHREEK_DEMO_SYMBOL", raising=False)
     monkeypatch.setattr(mt5_demo_probe_cli, "read_only_mt5_runtime", lambda: FakeMT5())
     assert mt5_demo_probe_cli.main() == 0
     import json
@@ -146,6 +147,28 @@ def test_cli_verified_demo_redacts_login_and_never_enables_transport(monkeypatch
     report = json.loads(output)
     assert report["connected_demo"] is True
     assert report["order_transport_enabled"] is False
+
+
+def test_cli_accepts_explicit_broker_gold_symbol_and_rejects_blank(monkeypatch, capsys):
+    class BrokerSuffix(FakeMT5):
+        def symbol_info(self, symbol):
+            assert symbol == "XAUUSD.s"
+            return self.symbol
+
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", "XAUUSD.s")
+    monkeypatch.setattr(mt5_demo_probe_cli, "read_only_mt5_runtime", lambda: BrokerSuffix())
+    assert mt5_demo_probe_cli.main() == 0
+    import json
+    report = json.loads(capsys.readouterr().out)
+    assert report["symbol"] == "XAUUSD.s"
+    assert report["order_transport_enabled"] is False
+
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", "")
+    assert mt5_demo_probe_cli.main() == 2
+    assert "binding is incomplete" in capsys.readouterr().out
 
 
 def test_cli_refuses_real_account_without_exposing_it(monkeypatch, capsys):
