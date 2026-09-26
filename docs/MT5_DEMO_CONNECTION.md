@@ -82,6 +82,23 @@ target below it. A broker acknowledgement must still be reconciled against
 an independent DEMO broker history export. Live-account order routing is
 never authorized by this CLI, and V5.2/V5.3 certification remains blocked.
 
+After a sandbox order, observe the actual DEMO broker deal history in the
+same bound terminal, using the durable ledger created above:
+
+```powershell
+py -m execution.mt5_demo_history_cli --ledger (Join-Path $ledgerDir 'demo_orders.sqlite3')
+```
+
+The read-only report includes the matched opening order, position deals,
+broker prices, volumes, and broker profit/commission/swap/fee fields. A manual
+close is marked `manual_intervention=true`. `closed_observed` means the broker
+history has a matching opening deal and fully offsetting exit volume; it does
+not assert strategy authorship or profitability. A history read error, REAL
+account, missing DEMO identity, missing opening deal, or account switch causes
+the entire read to fail closed. Store broker exports and local SQLite records
+privately outside the repository; account IDs and passwords never belong in
+Git or the chat.
+
 Broker references: [Python account_info](https://www.mql5.com/en/docs/python_metatrader5/mt5accountinfo_py),
 [account trade modes](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),
 and [Python initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py).

@@ -65,3 +65,6 @@ The isolated DEMO-only order sandbox is a manual broker-transport check. Its
 durable SQLite acknowledgements do not attribute orders to SHREEK strategy
 signals, provide independent broker-exported closed fills, or change
 `paper_trading_validated=false`.
+The optional read-only DEMO history report cross-checks those acknowledgements
+against MT5 deal and position tickets. It remains observational and does not
+replace a retained independent broker export or audited strategy intents.
