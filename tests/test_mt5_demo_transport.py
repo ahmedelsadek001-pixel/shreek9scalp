@@ -49,6 +49,8 @@ class FakeMT5:
     ORDER_TIME_GTC = 0
     ORDER_FILLING_IOC = 1
     TRADE_RETCODE_DONE = 10009
+    DEAL_TYPE_BUY = 0
+    DEAL_TYPE_SELL = 1
 
     def __init__(self, account=None, terminal=None, symbol=None):
         self.account = account or Account()

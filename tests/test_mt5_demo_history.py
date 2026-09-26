@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import sqlite3
+import pytest
 
 from execution.mt5_demo_history import inspect_demo_history
 from execution.mt5_demo_transport import submit_demo_order
@@ -67,3 +68,20 @@ def test_mixed_account_ledger_never_reports_another_demo_as_ours(tmp_path):
     assert report.verified_demo is False
     assert report.attempts == ()
     assert "ledger identity malformed" in report.reason
+
+
+@pytest.mark.parametrize("override", [{"ticket": 999}, {"type": 1}, {"volume": 0.02}])
+def test_wrong_broker_fill_cannot_validate_ledger_order(tmp_path, override):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    values = dict(ticket=456, order=9001, position_id=771, entry=0, type=0,
+                  volume=0.01, price=4000.1, profit=0.0, commission=0.0,
+                  swap=0.0, fee=0.0, time_msc=timestamp)
+    values.update(override)
+    api.DEAL_ENTRY_IN = 0
+    api.history_deals_get = lambda *, ticket=None, position=None: (Deal(**values),)
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()

@@ -59,15 +59,17 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
     report = refused("DEMO broker history unavailable")
     try:
         with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as db:
-            rows = db.execute("SELECT account_hash, intent_id, broker_order_id, symbol, side, volume "
+            rows = db.execute("SELECT account_hash, intent_id, broker_order_id, broker_deal_id, "
+                              "symbol, side, volume "
                               "FROM attempts WHERE status='ACCEPTED' ORDER BY reserved_at").fetchall()
         initialized = api.initialize(config.terminal_path, timeout=config.timeout_ms) is True
         if not initialized or not _active_demo(api, config):
             return refused("DEMO account changed or disconnected")
         fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
-        for account_hash, intent_id, order_id, symbol, side, volume in rows:
+        for account_hash, intent_id, order_id, deal_id, symbol, side, volume in rows:
             if (account_hash != fingerprint or type(order_id) is not int or order_id <= 0
+                    or (deal_id is not None and (type(deal_id) is not int or deal_id <= 0))
                     or symbol != config.symbol
                     or side not in ("BUY", "SELL") or type(volume) not in (int, float)
                     or not isfinite(volume) or volume <= 0):
@@ -83,6 +85,16 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                                     "symbol": symbol, "side": side, "status": "opening_not_verified",
                                     "broker_deals": []}
             if len(matching) == 1:
+                opened = matching[0]
+                expected_type = (getattr(api, "DEAL_TYPE_BUY", None) if side == "BUY"
+                                 else getattr(api, "DEAL_TYPE_SELL", None))
+                if (type(expected_type) is not int
+                        or getattr(opened, "type", None) != expected_type
+                        or (deal_id is not None and getattr(opened, "ticket", None) != deal_id)
+                        or type(getattr(opened, "volume", None)) not in (int, float)
+                        or not isfinite(opened.volume)
+                        or abs(opened.volume - volume) > 1e-9):
+                    return refused("broker opening deal contradicts DEMO ledger")
                 position_id = getattr(matching[0], "position_id", None)
                 related = api.history_deals_get(position=position_id) if type(position_id) is int and position_id > 0 else None
                 if related is None:
