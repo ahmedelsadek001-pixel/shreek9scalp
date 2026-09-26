@@ -19,12 +19,14 @@ from execution.quote_safety import evaluate_quote_safety
 from execution.idempotency import IdempotencyLedger
 from execution.shadow import ShadowExecution
 from core.enums import Direction
+from security.release_security_gate import scan_source
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_DIRS = ("ai", "config", "core", "execution", "market", "paper_trading", "research", "risk", "utils")
 COMPAT_PATH = Path("utils/mt5_compat.py")
 GUARDED_PATH = Path("execution/guarded_adapter.py")
+DEMO_TRANSPORT_PATH = Path("execution/mt5_demo_transport.py")
 
 
 def _ready_gate(
@@ -301,14 +303,20 @@ def test_no_direct_mt5_import_outside_compatibility_boundary() -> None:
     assert violations == []
 
 
-def test_no_direct_order_transport_call_outside_guarded_adapter() -> None:
+def test_no_direct_order_transport_call_outside_reviewed_boundaries() -> None:
     violations: list[str] = []
     forbidden = {"order_send", "send_order", "place_order", "submit_order"}
     for path in _production_python_files():
         relative = path.relative_to(ROOT)
         if relative == GUARDED_PATH:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        content = path.read_text(encoding="utf-8")
+        if relative == DEMO_TRANSPORT_PATH:
+            # This module is only exempt when the static release gate accepts
+            # the exact reviewed bytes; editing it fails this test too.
+            assert not scan_source(str(relative), content)
+            continue
+        tree = ast.parse(content, filename=str(path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr.lower() in forbidden:
                 violations.append(f"{relative}:{node.lineno}")
