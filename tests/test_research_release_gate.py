@@ -220,7 +220,11 @@ def _promotion_artifact(
                 "xauusd_15m_source_sha256": "b" * 64,
                 "xauusd_1h_source_sha256": "c" * 64,
             } if audited_sources else {}),
-            **({"cost_application_id": MANIFEST_BOUND_COST_APPLICATION_ID} if bound_costs else {}),
+            **({
+                "cost_application_id": MANIFEST_BOUND_COST_APPLICATION_ID,
+                "execution_volume_lots": "0.01",
+                "execution_pip_size": "0.1",
+            } if bound_costs else {}),
         },
         source_manifest=(
             XAUUSDSourceManifest(
@@ -346,6 +350,25 @@ def test_release_package_blocks_unbound_broker_costs():
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
     assert "research artifact costs were not applied by the manifest-bound backtest" in decision.failures
+
+
+@pytest.mark.parametrize("value", [None, "0.015", "nan", "0", "1e500"])
+def test_release_package_blocks_missing_or_invalid_executed_volume(value):
+    from dataclasses import replace
+
+    artifact = _promotion_artifact()
+    metadata = dict(artifact.metadata)
+    if value is None:
+        metadata.pop("execution_volume_lots")
+    else:
+        metadata["execution_volume_lots"] = value
+    candidate = replace(artifact, metadata=tuple(sorted(metadata.items())))
+    # Structurally sound metadata alone must not count as execution proof.
+    package = ResearchReleasePackage(complete(), candidate, "breakout-retest",
+                                     "research-v1", CODE_REVISION)
+    assert "research artifact lacks valid executed volume and pip size" in (
+        evaluate_research_release_package(package).failures
+    )
 
 
 def test_release_package_blocks_missing_causal_oos_context():

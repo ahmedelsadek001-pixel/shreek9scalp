@@ -6,7 +6,7 @@ progress toward V5.3. It does not authorize execution.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
+from math import isclose, isfinite
 from pathlib import Path
 from typing import Mapping
 
@@ -191,6 +191,22 @@ def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ..
         else:
             if manifest.observed_spread_points <= 0:
                 failures.append("research artifact observed spread must be positive")
+            try:
+                volume_text = metadata["execution_volume_lots"]
+                pip_text = metadata["execution_pip_size"]
+                volume = float(volume_text)
+                pip_size = float(pip_text)
+                steps = (volume - manifest.minimum_volume) / manifest.volume_step
+                if (
+                    not isfinite(volume) or not isfinite(pip_size)
+                    or pip_size <= 0 or volume < manifest.minimum_volume
+                    or not isclose(steps, round(steps), rel_tol=0, abs_tol=1e-9)
+                    or volume_text != f"{volume:.12g}"
+                    or pip_text != f"{pip_size:.12g}"
+                ):
+                    raise ValueError("invalid execution economics")
+            except (KeyError, TypeError, ValueError, OverflowError):
+                failures.append("research artifact lacks valid executed volume and pip size")
     statistical = payload.get("statistical_evidence")
     if not isinstance(statistical, dict):
         failures.append("research artifact lacks statistical certification evidence")
