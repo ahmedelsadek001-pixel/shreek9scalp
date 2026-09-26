@@ -120,7 +120,8 @@ def audit_paper_account(manifest_path: str | Path, intents_path: str | Path, fil
         symbol = _text(manifest["symbol"], "symbol")
         _text(manifest["strategy_id"], "strategy_id")
         _text(manifest["strategy_version"], "strategy_version")
-        _text(manifest["currency"], "currency")
+        if _text(manifest["currency"], "currency") != "USD":
+            raise ValueError("USD account currency required; conversion is not audited")
         contract = _decimal(manifest["contract_size"], "contract_size", positive=True)
         intended = Path(intents_path).read_bytes()
         observed = Path(fills_path).read_bytes()

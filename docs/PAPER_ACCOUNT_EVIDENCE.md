@@ -24,7 +24,7 @@ The manifest is JSON with *exactly* the following string keys:
 | --- | --- |
 | `account_mode`, `source` | `DEMO`, `broker_export` (exact spelling) |
 | `account_fingerprint` | lower-case SHA-256 of the privately held account ID |
-| `symbol`, `currency` | e.g. `XAUUSD`, `USD` |
+| `symbol`, `currency` | exact broker symbol, e.g. `XAUUSD.s`; account currency must be `USD` |
 | `strategy_id`, `strategy_version` | explicit identity of the running strategy |
 | `contract_size` | positive decimal units per lot, e.g. `100` |
 | `intents_sha256`, `fills_sha256` | lower-case SHA-256 hashes of the untouched CSV bytes |
@@ -46,7 +46,7 @@ One closed broker order per intent is required; partial fills must first be
 normalized into full orders with verifiable original records. Commission is
 nonnegative in the account currency and is subtracted from gross P&L. A maximum
 absolute reconciliation difference of 0.01 account-currency units is allowed.
-Swap, financing, currency conversion, and deposits require a documented
+Non-USD account currency is refused; swap, financing, currency conversion, and deposits require a documented
 reconciliation extension before such exports can qualify. Do not include
 account numbers, names, credentials, or raw statements in Git.
 

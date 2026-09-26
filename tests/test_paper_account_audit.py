@@ -58,6 +58,17 @@ def test_real_account_is_rejected(tmp_path):
     assert not report.paper_trading_validated
 
 
+def test_foreign_currency_export_requires_explicit_conversion_audit(tmp_path):
+    paths = _bundle(tmp_path)
+    manifest = json.loads(paths[0].read_text(encoding="utf-8"))
+    manifest["currency"] = "EUR"
+    paths[0].write_text(json.dumps(manifest), encoding="utf-8")
+    report = _audit(paths)
+    assert not report.eligible_for_external_review
+    assert not report.paper_trading_validated
+    assert "USD account currency required" in " ".join(report.failures)
+
+
 def test_missing_inputs_fail_closed(tmp_path):
     report = _audit((tmp_path / "missing.json", tmp_path / "missing.csv", tmp_path / "fills.csv"))
     assert not report.eligible_for_external_review
