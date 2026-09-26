@@ -43,6 +43,7 @@ def test_broker_history_observes_closed_demo_order_without_strategy_attribution(
     assert item["status"] == "closed_observed"
     assert item["manual_intervention"] is True
     assert item["broker_deals"][1]["profit"] == 1.90
+    assert item["realized_net_usd"] == pytest.approx(1.70)
     assert "strategy" in report.reason.lower() and "123456" not in str(report)
 
 
@@ -97,3 +98,13 @@ def test_unknown_broker_submission_cannot_disappear_from_history_report(tmp_path
     assert report.verified_demo is False
     assert report.attempts == ()
     assert "unresolved DEMO submission" in report.reason
+
+
+@pytest.mark.parametrize("account_currency,symbol_currency", [("EUR", "USD"), ("USD", "EUR")])
+def test_non_usd_demo_cannot_report_usd_profit(tmp_path, account_currency, symbol_currency):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    api.account.currency = account_currency
+    api.symbol.currency_profit = symbol_currency
+    assert not inspect_demo_history(api, CONFIG, ledger).verified_demo

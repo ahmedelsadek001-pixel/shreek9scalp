@@ -21,8 +21,12 @@ class DemoHistoryReport:
 
 def _active_demo(api: Any, config: DemoTerminalConfig) -> bool:
     terminal = api.terminal_info()
+    account = api.account_info()
+    symbol = api.symbol_info(config.symbol)
     return (terminal is not None and getattr(terminal, "connected", None) is True
-            and _matches_demo_account(api, api.account_info(), config))
+            and _matches_demo_account(api, account, config)
+            and getattr(account, "currency", None) == "USD"
+            and symbol is not None and getattr(symbol, "currency_profit", None) == "USD")
 
 
 def _deal_info(deal: Any) -> dict[str, Any] | None:
@@ -121,6 +125,12 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                     item["status"] = ("closed_observed" if abs(closed_volume - entry["volume"]) < 1e-9
                                       else "open_or_partial")
                     item["manual_intervention"] = any(getattr(d, "magic", None) != 521000 for d in closes)
+                    if item["status"] == "closed_observed":
+                        realized = sum(d["profit"] + d["commission"] + d["swap"] + d["fee"]
+                                       for d in item["broker_deals"])
+                        if not isfinite(realized):
+                            return refused("broker realized net is invalid")
+                        item["realized_net_usd"] = realized
             output.append(item)
         if not _active_demo(api, config):
             return refused("DEMO account changed during history read")

@@ -90,7 +90,10 @@ py -m execution.mt5_demo_history_cli --ledger (Join-Path $ledgerDir 'demo_orders
 ```
 
 The read-only report includes the matched opening order, position deals,
-broker prices, volumes, and broker profit/commission/swap/fee fields. A manual
+broker prices, volumes, and broker profit/commission/swap/fee fields. For a
+fully closed position it also reports `realized_net_usd`, the sum of those four
+broker deal fields. Both the account and symbol profit currency must be USD;
+other currencies are refused instead of being mislabeled USD. A manual
 close is marked `manual_intervention=true`. `closed_observed` means the broker
 history has a matching opening deal and fully offsetting exit volume; it does
 not assert strategy authorship or profitability. A history read error, REAL
