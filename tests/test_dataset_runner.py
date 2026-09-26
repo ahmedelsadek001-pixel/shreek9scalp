@@ -194,6 +194,24 @@ def test_manifest_bound_runner_applies_costs_and_marks_artifact(monkeypatch):
     assert captured["context_size"] == 18
     assert captured["context_evaluator_id"] == MANIFEST_BOUND_CONTEXT_EVALUATOR_ID
     assert dict(result.artifact.metadata)["cost_application_id"] == MANIFEST_BOUND_COST_APPLICATION_ID
+    assert dict(result.artifact.metadata)["execution_volume_lots"] == "0.01"
+    assert dict(result.artifact.metadata)["execution_pip_size"] == "0.1"
+
+
+@pytest.mark.parametrize("key, wrong", [
+    ("execution_volume_lots", "1"), ("execution_pip_size", "0.5"),
+])
+def test_manifest_bound_runner_rejects_false_execution_metadata(monkeypatch, key, wrong):
+    from research import dataset_runner
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="metadata conflicts with executed economics"):
+        run_xauusd_breakout_retest_research(
+            bars, ({},), source_manifest=_utc_manifest(), pip_size=0.1,
+            volume=0.01, artifact_metadata={key: wrong},
+            train_size=3, test_size=2, purge_size=1, starting_equity=10000.0,
+        )
 
 
 @pytest.mark.parametrize("field", ["spread", "slippage", "point_value", "commission_per_volume", "volume"])

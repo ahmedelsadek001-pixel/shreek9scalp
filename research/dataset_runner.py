@@ -255,6 +255,18 @@ def run_xauusd_breakout_retest_research(
     if existing is not None and existing != MANIFEST_BOUND_COST_APPLICATION_ID:
         raise ValueError("artifact metadata conflicts with manifest-bound cost application")
     metadata["cost_application_id"] = MANIFEST_BOUND_COST_APPLICATION_ID
+    # A source manifest states contract economics but does not state the lot
+    # size or pip definition used by this particular research run. Archive
+    # both outside the train-selected signal parameters and reject a caller's
+    # attempt to substitute descriptive metadata for executed economics.
+    execution_metadata = {
+        "execution_volume_lots": f"{resolved_volume:.12g}",
+        "execution_pip_size": f"{float(pip_size):.12g}",
+    }
+    for key, value in execution_metadata.items():
+        if key in metadata and metadata[key] != value:
+            raise ValueError(f"artifact metadata conflicts with executed economics: {key}")
+        metadata[key] = value
     return run_dataset_research(
         bars,
         normalized_parameters,
