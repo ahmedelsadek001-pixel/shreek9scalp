@@ -29,7 +29,7 @@ def _signal(bars):
     return SimpleNamespace(direction=Direction.BUY,
                            signal_time=datetime.fromtimestamp(bars[-1]["time"], timezone.utc),
                            breakout_time=datetime.fromtimestamp(bars[-2]["time"], timezone.utc),
-                           entry_price=4000.1, sl_price=3998.0, tp1=4002.0)
+                           entry_price=4000.0, sl_price=3998.0, tp1=4002.0)
 
 
 def test_market_closed_or_real_account_never_sends(tmp_path):
@@ -55,8 +55,26 @@ def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):
     assert dry.signal_detected and not dry.sent and not ledger.exists()
     done = scan_and_submit_demo(api, CONFIG, ledger, execute=True, kill_switch_off=True, now=clock)
     assert done.accepted and done.signal_id == dry.signal_id and len(api.sends) == 1
+    assert api.sends[0]["price"] == 4000.1
     replay = scan_and_submit_demo(api, CONFIG, ledger, execute=True, kill_switch_off=True, now=clock)
     assert not replay.sent and len(api.sends) == 1
+
+
+def test_buy_signal_compares_bid_candle_and_pays_ask(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+    original_tick = api.symbol_info_tick
+
+    def spread_tick(symbol):
+        tick = original_tick(symbol)
+        tick.ask = 4000.18
+        return tick
+
+    api.symbol_info_tick = spread_tick
+    done = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                execute=True, kill_switch_off=True, now=clock)
+    assert done.accepted and api.sends[0]["price"] == 4000.18
 
 
 def test_old_signal_gap_changed_price_and_active_kill_switch_block(monkeypatch, tmp_path):

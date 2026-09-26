@@ -101,10 +101,15 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
         if not execute or not kill_switch_off:
             return DemoAutoResult(True, False, False, "automatic DEMO execution disabled", signal_id)
         quote = api.symbol_info_tick(config.symbol)
-        price = getattr(quote, "ask" if side == "BUY" else "bid", None)
-        if (type(price) not in (int, float) or not isfinite(price)
-                or abs(price - signal.entry_price) > 0.10):
+        bid, ask = getattr(quote, "bid", None), getattr(quote, "ask", None)
+        # MT5 OHLC candles are Bid-based. BUY execution pays Ask; compare the
+        # strategy close against Bid, then bind the transport to fresh Ask.
+        if (type(bid) not in (int, float) or type(ask) not in (int, float)
+                or not isfinite(bid) or not isfinite(ask)
+                or bid <= 0 or ask <= bid or ask - bid > 0.50
+                or abs(bid - signal.entry_price) > 0.10):
             return DemoAutoResult(True, False, False, "strategy signal differs from broker price", signal_id)
+        expected_execution_price = ask if side == "BUY" else bid
         if not _matches_demo_account(api, api.account_info(), config):
             return DemoAutoResult(True, False, False, "DEMO account changed after scan", signal_id)
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError):
@@ -118,7 +123,7 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
     if ledger.with_suffix(".stop").exists():
         return DemoAutoResult(True, False, False, "automatic DEMO stop file active", signal_id)
     order = DemoOrder(signal_id, config.symbol, side, 0.01,
-                      signal.sl_price, signal.tp1, signal.entry_price)
+                      signal.sl_price, signal.tp1, expected_execution_price)
     submission = submit_demo_order(api, config, order, ledger)
     return DemoAutoResult(True, submission.sent, submission.accepted,
                           submission.reason, signal_id, submission.broker_order_id)
