@@ -30,8 +30,15 @@ password into the repository. Use a local ledger directory outside Git:
 $ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'
 New-Item -ItemType Directory -Force -Path $ledgerDir | Out-Null
 $ledger = Join-Path $ledgerDir 'demo_orders.sqlite3'
+py -m execution.mt5_demo_readiness_cli
 py -m execution.mt5_demo_auto_cli --ledger $ledger
 ```
+
+The first command diagnoses DEMO permissions, USD account and symbol, IOC
+0.01-lot contract, Bid-based bars, existing exposure, and quote freshness.
+It prints no account number and never sends an order. A positive report is an
+instantaneous environmental observation, not a signal, broker approval, or
+permission to skip the independent order checks in the transport.
 
 The last command is one read-only scan. A missing signal or stale weekend
 quote returns a refused JSON response and sends no order. After the DEMO
