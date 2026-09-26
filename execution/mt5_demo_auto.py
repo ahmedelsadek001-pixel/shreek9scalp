@@ -22,6 +22,11 @@ from research.data_validation import validate_market_data
 STRATEGY_ID = "breakout-retest-research-v1-pip0.1"
 PIP_SIZE = 0.1
 BAR_SECONDS = 300
+_SAFE_BAR_ERRORS = frozenset({
+    "80 completed M5 bars unavailable",
+    "M5 context has a session gap",
+    "last completed M5 candle is stale or not yet closed",
+})
 
 
 @dataclass(frozen=True)
@@ -72,6 +77,7 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
     if not isinstance(clock, datetime) or clock.tzinfo is None or clock.utcoffset() is None:
         return refused("automatic DEMO clock invalid")
     initialized = False
+    shutdown_failed = False
     try:
         initialized = api.initialize(config.terminal_path, timeout=config.timeout_ms) is True
         if not initialized:
@@ -118,14 +124,20 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
         expected_execution_price = ask if side == "BUY" else bid
         if not _matches_demo_account(api, api.account_info(), config):
             return DemoAutoResult(True, False, False, "DEMO account changed after scan", signal_id)
-    except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError):
+    except ValueError as exc:
+        if str(exc) in _SAFE_BAR_ERRORS:
+            return refused(str(exc))
+        return refused("automatic DEMO market data unavailable or stale")
+    except (AttributeError, OSError, RuntimeError, TypeError, OverflowError):
         return refused("automatic DEMO market data unavailable or stale")
     finally:
         if initialized:
             try:
                 api.shutdown()
             except (AttributeError, OSError, RuntimeError):
-                return refused("automatic DEMO session shutdown failed")
+                shutdown_failed = True
+    if shutdown_failed:
+        return refused("automatic DEMO session shutdown failed")
     if ledger.with_suffix(".stop").exists():
         return DemoAutoResult(True, False, False, "automatic DEMO stop file active", signal_id)
     order = DemoOrder(signal_id, config.symbol, side, 0.01,

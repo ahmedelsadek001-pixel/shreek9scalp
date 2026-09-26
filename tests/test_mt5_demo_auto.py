@@ -39,6 +39,7 @@ def test_market_closed_or_real_account_never_sends(tmp_path):
     stale = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3", execute=True,
                                  kill_switch_off=True, now=old_clock)
     assert not stale.sent and not api.sends
+    assert stale.reason == "last completed M5 candle is stale or not yet closed"
     api.account = Account(trade_mode=2)
     refused = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3", execute=True,
                                    kill_switch_off=True, now=clock)
@@ -50,6 +51,25 @@ def test_last_based_or_missing_chart_mode_never_trades(tmp_path):
     api.symbol.chart_mode = 1
     result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
                                   execute=True, kill_switch_off=True, now=clock)
+    assert not result.sent and not api.sends
+
+
+def test_missing_completed_candles_and_failed_shutdown_never_send(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: None
+    missing = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3", now=clock)
+    assert missing.reason == "80 completed M5 bars unavailable"
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+
+    def broken_shutdown():
+        raise RuntimeError("terminal failure")
+
+    api.shutdown = broken_shutdown
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.reason == "automatic DEMO session shutdown failed"
     assert not result.sent and not api.sends
 
 

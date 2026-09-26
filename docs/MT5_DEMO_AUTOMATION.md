@@ -45,7 +45,9 @@ instantaneous environmental observation, not a signal, broker approval, or
 permission to skip the independent order checks in the transport.
 
 The last command is one read-only scan. A missing signal or stale weekend
-quote returns a refused JSON response and sends no order. After the DEMO
+quote returns a refused JSON response and sends no order. The scan names
+missing, interrupted, or stale completed M5 candles without disclosing account
+data. After the DEMO
 terminal actually permits trading and the operator elects to collect
 experimental DEMO fills, a bounded 60-minute watcher is explicitly enabled:
 
