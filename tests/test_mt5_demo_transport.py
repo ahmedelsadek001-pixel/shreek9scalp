@@ -29,6 +29,7 @@ class Terminal:
 @dataclass
 class Symbol:
     visible: bool = True
+    chart_mode: int = 0
     currency_profit: str = "USD"
     trade_mode: int = 4
     trade_contract_size: float = 100.0

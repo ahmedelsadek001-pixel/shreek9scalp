@@ -45,6 +45,14 @@ def test_market_closed_or_real_account_never_sends(tmp_path):
     assert not refused.sent and not api.sends
 
 
+def test_last_based_or_missing_chart_mode_never_trades(tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    api.symbol.chart_mode = 1
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert not result.sent and not api.sends
+
+
 def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     strategy = _signal(bars)

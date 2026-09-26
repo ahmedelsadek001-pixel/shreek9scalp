@@ -80,6 +80,12 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
         if (terminal is None or getattr(terminal, "connected", None) is not True
                 or not _matches_demo_account(api, api.account_info(), config)):
             return refused("automatic DEMO account identity unavailable")
+        symbol_info = api.symbol_info(config.symbol)
+        chart_mode_bid = getattr(api, "SYMBOL_CHART_MODE_BID", 0)
+        if (symbol_info is None or type(chart_mode_bid) is not int or chart_mode_bid != 0
+                or type(getattr(symbol_info, "chart_mode", None)) is not int
+                or symbol_info.chart_mode != chart_mode_bid):
+            return refused("automatic DEMO requires Bid-based broker candles")
         bars = _closed_m5_bars(api, config.symbol, clock)
         signals = detect_breakout_retest(bars, PIP_SIZE, BreakoutRetestConfig(),
                                          min_signal_index=len(bars) - 1)

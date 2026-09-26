@@ -9,7 +9,9 @@ The one-shot runner reads 80 M5 bars starting at MT5 index **1** (index 0 is
 unfinished), checks the last 33 bars are consecutive, requires the most recent
 completed candle to have closed no more than 120 seconds ago, and only accepts
 exactly one signal confirmed on that last candle. It never replays a signal
-from history. It checks that the fresh broker Bid is within 0.10 price units
+from history. The broker symbol must explicitly report Bid-based chart bars;
+an unknown or Last-based chart mode is refused. It checks that the fresh
+broker Bid is within 0.10 price units
 of the strategy candle close; BUY orders use the fresh Ask. The DEMO-only
 transport binds this execution price and rechecks
 the account mode/login/server, applies its 0.01-lot and risk/stop/spread gates,
