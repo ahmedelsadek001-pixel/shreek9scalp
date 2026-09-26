@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from hashlib import sha256
 import json
 
-from research.paper_account_audit import audit_paper_account, FILL_COLUMNS, INTENT_COLUMNS
+from research.paper_account_audit import audit_paper_account, FILL_COLUMNS, FILL_COLUMNS_V2, INTENT_COLUMNS
 from core.release_evidence import build_paper_account_evidence
 
 
@@ -50,6 +50,25 @@ def test_reconciled_demo_requires_external_provenance_even_when_structurally_sou
     release_record = build_paper_account_evidence(report, "paper-audit-001", "a" * 40)
     assert release_record.name == "paper_trading_validated"
     assert release_record.passed is False
+
+
+def test_signed_broker_costs_reconcile_in_v2_without_certifying_provenance(tmp_path):
+    paths = _bundle(tmp_path)
+    rows = list(csv.DictReader(paths[2].open(encoding="utf-8")))
+    for row in rows:
+        row.update(commission="-0.07", swap="-0.05", fee="-0.02", net_pnl="0.86")
+    _write_csv(paths[2], FILL_COLUMNS_V2, rows)
+    manifest = json.loads(paths[0].read_text(encoding="utf-8"))
+    manifest["fills_sha256"] = sha256(paths[2].read_bytes()).hexdigest()
+    paths[0].write_text(json.dumps(manifest), encoding="utf-8")
+    report = _audit(paths)
+    assert report.structurally_reconciled
+    assert report.net_pnl == "1.72" and not report.paper_trading_validated
+    rows[0]["net_pnl"] = "0.93"
+    _write_csv(paths[2], FILL_COLUMNS_V2, rows)
+    manifest["fills_sha256"] = sha256(paths[2].read_bytes()).hexdigest()
+    paths[0].write_text(json.dumps(manifest), encoding="utf-8")
+    assert "P&L" in " ".join(_audit(paths).failures)
 
 
 def test_real_account_is_rejected(tmp_path):

@@ -41,13 +41,27 @@ intent_id,symbol,side,volume,requested_price,sent_at
 intent_id,broker_order_id,symbol,side,volume,entry_price,exit_price,commission,net_pnl,filled_at,closed_at
 ```
 
+For MT5 exports with signed broker costs, `fills.csv` can instead use the
+version 2 header:
+
+```csv
+intent_id,broker_order_id,symbol,side,volume,entry_price,exit_price,commission,swap,fee,net_pnl,filled_at,closed_at
+```
+
+Version 2 uses the broker's signed commission, swap, and fee fields. Its
+reconciliation checks `net_pnl = price_move × volume × contract_size +
+commission + swap + fee`. Preserve the original broker export and all deal
+components independently; a locally assembled CSV is not broker proof.
+
 Timestamps must be timezone-aware ISO 8601; `BUY`/`SELL` are the allowed sides.
 One closed broker order per intent is required; partial fills must first be
 normalized into full orders with verifiable original records. Commission is
 nonnegative in the account currency and is subtracted from gross P&L. A maximum
 absolute reconciliation difference of 0.01 account-currency units is allowed.
-Non-USD account currency is refused; swap, financing, currency conversion, and deposits require a documented
-reconciliation extension before such exports can qualify. Do not include
+Non-USD account currency is refused. Version 1 cannot represent swap or fee;
+version 2 includes those signed charges. Deposits, currency conversion, and
+other financing outside these deal fields need independent reconciliation.
+Do not include
 account numbers, names, credentials, or raw statements in Git.
 
 A structurally reconciled report has `eligible_for_external_review=true`, but

@@ -18,6 +18,8 @@ from pathlib import Path
 INTENT_COLUMNS = ("intent_id", "symbol", "side", "volume", "requested_price", "sent_at")
 FILL_COLUMNS = ("intent_id", "broker_order_id", "symbol", "side", "volume", "entry_price",
                 "exit_price", "commission", "net_pnl", "filled_at", "closed_at")
+FILL_COLUMNS_V2 = ("intent_id", "broker_order_id", "symbol", "side", "volume", "entry_price",
+                   "exit_price", "commission", "swap", "fee", "net_pnl", "filled_at", "closed_at")
 MANIFEST_KEYS = ("account_mode", "account_fingerprint", "source", "symbol", "strategy_id",
                  "strategy_version", "currency", "contract_size", "intents_sha256", "fills_sha256")
 
@@ -74,11 +76,13 @@ def _instant(value: object, field: str) -> datetime:
         raise ValueError("invalid " + field) from exc
 
 
-def _rows(raw: bytes, columns: tuple[str, ...], name: str) -> list[dict[str, str]]:
+def _rows(raw: bytes, columns: tuple[str, ...] | tuple[tuple[str, ...], ...],
+          name: str) -> list[dict[str, str]]:
     try:
         content = raw.decode("utf-8-sig")
         reader = csv.DictReader(io.StringIO(content, newline=""), strict=True)
-        if reader.fieldnames != list(columns):
+        allowed = (columns,) if columns and type(columns[0]) is str else columns
+        if tuple(reader.fieldnames or ()) not in allowed:
             raise ValueError(name + " columns differ from the documented schema")
         records = list(reader)
     except (UnicodeError, csv.Error) as exc:
@@ -130,7 +134,8 @@ def audit_paper_account(manifest_path: str | Path, intents_path: str | Path, fil
                       _sha(manifest["fills_sha256"], "fills_sha256")):
             raise ValueError("source export hash mismatch")
         intents = _rows(intended, INTENT_COLUMNS, "intents")
-        fills = _rows(observed, FILL_COLUMNS, "fills")
+        fills = _rows(observed, (FILL_COLUMNS, FILL_COLUMNS_V2), "fills")
+        signed_costs = "swap" in fills[0]
         by_id = {}
         for row in intents:
             key = _text(row["intent_id"], "intent_id")
@@ -162,7 +167,9 @@ def audit_paper_account(manifest_path: str | Path, intents_path: str | Path, fil
                 raise ValueError("fill volume mismatch; partial fills require explicit normalization")
             entry = _decimal(row["entry_price"], "entry_price", positive=True)
             exit_price = _decimal(row["exit_price"], "exit_price", positive=True)
-            commission = _decimal(row["commission"], "commission", nonnegative=True)
+            commission = _decimal(row["commission"], "commission", nonnegative=not signed_costs)
+            swap = _decimal(row["swap"], "swap") if signed_costs else Decimal("0")
+            fee = _decimal(row["fee"], "fee") if signed_costs else Decimal("0")
             net = _decimal(row["net_pnl"], "net_pnl")
             requested = _decimal(intent["requested_price"], "requested_price", positive=True)
             sent = _instant(intent["sent_at"], "sent_at")
@@ -171,7 +178,9 @@ def audit_paper_account(manifest_path: str | Path, intents_path: str | Path, fil
             if filled < sent or closed < filled:
                 raise ValueError("fill timestamps out of order")
             signed_move = exit_price - entry if row["side"] == "BUY" else entry - exit_price
-            if abs(signed_move * volume * contract - commission - net) > Decimal("0.01"):
+            expected_net = (signed_move * volume * contract + commission + swap + fee
+                            if signed_costs else signed_move * volume * contract - commission)
+            if abs(expected_net - net) > Decimal("0.01"):
                 raise ValueError("net P&L does not reconcile to price, volume and contract")
             slip = abs(entry - requested)
             delay = int((filled - sent).total_seconds())
