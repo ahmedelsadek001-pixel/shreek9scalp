@@ -6,7 +6,7 @@ on:
   push:
     branches: [ "main", "v5.1-development" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "v5.1-development" ]
 
 jobs:
   build:
@@ -136,4 +136,3 @@ jobs:
         path: shreek9scalp-v5.1-development-${{ github.sha }}.zip
         if-no-files-found: error
         retention-days: 30
-
