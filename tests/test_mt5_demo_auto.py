@@ -73,6 +73,20 @@ def test_missing_completed_candles_and_failed_shutdown_never_send(monkeypatch, t
     assert not result.sent and not api.sends
 
 
+def test_failed_shutdown_overrides_early_refusal(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: None
+
+    def broken_shutdown():
+        raise RuntimeError("terminal failure")
+
+    api.shutdown = broken_shutdown
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3", now=clock)
+    assert result.reason == "automatic DEMO session shutdown failed"
+    assert not result.signal_detected and not result.sent and not result.accepted
+    assert not api.sends
+
+
 def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     strategy = _signal(bars)
