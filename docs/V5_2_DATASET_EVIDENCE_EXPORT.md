@@ -39,16 +39,23 @@ as reproducible evidence.
 
 When a same-symbol, same-timeframe reference feed is available, pass it through
 `reference_csv_paths`. The runner compares exact UTC-aligned timestamps before
-starting the evidence pipeline and stops on insufficient overlap or a close
-price difference above the default limits (median 0.5%, P95 1.0%, and at least
+starting the evidence pipeline and stops on insufficient overlap or a price
+difference above the default limits (median 0.5%, P95 1.0%, and at least
 100 common timestamps). They also require the inferred modal bar intervals to
 match, which blocks an M5-to-M15 comparison. These conservative alarms detect
 source disagreement but do not prove either feed is correct. Each successful
 comparison archives fingerprints for both bar series. Review broker, contract, and
 timestamp conventions before relaxing them. Do not compare different
 timeframes as if they were identical feeds.
-The close-price comparison scales finite inputs before computing percentage
-differences, so numerical overflow cannot turn a large disagreement into 0%.
+For each aligned bar, the comparison uses the largest percentage difference
+among open, high, low, and close; matching closes alone cannot hide different
+wicks that would change a breakout or retest. Volume is broker-specific and
+is excluded from the price comparison. The OHLC comparison scales finite inputs
+before computing percentage differences, so numerical overflow cannot turn a
+large disagreement into 0%. Each comparison records its method as
+`max_ohlc_pct_per_aligned_bar_v1`. Dataset evidence exports use schema 10 and
+the standalone audit uses schema 2; existing schema 9 exports must be regenerated
+from the raw data before they can satisfy the stricter comparison policy.
 
 Run the same check without starting WFO or writing to a dataset with:
 
@@ -75,10 +82,10 @@ For datasets that should not contain gaps over a known interval, use
 `run_csv_research`. This is opt-in because session closures and weekends create
 legitimate gaps; choose a threshold appropriate for the instrument and timeframe.
 The selected threshold and the largest observed adjacent-bar interval are retained
-in schema version 9 evidence exports; the verifier rejects a threshold below that
+in schema version 10 evidence exports; the verifier rejects a threshold below that
 observed interval.
 
-Schema version 9 uses strict JSON and archives coverage policy plus successful cross-source
+Schema version 10 uses strict JSON and archives coverage policy plus successful cross-source
 consistency checks with dataset evidence. An unbounded `max_worst_drawdown` policy is
 encoded as `null`, since JSON has no standard numeric infinity value.
 

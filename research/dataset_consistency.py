@@ -13,9 +13,12 @@ from research.breakout_retest import ResearchBar
 from research.data_validation import validate_market_data
 
 
+PRICE_COMPARISON_METRIC = "max_ohlc_pct_per_aligned_bar_v1"
+
+
 @dataclass(frozen=True)
 class DatasetConsistency:
-    """Exact-timestamp close-price agreement for two validated datasets."""
+    """Exact-timestamp OHLC price agreement for two validated datasets."""
 
     common_timestamps: int
     median_difference_pct: float | None
@@ -90,11 +93,13 @@ def compare_overlapping_datasets(
     max_median_difference_pct: float = 0.5,
     max_p95_difference_pct: float = 1.0,
 ) -> DatasetConsistency:
-    """Fail closed when aligned close prices materially disagree.
+    """Fail closed when aligned OHLC prices materially disagree.
 
     This is a source-consistency diagnostic, not proof that either source is
     correct. Only timestamps present in both validated datasets are compared.
-    Percent difference uses the mean magnitude of each close as denominator.
+    Each bar contributes its largest open/high/low/close percent difference;
+    the denominator is the mean magnitude of the paired price values. Tick
+    volume is broker-dependent and deliberately excluded from price agreement.
     """
     if type(minimum_common_timestamps) is not int or minimum_common_timestamps < 1:
         raise ValueError("minimum_common_timestamps must be a positive integer")
@@ -131,25 +136,29 @@ def compare_overlapping_datasets(
         highest_count = max(counts.values())
         return min(value for value, count in counts.items() if count == highest_count)
 
-    left_by_time = {bar.timestamp.astimezone(timezone.utc): bar.close for bar in left}
-    right_by_time = {bar.timestamp.astimezone(timezone.utc): bar.close for bar in right}
+    left_by_time = {bar.timestamp.astimezone(timezone.utc): bar for bar in left}
+    right_by_time = {bar.timestamp.astimezone(timezone.utc): bar for bar in right}
     common = sorted(set(left_by_time).intersection(right_by_time))
     differences = []
     for timestamp in common:
-        a, b = left_by_time[timestamp], right_by_time[timestamp]
-        scale = max(abs(a), abs(b))
-        if scale == 0.0:
-            difference = 0.0
-        else:
-            # Scale before subtraction and addition: finite close prices near
-            # the float limit must not overflow into a false 0% or NaN.
-            left_scaled, right_scaled = a / scale, b / scale
-            difference = (
-                abs(left_scaled - right_scaled)
-                / ((abs(left_scaled) + abs(right_scaled)) / 2.0)
-                * 100.0
-            )
-        differences.append(difference)
+        left_bar, right_bar = left_by_time[timestamp], right_by_time[timestamp]
+        bar_differences = []
+        for field in ("open", "high", "low", "close"):
+            a, b = getattr(left_bar, field), getattr(right_bar, field)
+            scale = max(abs(a), abs(b))
+            if scale == 0.0:
+                difference = 0.0
+            else:
+                # Scale before subtraction and addition: finite prices near
+                # the float limit must not overflow into a false 0% or NaN.
+                left_scaled, right_scaled = a / scale, b / scale
+                difference = (
+                    abs(left_scaled - right_scaled)
+                    / ((abs(left_scaled) + abs(right_scaled)) / 2.0)
+                    * 100.0
+                )
+            bar_differences.append(difference)
+        differences.append(max(bar_differences))
 
     if not differences:
         median_pct = p95_pct = max_pct = None

@@ -108,6 +108,35 @@ def test_dataset_runner_blocks_cross_source_disagreement_before_backtest(monkeyp
         )
 
 
+def test_dataset_runner_rejects_same_close_with_conflicting_highs_before_wfo(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(
+        dataset_runner, "run_evidence_pipeline",
+        lambda *args, **kwargs: pytest.fail("conflicting OHLC must be rejected before WFO"),
+    )
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    primary = tuple(
+        ResearchBar(start + timedelta(minutes=15 * i), 3200, 3202, 3198, 3200, 10)
+        for i in range(100)
+    )
+    reference = tuple(
+        ResearchBar(bar.timestamp, bar.open, 3290, 3100, bar.close, bar.volume)
+        for bar in primary
+    )
+    with pytest.raises(ValueError, match="cross-dataset consistency check failed"):
+        run_dataset_research(
+            primary,
+            ({"x": 1},),
+            lambda rows, params: _result(1.0),
+            comparison_datasets=(reference,),
+            train_size=50,
+            test_size=20,
+            purge_size=1,
+            starting_equity=10000.0,
+        )
+
+
 def test_dataset_runner_blocks_overflowed_source_disagreement_before_backtest(monkeypatch):
     from research import dataset_runner
 

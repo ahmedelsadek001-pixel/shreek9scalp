@@ -12,7 +12,7 @@ from typing import Any
 
 from research.breakout_retest import ResearchBar
 from research.csv_adapter import load_ohlcv_csv
-from research.dataset_consistency import compare_overlapping_datasets
+from research.dataset_consistency import PRICE_COMPARISON_METRIC, compare_overlapping_datasets
 from research.dataset_provenance import fingerprint_bars
 from research.data_validation import validate_market_data
 
@@ -90,7 +90,8 @@ def main(argv: list[str] | None = None) -> int:
             check.validate()
             references.append({
                 **reference_info,
-                "comparison": {**asdict(check), "consistent": check.consistent},
+                "comparison": {**asdict(check), "price_comparison_metric": PRICE_COMPARISON_METRIC,
+                               "consistent": check.consistent},
             })
         ready = (
             bool(references)
@@ -98,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             and all(item["comparison"]["consistent"] for item in references)
         )
         output = {
-            "schema_version": "1",
+            "schema_version": "2",
             "ready_for_research": ready,
             "primary": primary_info,
             "history_check": {
@@ -113,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ready else 1
     except (OSError, UnicodeError, TypeError, ValueError, OverflowError) as exc:
         print(
-            json.dumps({"schema_version": "1", "ready_for_research": False, "error": str(exc)}, sort_keys=True),
+            json.dumps({"schema_version": "2", "ready_for_research": False, "error": str(exc)}, sort_keys=True),
             file=sys.stderr,
         )
         return 2

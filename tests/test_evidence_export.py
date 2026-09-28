@@ -121,7 +121,7 @@ def test_export_is_deterministic():
 def test_export_contains_dataset_identity_evidence_and_exact_policy():
     policy = EvidenceGatePolicy(min_oos_trades=2, min_expectancy=1.0, min_oos_stability_pct=0.0)
     payload = build_evidence_export(_result(policy), _provenance())
-    assert payload["schema_version"] == "9"
+    assert payload["schema_version"] == "10"
     assert payload["dataset"]["sha256"] == "a" * 64
     assert "oos_expectancy" in payload["evidence"]
     assert payload["gate"]["passed"] is True
@@ -140,7 +140,7 @@ def test_serialized_export_uses_strict_json_without_nonstandard_numbers():
         serialized,
         parse_constant=reject_constant,
     )
-    assert parsed["schema_version"] == "9"
+    assert parsed["schema_version"] == "10"
 
 
 def test_export_rejects_invalid_policy():
@@ -189,6 +189,7 @@ def test_dataset_export_binds_validation_provenance_and_evidence():
     assert payload["dataset_validation"]["bar_count"] == 9
     assert payload["evidence"]["oos_trade_count"] == 2
     assert payload["dataset_consistency"][0]["consistent"] is True
+    assert payload["dataset_consistency"][0]["price_comparison_metric"] == "max_ohlc_pct_per_aligned_bar_v1"
     assert payload["dataset_consistency"][0]["left_dataset_sha256"] == result.provenance.sha256
     assert len(payload["dataset_consistency"][0]["right_dataset_sha256"]) == 64
     assert payload["dataset_coverage_policy"]["minimum_history_seconds"] == 1200.0
@@ -232,6 +233,17 @@ def test_saved_dataset_export_rejects_internally_forged_consistency_result():
     )
     forged_digest = sha256(forged.encode("utf-8")).hexdigest()
     assert verify_serialized_dataset_evidence_export(forged, forged_digest) is False
+
+
+def test_dataset_export_rejects_changed_price_comparison_metric_even_with_new_digest():
+    result = _dataset_result()
+    payload = build_dataset_evidence_export(result)
+    payload["dataset_consistency"][0]["price_comparison_metric"] = "close_only_v1"
+    forged = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                        default=lambda value: value.isoformat())
+    assert verify_serialized_dataset_evidence_export(
+        forged, sha256(forged.encode("utf-8")).hexdigest(),
+    ) is False
 
 
 def test_saved_dataset_export_rejects_unsatisfied_coverage_policy():

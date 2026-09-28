@@ -10,7 +10,7 @@ from math import isclose, isfinite
 from typing import Any
 
 from research.dataset_provenance import DatasetProvenance
-from research.dataset_consistency import DatasetConsistency
+from research.dataset_consistency import DatasetConsistency, PRICE_COMPARISON_METRIC
 from research.evidence_gate import EvidenceGatePolicy, EvidenceGateResult, evaluate_oos_evidence
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_report import OOSEvidenceReport, build_oos_evidence_report
@@ -20,7 +20,7 @@ from core.research_metrics import calculate_research_metrics
 from core.risk_simulation import monte_carlo
 
 
-EXPORT_SCHEMA_VERSION = "9"
+EXPORT_SCHEMA_VERSION = "10"
 
 
 def _json_default(value: Any) -> str:
@@ -142,7 +142,8 @@ def build_dataset_evidence_export(result: DatasetResearchResult) -> dict[str, An
         "max_gap_seconds": max_gap_seconds,
     }
     payload["dataset_consistency"] = [
-        {**asdict(check), "consistent": check.consistent}
+        {**asdict(check), "price_comparison_metric": PRICE_COMPARISON_METRIC,
+         "consistent": check.consistent}
         for check in result.consistency_checks
     ]
     return payload
@@ -329,10 +330,12 @@ def verify_serialized_dataset_evidence_export(
             "max_difference_pct", "left_dataset_sha256", "right_dataset_sha256",
             "left_interval_seconds", "right_interval_seconds",
             "allowed_median_pct", "allowed_p95_pct",
-            "minimum_common_timestamps", "consistent",
+            "minimum_common_timestamps", "price_comparison_metric", "consistent",
         }
         for check in consistency:
             if not isinstance(check, dict) or set(check) != consistency_fields:
+                return False
+            if check["price_comparison_metric"] != PRICE_COMPARISON_METRIC:
                 return False
             common = check["common_timestamps"]
             minimum = check["minimum_common_timestamps"]

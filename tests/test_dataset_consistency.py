@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -34,6 +35,16 @@ def test_large_price_disagreement_fails_even_when_both_series_are_valid():
     )
     assert result.consistent is False
     assert result.common_timestamps == 3
+    assert result.median_difference_pct > 20.0
+
+
+def test_same_closes_cannot_hide_conflicting_wicks_and_breakout_levels():
+    primary = bars([100, 100, 100])
+    reference = tuple(replace(bar, high=130, low=70) for bar in primary)
+    result = compare_overlapping_datasets(primary, reference,
+                                          minimum_common_timestamps=3)
+    assert result.common_timestamps == 3
+    assert result.consistent is False
     assert result.median_difference_pct > 20.0
 
 

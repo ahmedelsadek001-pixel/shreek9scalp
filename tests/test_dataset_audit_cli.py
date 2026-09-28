@@ -26,6 +26,8 @@ def test_dataset_audit_cli_emits_archivable_pass_report(tmp_path, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["ready_for_research"] is True
     assert output["references"][0]["comparison"]["common_timestamps"] == 3
+    assert output["schema_version"] == "2"
+    assert output["references"][0]["comparison"]["price_comparison_metric"] == "max_ohlc_pct_per_aligned_bar_v1"
     assert output["primary"]["file"] == "primary.csv"
 
 
