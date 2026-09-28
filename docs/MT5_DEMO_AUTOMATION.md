@@ -15,8 +15,9 @@ broker Bid is within 0.10 price units
 of the strategy candle close; BUY orders use the fresh Ask. The DEMO-only
 transport binds this execution price and rechecks
 the account mode/login/server, applies its 0.01-lot and risk/stop/spread gates,
-and durably reserves the signal ID before the broker call. After one attempted
-broker submission, the bounded watcher stops, including uncertain outcomes.
+and durably reserves the signal ID before the broker call. After one detected
+signal, the bounded watcher stops, including a signal rejected by the broker
+safety checks or an uncertain submission.
 Repeated scans cannot re-submit the same signal ID.
 The local SQLite ledger labels these attempts `strategy_experiment`; manually
 entered sandbox attempts are `manual_sandbox`, and migrated older rows remain
@@ -70,7 +71,9 @@ missing, interrupted, or stale completed M5 candles without disclosing account
 data. Failure to close the MT5 inspection session overrides every scan result,
 including an earlier no-signal or missing-data refusal. A bounded watcher stops
 immediately on that failure and requires an operator to investigate before a
-new run. Ordinary missing candles can still be polled until the time limit.
+new run. Missing candles, stale completed candles, and scans with no unique
+signal can still be polled until the time limit. Every other refusal stops the
+watcher; inspect the cause before starting a new run.
 After the DEMO
 terminal actually permits trading and the operator elects to collect
 experimental DEMO fills, a bounded 60-minute watcher is explicitly enabled:
@@ -82,7 +85,8 @@ py -m execution.mt5_demo_auto_cli --execute-demo-auto --watch-minutes 60 --ledge
 ```
 
 The watcher polls every 30 seconds, scans completed candles, and stops after
-at most one broker submission or 60 minutes. A refused scan is not a trade.
+one detected signal, a safety refusal, or 60 minutes. It requires the DEMO
+kill switch to be explicitly OFF at startup. A refused scan is not a trade.
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
 

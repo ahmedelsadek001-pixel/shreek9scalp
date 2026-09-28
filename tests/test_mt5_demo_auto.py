@@ -310,3 +310,74 @@ def test_watch_can_poll_again_after_missing_candles(monkeypatch, tmp_path):
             str(tmp_path / "demo.sqlite3")]
     assert mt5_demo_auto_cli.main(args) == 2
     assert api.stops == 2 and len(sleeps) == 1 and not api.sends
+
+
+def test_watch_stops_when_account_changes_after_passive_scan(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    api, _, _ = _api(datetime.now(timezone.utc))
+    original_shutdown = api.shutdown
+
+    def switch_account_after_first_scan():
+        original_shutdown()
+        if api.stops == 1:
+            api.account = Account(trade_mode=2)
+
+    api.shutdown = switch_account_after_first_scan
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: api)
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "monotonic", lambda: 0)
+    sleeps = []
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep", sleeps.append)
+    args = ["--execute-demo-auto", "--watch-minutes", "1", "--ledger",
+            str(tmp_path / "demo.sqlite3")]
+    assert mt5_demo_auto_cli.main(args) == 2
+    reports = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert reports[0]["reason"] in mt5_demo_auto_cli._WATCH_RETRYABLE_REASONS
+    assert reports[1]["reason"] == "automatic DEMO account identity unavailable"
+    assert api.stops == 2 and sleeps == [30] and not api.sends
+
+
+def test_watch_stops_after_detected_signal_fails_price_gate(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    api, clock, bars = _api(datetime.now(timezone.utc))
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.fromtimestamp(clock.timestamp(), timezone.utc)
+
+    monkeypatch.setattr(mt5_demo_auto, "datetime", FixedDatetime)
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+    api.symbol_info_tick = lambda symbol: SimpleNamespace(bid=4001.0, ask=4001.1,
+                                                           time_msc=api.tick_ms)
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: api)
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep",
+                        lambda _: pytest.fail("watch retried a rejected signal"))
+    args = ["--execute-demo-auto", "--watch-minutes", "1", "--ledger",
+            str(tmp_path / "demo.sqlite3")]
+    assert mt5_demo_auto_cli.main(args) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["signal_detected"] and not report["sent"], report
+    assert report["reason"] == "strategy signal differs from broker price"
+    assert api.stops == 1 and not api.sends
+
+
+def test_watch_requires_kill_switch_off_before_attaching(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.delenv("SHREEK_DEMO_KILL_SWITCH", raising=False)
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime",
+                        lambda: pytest.fail("watch attached with active kill switch"))
+    args = ["--execute-demo-auto", "--watch-minutes", "1", "--ledger",
+            str(tmp_path / "demo.sqlite3")]
+    assert mt5_demo_auto_cli.main(args) == 2
+    assert json.loads(capsys.readouterr().out)["reason"] == "automatic DEMO kill switch active"
