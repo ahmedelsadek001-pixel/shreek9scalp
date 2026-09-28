@@ -5,6 +5,7 @@ from dataclasses import asdict
 import json
 import os
 
+from execution.mt5_demo_clock import configured_demo_server_utc_offset_seconds
 from execution.mt5_demo_probe import DemoTerminalConfig
 from execution.mt5_demo_readiness import DemoReadiness, inspect_demo_readiness
 from utils.mt5_compat import read_only_mt5_runtime
@@ -17,7 +18,8 @@ def main() -> int:
             raise ValueError("DEMO login missing")
         config = DemoTerminalConfig(os.environ.get("SHREEK_DEMO_TERMINAL_PATH", ""), int(login),
                                     os.environ.get("SHREEK_DEMO_SERVER", ""),
-                                    symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"))
+                                    symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"),
+                                    server_utc_offset_seconds=configured_demo_server_utc_offset_seconds())
         report = inspect_demo_readiness(read_only_mt5_runtime(), config)
     except (TypeError, ValueError, OverflowError):
         report = DemoReadiness(False, ("DEMO binding incomplete",))

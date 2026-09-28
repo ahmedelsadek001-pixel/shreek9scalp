@@ -29,7 +29,26 @@ Open the already selected DEMO terminal and configure the four private
 `SHREEK_DEMO_TERMINAL_PATH`, `SHREEK_DEMO_LOGIN`, `SHREEK_DEMO_SERVER`, and
 `SHREEK_DEMO_SYMBOL=XAUUSD.s` variables as in
 [MT5_DEMO_CONNECTION.md](MT5_DEMO_CONNECTION.md). Never put the login or
-password into the repository. Use a local ledger directory outside Git:
+password into the repository. For the **verified DEMO terminal only**, a
+read-only NTP check found the Windows clock within 0.34 seconds of time.windows.com;
+two advancing XAUUSD.s ticks and the latest completed M5 bar were consistently
+encoded 10800 seconds ahead of UTC. JustMarkets [lists GMT+3 server time for
+commodities](https://justmarkets.com/markets/commodities). Explicitly select
+that observed broker timestamp mapping in the same PowerShell session:
+
+```powershell
+$env:SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS = '10800'
+```
+
+Without that opt-in the original UTC-only gate remains in force. Only `0`
+and the observed `10800` are accepted. The mapping is applied to both broker
+tick timestamps and M5 bar open timestamps. Ticks older than five seconds or
+more than one second ahead of the clock after mapping are refused. A broker
+clock change, daylight-saving transition, Windows time drift or data-feed
+discrepancy requires fresh read-only diagnosis; never guess an offset to make
+readiness pass. The chosen offset is saved with every reserved DEMO attempt in
+the private SQLite ledger so broker evidence can be reviewed later. Use a
+local ledger directory outside Git:
 
 ```powershell
 $ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'

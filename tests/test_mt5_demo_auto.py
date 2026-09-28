@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -107,6 +108,43 @@ def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):
     assert not replay.sent and len(api.sends) == 1
 
 
+def test_shifted_broker_bars_use_utc_signal_time_and_transport_gate(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    shifted_bars = [dict(row, time=row["time"] + 10800) for row in bars]
+    api.copy_rates_from_pos = lambda *args: shifted_bars
+    api.tick_ms += 10_800_300
+    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
+
+    def current_signal(rows, *_args, **_kwargs):
+        assert rows[-1].timestamp == datetime.fromtimestamp(bars[-1]["time"], timezone.utc)
+        return (SimpleNamespace(direction=Direction.BUY, signal_time=rows[-1].timestamp,
+                                breakout_time=rows[-2].timestamp, entry_price=4000.0,
+                                sl_price=3998.0, tp1=4002.0),)
+
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest", current_signal)
+    ledger = tmp_path / "demo.sqlite3"
+    assert not scan_and_submit_demo(api, CONFIG, ledger, now=clock).signal_detected
+    dry = scan_and_submit_demo(api, shifted, ledger, now=clock)
+    assert dry.signal_detected and not dry.sent and not ledger.exists()
+    done = scan_and_submit_demo(api, shifted, ledger, execute=True,
+                                kill_switch_off=True, now=clock)
+    assert done.accepted and done.signal_id == dry.signal_id and len(api.sends) == 1
+
+
+def test_shifted_bars_with_unshifted_quote_never_send(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    shifted_bars = [dict(row, time=row["time"] + 10800) for row in bars]
+    api.copy_rates_from_pos = lambda *args: shifted_bars
+    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest", lambda rows, *args, **kwargs: (
+        SimpleNamespace(direction=Direction.BUY, signal_time=rows[-1].timestamp,
+                        breakout_time=rows[-2].timestamp, entry_price=4000.0,
+                        sl_price=3998.0, tp1=4002.0),))
+    result = scan_and_submit_demo(api, shifted, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.signal_detected and not result.sent and not api.sends
+
+
 def test_buy_signal_compares_bid_candle_and_pays_ask(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
@@ -166,6 +204,31 @@ def test_cli_never_enables_automation_without_both_opt_ins(monkeypatch, capsys, 
     assert mt5_demo_auto_cli.main(["--execute-demo-auto"] + args) == 2
     assert not api.sends
     assert "123456" not in capsys.readouterr().out
+
+
+def test_read_only_auto_cli_applies_only_explicit_broker_offset(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.delenv("SHREEK_DEMO_AUTO_ACK", raising=False)
+    api, _, _ = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: api)
+    observed_offsets = []
+
+    def inspect_binding(api, config, ledger, **kwargs):
+        observed_offsets.append(config.server_utc_offset_seconds)
+        return mt5_demo_auto.DemoAutoResult(False, False, False, "read-only binding checked")
+
+    monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", inspect_binding)
+    args = ["--ledger", str(tmp_path / "demo.sqlite3")]
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "10800")
+    assert mt5_demo_auto_cli.main(args) == 2
+    assert observed_offsets == [10800]
+    assert not json.loads(capsys.readouterr().out)["sent"]
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "7200")
+    assert mt5_demo_auto_cli.main(args) == 2
+    assert observed_offsets == [10800] and not api.sends
 
 
 def test_watch_stops_after_failed_session_shutdown(monkeypatch, capsys, tmp_path):

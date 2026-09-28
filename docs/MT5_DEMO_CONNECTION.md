@@ -57,6 +57,14 @@ spread at most 0.50 in price units, no existing account positions or pending
 orders, a stop and target on the correct sides, and a maximum stop loss of
 0.5% of DEMO equity. It supports USD account and USD symbol profit currency
 only. The protective stop and target are submitted in the same request.
+On the verified broker DEMO terminal, a measured server timestamp offset of
+three hours can be selected locally with
+`SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS=10800`. This is never inferred from
+potentially stale market data. An unset value means zero offset; all other
+values except `10800` are refused. The same mapping is required by readiness,
+manual sandbox and the experimental strategy scan. Validate Windows time and
+the current DEMO tick/M5 timestamps before setting it; details are in
+[MT5_DEMO_AUTOMATION.md](MT5_DEMO_AUTOMATION.md).
 The broker pre-check is followed by another account/quote check. The
 submission reserves a unique ID in a durable local SQLite file *before*
 calling the broker. Uncertain results remain locked against new attempts;

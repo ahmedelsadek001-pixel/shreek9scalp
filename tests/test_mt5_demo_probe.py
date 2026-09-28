@@ -134,6 +134,13 @@ def test_binding_is_explicit_and_cli_never_prints_account(monkeypatch, capsys):
         DemoTerminalConfig("terminal.exe", True, "Sandbox-Demo").validate()
 
 
+@pytest.mark.parametrize("offset", [True, -10800, 7200, 10801, "10800"])
+def test_unsupported_server_clock_offsets_are_rejected(offset):
+    from dataclasses import replace
+    with pytest.raises(ValueError, match="UTC offset"):
+        replace(CONFIG, server_utc_offset_seconds=offset).validate()
+
+
 def test_cli_verified_demo_redacts_login_and_never_enables_transport(monkeypatch, capsys):
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))

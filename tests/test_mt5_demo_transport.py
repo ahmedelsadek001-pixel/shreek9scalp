@@ -1,5 +1,5 @@
 """DEMO transport safety behaviour against a fake, unprivileged MT5 API."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import sqlite3
 
@@ -165,6 +165,50 @@ def test_fok_only_keeps_demo_identity_and_fresh_quote_gates(tmp_path):
     assert api.sends == []
 
 
+def test_broker_three_hour_offset_only_when_explicit_and_quote_is_fresh(tmp_path):
+    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    ledger = tmp_path / "demo.sqlite3"
+    assert not submit_demo_order(api, CONFIG, ORDER, ledger).sent
+    assert not ledger.exists()
+    result = submit_demo_order(api, shifted, ORDER, ledger)
+    assert result.accepted and result.sent and len(api.sends) == 1
+    assert api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT server_utc_offset_seconds FROM attempts").fetchone() == (10800,)
+
+
+def test_shifted_quote_must_not_be_stale_future_or_from_real_account(tmp_path):
+    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
+    for tick_offset_ms in (10_792_000, 10_803_000, 0):
+        api = FakeMT5(symbol=Symbol(filling_mode=1))
+        api.tick_ms += tick_offset_ms
+        assert not submit_demo_order(api, shifted, ORDER, tmp_path / "demo.sqlite3").sent
+        assert api.sends == []
+    api = FakeMT5(account=Account(trade_mode=2), symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    assert not submit_demo_order(api, shifted, ORDER, tmp_path / "demo.sqlite3").sent
+    assert api.sends == []
+
+
+def test_shifted_quote_timestamp_changes_during_broker_precheck(tmp_path):
+    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    original_check = api.order_check
+
+    def move_tick(request):
+        result = original_check(request)
+        api.tick_ms += 5_000
+        return result
+
+    api.order_check = move_tick
+    result = submit_demo_order(api, shifted, ORDER, tmp_path / "demo.sqlite3")
+    assert not result.sent and not api.sends
+    assert not (tmp_path / "demo.sqlite3").exists()
+
+
 def test_old_ledger_rows_remain_unattributed_when_source_column_is_migrated(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     with sqlite3.connect(ledger) as db:
@@ -179,8 +223,9 @@ def test_old_ledger_rows_remain_unattributed_when_source_column_is_migrated(tmp_
                    ("0" * 64, datetime.now(timezone.utc).isoformat()))
     assert submit_demo_order(FakeMT5(), CONFIG, ORDER, ledger).accepted
     with sqlite3.connect(ledger) as db:
-        assert db.execute("SELECT source_kind FROM attempts ORDER BY intent_id").fetchall() == [
-            ("legacy_unattributed",), ("manual_sandbox",)]
+        assert db.execute("SELECT source_kind, server_utc_offset_seconds FROM attempts "
+                          "ORDER BY intent_id").fetchall() == [
+            ("legacy_unattributed", 0), ("manual_sandbox", 0)]
 
 
 def test_real_account_disallowed_even_when_login_and_server_match(tmp_path):
@@ -267,3 +312,22 @@ def test_cli_needs_explicit_ack_and_never_displays_identity(monkeypatch, capsys,
     output = capsys.readouterr().out
     assert "123456" not in output and "Sandbox-Demo" not in output
     assert len(api.sends) == 1
+
+
+def test_manual_cli_uses_explicit_broker_offset_without_leaking_identity(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_TRADING_ACK", "DEMO_ONLY")
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "10800")
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    monkeypatch.setattr(mt5_demo_order_cli, "demo_only_mt5_runtime", lambda: api)
+    args = ["--execute-demo", "--intent-id", "shifted-demo-1", "--side", "BUY",
+            "--stop-loss", "3998", "--take-profit", "4002",
+            "--ledger", str(tmp_path / "demo.sqlite3")]
+    assert mt5_demo_order_cli.main(args) == 0
+    assert len(api.sends) == 1
+    output = capsys.readouterr().out
+    assert str(CONFIG.expected_login) not in output and CONFIG.expected_server not in output

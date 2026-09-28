@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from math import isfinite
 from typing import Any
 
+from execution.mt5_demo_clock import fresh_demo_quote_age_ms
 from execution.mt5_demo_probe import DemoTerminalConfig, _matches_demo_account
 
 
@@ -19,6 +20,7 @@ class DemoReadiness:
     blockers: tuple[str, ...]
     symbol: str | None = None
     order_transport_enabled: bool = False
+    server_utc_offset_seconds: int = 0
 
 
 def _number(value: Any) -> bool:
@@ -88,7 +90,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                 if (tick is None or not all(_number(getattr(tick, x, None))
                                             for x in ("ask", "bid", "time_msc"))
                         or tick.bid <= 0 or tick.ask <= tick.bid
-                        or not 0 <= clock.timestamp() * 1000 - tick.time_msc <= 5000
+                        or fresh_demo_quote_age_ms(tick, config, clock) is None
                         or tick.ask - tick.bid > 0.50):
                     blockers.append("DEMO quote missing, stale or wide")
                 last_terminal, last_account = api.terminal_info(), api.account_info()
@@ -99,7 +101,8 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or getattr(last_account, "trade_allowed", None) is not True
                         or getattr(last_account, "trade_expert", None) is not True):
                     blockers.append("DEMO identity changed during inspection")
-                report = DemoReadiness(not blockers, tuple(blockers), config.symbol)
+                report = DemoReadiness(not blockers, tuple(blockers), config.symbol,
+                                       False, config.server_utc_offset_seconds)
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError):
         report = refused("DEMO inspection failed")
     finally:

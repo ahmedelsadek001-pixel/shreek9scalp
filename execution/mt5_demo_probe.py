@@ -18,6 +18,7 @@ class DemoTerminalConfig:
     expected_server: str
     symbol: str = "XAUUSD"
     timeout_ms: int = 5000
+    server_utc_offset_seconds: int = 0
 
     def validate(self) -> None:
         if type(self.terminal_path) is not str or not self.terminal_path.strip():
@@ -30,6 +31,9 @@ class DemoTerminalConfig:
                 raise ValueError(f"{name} must be non-empty normalized text")
         if type(self.timeout_ms) is not int or not 1 <= self.timeout_ms <= 30000:
             raise ValueError("demo terminal timeout must be between 1 and 30000 ms")
+        if (type(self.server_utc_offset_seconds) is not int
+                or self.server_utc_offset_seconds not in (0, 10800)):
+            raise ValueError("unsupported DEMO server UTC offset")
 
 
 @dataclass(frozen=True)

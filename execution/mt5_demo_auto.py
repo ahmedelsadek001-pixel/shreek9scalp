@@ -44,13 +44,14 @@ class _DemoSessionShutdownError(RuntimeError):
     """Internal sentinel used to override every pending session result."""
 
 
-def _closed_m5_bars(api: Any, symbol: str, now: datetime) -> tuple[ResearchBar, ...]:
+def _closed_m5_bars(api: Any, config: DemoTerminalConfig,
+                    now: datetime) -> tuple[ResearchBar, ...]:
     # MT5 index 0 is a forming candle; index 1 is the last closed candle.
-    rates = api.copy_rates_from_pos(symbol, api.TIMEFRAME_M5, 1, 80)
+    rates = api.copy_rates_from_pos(config.symbol, api.TIMEFRAME_M5, 1, 80)
     if rates is None or len(rates) != 80:
         raise ValueError("80 completed M5 bars unavailable")
     bars = tuple(sorted((ResearchBar(
-        datetime.fromtimestamp(int(row["time"]), timezone.utc),
+        datetime.fromtimestamp(int(row["time"]) - config.server_utc_offset_seconds, timezone.utc),
         float(row["open"]), float(row["high"]), float(row["low"]),
         float(row["close"]), float(row["tick_volume"]),
     ) for row in rates), key=lambda bar: bar.timestamp))
@@ -96,7 +97,7 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 or type(getattr(symbol_info, "chart_mode", None)) is not int
                 or symbol_info.chart_mode != chart_mode_bid):
             return refused("automatic DEMO requires Bid-based broker candles")
-        bars = _closed_m5_bars(api, config.symbol, clock)
+        bars = _closed_m5_bars(api, config, clock)
         signals = detect_breakout_retest(bars, PIP_SIZE, BreakoutRetestConfig(),
                                          min_signal_index=len(bars) - 1)
         if len(signals) != 1 or signals[0].signal_time != bars[-1].timestamp:

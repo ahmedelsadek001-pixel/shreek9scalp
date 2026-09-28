@@ -24,6 +24,20 @@ def test_fok_only_contract_is_ready_but_does_not_send():
     assert api.sends == [] and api.stops == 1
 
 
+def test_explicit_three_hour_server_offset_accepts_live_quote_only():
+    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
+    result = inspect_demo_readiness(api, shifted)
+    assert result.ready_for_demo_attempt and result.server_utc_offset_seconds == 10800
+    assert result.order_transport_enabled is False and api.sends == []
+    api.tick_ms -= 10_000
+    assert not inspect_demo_readiness(api, shifted).ready_for_demo_attempt
+    api.tick_ms += 13_000
+    assert not inspect_demo_readiness(api, shifted).ready_for_demo_attempt
+
+
 def test_missing_fok_and_ioc_contract_is_not_ready():
     for filling in (0, 4, -1, True, None):
         api = FakeMT5(symbol=Symbol(filling_mode=filling))
@@ -79,6 +93,23 @@ def test_cli_redacts_account_even_for_ready_demo(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert str(CONFIG.expected_login) not in output and CONFIG.expected_server not in output
     assert json.loads(output)["order_transport_enabled"] is False
+
+
+def test_cli_requires_explicit_valid_offset_and_never_sends(monkeypatch, capsys):
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    monkeypatch.setattr(mt5_demo_readiness_cli, "read_only_mt5_runtime", lambda: api)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "10800")
+    assert mt5_demo_readiness_cli.main() == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["server_utc_offset_seconds"] == 10800 and not api.sends
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "7200")
+    assert mt5_demo_readiness_cli.main() == 2
+    assert not api.sends
 
 
 def test_future_or_naive_readiness_clock_refused():
