@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
 
 from core.enums import Direction
 from execution.mt5_demo_auto import scan_and_submit_demo
@@ -164,3 +166,51 @@ def test_cli_never_enables_automation_without_both_opt_ins(monkeypatch, capsys, 
     assert mt5_demo_auto_cli.main(["--execute-demo-auto"] + args) == 2
     assert not api.sends
     assert "123456" not in capsys.readouterr().out
+
+
+def test_watch_stops_after_failed_session_shutdown(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: None
+    shutdown_calls = []
+
+    def broken_shutdown():
+        shutdown_calls.append(True)
+        raise RuntimeError("terminal failure")
+
+    api.shutdown = broken_shutdown
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: api)
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep",
+                        lambda _: pytest.fail("watch retried after shutdown failed"))
+    args = ["--execute-demo-auto", "--watch-minutes", "1", "--ledger",
+            str(tmp_path / "demo.sqlite3")]
+    assert mt5_demo_auto_cli.main(args) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["reason"] == mt5_demo_auto.SESSION_SHUTDOWN_FAILED_REASON
+    assert not report["sent"] and not report["accepted"]
+    assert len(shutdown_calls) == 1 and not api.sends
+
+
+def test_watch_can_poll_again_after_missing_candles(monkeypatch, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: None
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: api)
+    clock = iter([0, 1, 2, 61])
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "monotonic", lambda: next(clock))
+    sleeps = []
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep", sleeps.append)
+    args = ["--execute-demo-auto", "--watch-minutes", "1", "--ledger",
+            str(tmp_path / "demo.sqlite3")]
+    assert mt5_demo_auto_cli.main(args) == 2
+    assert api.stops == 2 and len(sleeps) == 1 and not api.sends

@@ -8,7 +8,9 @@ import os
 from pathlib import Path
 import time
 
-from execution.mt5_demo_auto import DemoAutoResult, scan_and_submit_demo
+from execution.mt5_demo_auto import (
+    DemoAutoResult, SESSION_SHUTDOWN_FAILED_REASON, scan_and_submit_demo,
+)
 from execution.mt5_demo_probe import DemoTerminalConfig
 from utils.mt5_compat import demo_only_mt5_runtime
 
@@ -47,7 +49,10 @@ def main(argv: list[str] | None = None) -> int:
                 kill_switch_off=os.environ.get("SHREEK_DEMO_KILL_SWITCH") == "OFF",
             )
             print(json.dumps(asdict(result), sort_keys=True), flush=True)
-            if result.sent or not args.watch_minutes or time.monotonic() >= deadline:
+            # A failed shutdown may leave the terminal session open. Do not
+            # start another scan in this process, even when watching for a signal.
+            if (result.sent or result.reason == SESSION_SHUTDOWN_FAILED_REASON
+                    or not args.watch_minutes or time.monotonic() >= deadline):
                 return 0 if result.accepted else 2
             time.sleep(min(30, max(0, deadline - time.monotonic())))
     except (TypeError, ValueError, OverflowError):

@@ -48,7 +48,9 @@ The last command is one read-only scan. A missing signal or stale weekend
 quote returns a refused JSON response and sends no order. The scan names
 missing, interrupted, or stale completed M5 candles without disclosing account
 data. Failure to close the MT5 inspection session overrides every scan result,
-including an earlier no-signal or missing-data refusal, and remains fail-closed.
+including an earlier no-signal or missing-data refusal. A bounded watcher stops
+immediately on that failure and requires an operator to investigate before a
+new run. Ordinary missing candles can still be polled until the time limit.
 After the DEMO
 terminal actually permits trading and the operator elects to collect
 experimental DEMO fills, a bounded 60-minute watcher is explicitly enabled:

@@ -22,6 +22,7 @@ from research.data_validation import validate_market_data
 STRATEGY_ID = "breakout-retest-research-v1-pip0.1"
 PIP_SIZE = 0.1
 BAR_SECONDS = 300
+SESSION_SHUTDOWN_FAILED_REASON = "automatic DEMO session shutdown failed"
 _SAFE_BAR_ERRORS = frozenset({
     "80 completed M5 bars unavailable",
     "M5 context has a session gap",
@@ -163,5 +164,5 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
         )
     except _DemoSessionShutdownError:
         return DemoAutoResult(
-            False, False, False, "automatic DEMO session shutdown failed"
+            False, False, False, SESSION_SHUTDOWN_FAILED_REASON
         )
