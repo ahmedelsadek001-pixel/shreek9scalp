@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from math import isfinite
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from core.enums import Direction
 from execution.mt5_demo_probe import DemoTerminalConfig, _matches_demo_account
@@ -44,6 +44,14 @@ class _DemoSessionShutdownError(RuntimeError):
     """Internal sentinel used to override every pending session result."""
 
 
+def m5_context_is_contiguous(bars: Sequence[ResearchBar]) -> bool:
+    """Check the entire M5 history that can contribute to the latest signal."""
+    return len(bars) >= 33 and all(
+        int((right.timestamp - left.timestamp).total_seconds()) == BAR_SECONDS
+        for left, right in zip(bars[-33:-1], bars[-32:])
+    )
+
+
 def _closed_m5_bars(api: Any, config: DemoTerminalConfig,
                     now: datetime) -> tuple[ResearchBar, ...]:
     # MT5 index 0 is a forming candle; index 1 is the last closed candle.
@@ -57,8 +65,7 @@ def _closed_m5_bars(api: Any, config: DemoTerminalConfig,
     ) for row in rates), key=lambda bar: bar.timestamp))
     validate_market_data(bars)
     # Avoid a cross-session setup or a delayed broker feed after market reopen.
-    if any(int((right.timestamp - left.timestamp).total_seconds()) != BAR_SECONDS
-           for left, right in zip(bars[-33:-1], bars[-32:])):
+    if not m5_context_is_contiguous(bars):
         raise ValueError("M5 context has a session gap")
     since_close = (now - bars[-1].timestamp).total_seconds() - BAR_SECONDS
     if not 0 <= since_close <= 120:

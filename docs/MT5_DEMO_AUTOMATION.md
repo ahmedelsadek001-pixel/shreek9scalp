@@ -65,6 +65,24 @@ It prints no account number and never sends an order. A positive report is an
 instantaneous environmental observation, not a signal, broker approval, or
 permission to skip the independent order checks in the transport.
 
+To investigate repeated scans with no confirmed signal, audit a local,
+timezone-aware XAUUSD M5 CSV from the same broker without attaching MT5:
+
+```powershell
+py -m execution.mt5_demo_signal_audit_cli --csv .\XAUUSD_M5_raw.csv
+```
+
+The CSV header must be `timestamp,open,high,low,close,volume`, with one closed
+M5 candle per row and explicit timestamp offsets. The JSON includes a SHA-256
+of the CSV, the exact first and last timestamps, the number of 80-bar windows
+with 33 uninterrupted M5 bars, and the number of signals confirmed on each
+window's last bar. An old gap outside the 33-bar signal context is allowed,
+as in the actual runner. This historical audit has no quote freshness check,
+broker account binding, order submission, or profitability claim. A zero
+signal count means the fixed detector cannot trigger an automatic order on
+those recorded candles. It cannot establish whether a later candle qualifies;
+do not loosen thresholds merely to force a DEMO fill.
+
 The last command is one read-only scan. A missing signal or stale weekend
 quote returns a refused JSON response and sends no order. The scan names
 missing, interrupted, or stale completed M5 candles without disclosing account
