@@ -16,6 +16,21 @@ def test_ready_demo_is_observational_only():
     assert api.sends == [] and api.stops == 1
 
 
+def test_fok_only_contract_is_ready_but_does_not_send():
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    result = inspect_demo_readiness(api, CONFIG)
+    assert result.ready_for_demo_attempt
+    assert result.order_transport_enabled is False
+    assert api.sends == [] and api.stops == 1
+
+
+def test_missing_fok_and_ioc_contract_is_not_ready():
+    for filling in (0, 4, -1, True, None):
+        api = FakeMT5(symbol=Symbol(filling_mode=filling))
+        assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
+        assert api.sends == []
+
+
 def test_real_and_wrong_identity_refused_without_order_call():
     api = FakeMT5(account=Account(trade_mode=2))
     assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt

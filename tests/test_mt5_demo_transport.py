@@ -47,6 +47,7 @@ class FakeMT5:
     ORDER_TYPE_BUY = 0
     ORDER_TYPE_SELL = 1
     ORDER_TIME_GTC = 0
+    ORDER_FILLING_FOK = 0
     ORDER_FILLING_IOC = 1
     TRADE_RETCODE_DONE = 10009
     DEAL_TYPE_BUY = 0
@@ -116,6 +117,52 @@ def test_one_real_demo_ack_is_durable_and_duplicate_never_sends(tmp_path):
                                "manual_sandbox")]
     again = submit_demo_order(api, CONFIG, ORDER, ledger)
     assert not again.sent and len(api.sends) == 1
+
+
+def test_fok_only_broker_can_fill_exactly_one_demo_order(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
+    assert result.sent and result.accepted
+    assert len(api.sends) == 1
+    assert api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
+
+
+def test_both_filling_modes_prefer_ioc(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=3))
+    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
+    assert result.accepted and api.sends[0]["type_filling"] == api.ORDER_FILLING_IOC
+
+
+def test_both_modes_can_fall_back_to_broker_advertised_fok(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=3))
+    api.ORDER_FILLING_IOC = None
+    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
+    assert result.accepted and len(api.sends) == 1
+    assert api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
+
+
+def test_no_supported_filling_mode_or_missing_api_constant_refuses_send(tmp_path):
+    for filling in (0, 4, -1, True, None):
+        api = FakeMT5(symbol=Symbol(filling_mode=filling))
+        result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
+        assert not result.sent and not api.sends
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.ORDER_FILLING_FOK = None
+    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
+    assert not result.sent and not api.sends
+    api.ORDER_FILLING_FOK = 2
+    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
+    assert not result.sent and not api.sends
+
+
+def test_fok_only_keeps_demo_identity_and_fresh_quote_gates(tmp_path):
+    api = FakeMT5(account=Account(trade_mode=2), symbol=Symbol(filling_mode=1))
+    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    assert api.sends == []
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    assert api.sends == []
 
 
 def test_old_ledger_rows_remain_unattributed_when_source_column_is_migrated(tmp_path):

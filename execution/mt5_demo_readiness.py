@@ -61,6 +61,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                 if not _number(getattr(account, "equity", None)) or account.equity <= 0:
                     blockers.append("DEMO equity unavailable")
                 symbol = api.symbol_info(config.symbol)
+                filling_modes = getattr(symbol, "filling_mode", None)
                 if (symbol is None or getattr(symbol, "visible", None) is not True
                         or getattr(symbol, "currency_profit", None) != "USD"
                         or getattr(symbol, "trade_mode", None) != api.SYMBOL_TRADE_MODE_FULL
@@ -72,8 +73,9 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or symbol.volume_min <= 0 or symbol.volume_min > 0.01
                         or symbol.volume_step <= 0
                         or abs(round(0.01 / symbol.volume_step) * symbol.volume_step - 0.01) > 1e-9
-                        or not (getattr(symbol, "filling_mode", 0) & 2)):
-                    blockers.append("DEMO symbol or 0.01-lot IOC contract unavailable")
+                        or type(filling_modes) is not int or filling_modes < 0
+                        or not (filling_modes & 3)):
+                    blockers.append("DEMO symbol or 0.01-lot FOK/IOC contract unavailable")
                 chart_bid = getattr(api, "SYMBOL_CHART_MODE_BID", 0)
                 if (symbol is None or type(chart_bid) is not int or chart_bid != 0
                         or type(getattr(symbol, "chart_mode", None)) is not int

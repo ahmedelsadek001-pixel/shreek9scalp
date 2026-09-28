@@ -41,6 +41,22 @@ def _number(value: Any) -> bool:
     return type(value) in (float, int) and isfinite(value)
 
 
+def _filling_policy(api: Any, symbol: Any) -> int | None:
+    """Select only a broker-advertised immediate fill policy, preferring IOC."""
+    modes = getattr(symbol, "filling_mode", None)
+    if type(modes) is not int or modes < 0:
+        return None
+    if modes & 2:
+        ioc = getattr(api, "ORDER_FILLING_IOC", None)
+        if type(ioc) is int and ioc == 1:
+            return ioc
+    if modes & 1:
+        fok = getattr(api, "ORDER_FILLING_FOK", None)
+        if type(fok) is int and fok == 0:
+            return fok
+    return None
+
+
 def _account_matches(api: Any, config: DemoTerminalConfig) -> bool:
     account = api.account_info()
     terminal = api.terminal_info()
@@ -145,6 +161,7 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         if not initialized or not _account_matches(api, config):
             return refused("DEMO identity or trading permission unavailable")
         symbol = api.symbol_info(config.symbol)
+        filling_policy = _filling_policy(api, symbol) if symbol is not None else None
         if (symbol is None or getattr(symbol, "visible", None) is not True
                 or getattr(symbol, "currency_profit", None) != "USD"
                 or getattr(symbol, "trade_mode", None) != api.SYMBOL_TRADE_MODE_FULL
@@ -155,8 +172,8 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
                 or symbol.trade_contract_size <= 0 or symbol.point <= 0
                 or symbol.volume_min > order.volume or symbol.volume_step <= 0
                 or abs(round(order.volume / symbol.volume_step) * symbol.volume_step - order.volume) > 1e-9
-                or not (symbol.filling_mode & 2)):
-            return refused("DEMO contract or IOC filling unsupported")
+                or filling_policy is None):
+            return refused("DEMO contract or FOK/IOC filling unsupported")
         # Existing positions and pending orders are refused, including broker read errors.
         positions = api.positions_get()
         pending = api.orders_get()
@@ -187,7 +204,7 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
             "volume": order.volume, "type": api.ORDER_TYPE_BUY if order.side == "BUY" else api.ORDER_TYPE_SELL,
             "price": price, "sl": order.stop_loss, "tp": order.take_profit,
             "deviation": 10, "magic": 521000, "comment": "SHREEK-DEMO-" + order.intent_id[:12],
-            "type_time": api.ORDER_TIME_GTC, "type_filling": api.ORDER_FILLING_IOC,
+            "type_time": api.ORDER_TIME_GTC, "type_filling": filling_policy,
         }
         check = api.order_check(request)
         if check is None or getattr(check, "retcode", None) != 0:

@@ -23,7 +23,8 @@ entered sandbox attempts are `manual_sandbox`, and migrated older rows remain
 `legacy_unattributed`. These local labels help separate observations but are
 not broker authentication or independent proof of strategy performance.
 
-On the Windows machine, download the latest `v5.1-development` snapshot.
+On the Windows machine, download the reviewed DEMO branch snapshot at the
+commit supplied with the testing instructions.
 Open the already selected DEMO terminal and configure the four private
 `SHREEK_DEMO_TERMINAL_PATH`, `SHREEK_DEMO_LOGIN`, `SHREEK_DEMO_SERVER`, and
 `SHREEK_DEMO_SYMBOL=XAUUSD.s` variables as in
@@ -38,7 +39,7 @@ py -m execution.mt5_demo_readiness_cli
 py -m execution.mt5_demo_auto_cli --ledger $ledger
 ```
 
-The first command diagnoses DEMO permissions, USD account and symbol, IOC
+The first command diagnoses DEMO permissions, USD account and symbol, IOC/FOK
 0.01-lot contract, Bid-based bars, existing exposure, and quote freshness.
 It prints no account number and never sends an order. A positive report is an
 instantaneous environmental observation, not a signal, broker approval, or
@@ -76,7 +77,7 @@ file. Removing that file requires the operator to check account identity and
 settings again. The watcher never logs in, creates passwords, opens REAL
 positions, or authorizes other strategies. If terminal trading is disabled,
 the account changes, the market is closed, quotes are stale, the broker rejects
-IOC filling, there is another account position, or the risk budget is exceeded,
+IOC/FOK filling, there is another account position, or the risk budget is exceeded,
 it fails closed. The account's DEMO currency and the symbol profit currency
 must both be USD.
 
