@@ -108,6 +108,39 @@ def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):
     assert not replay.sent and len(api.sends) == 1
 
 
+def test_real_detector_can_confirm_latest_m5_retest_on_shifted_demo_clock(tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    bars[-2].update(open=4000.0, high=4002.0, low=3999.9,
+                    close=4001.8, tick_volume=200)
+    bars[-1].update(open=4001.0, high=4001.7, low=4000.5,
+                    close=4001.5, tick_volume=100)
+    api.copy_rates_from_pos = lambda *args: [dict(row, time=row["time"] + 10800) for row in bars]
+    api.tick_ms += 10_800_300
+    api.symbol.filling_mode = 1
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    original_tick = api.symbol_info_tick
+
+    def matching_tick(symbol):
+        tick = original_tick(symbol)
+        tick.bid, tick.ask = 4001.5, 4001.6
+        return tick
+
+    def broker_check(request):
+        assert request["sl"] == 4000.0 and request["tp"] == 4003.75
+        assert request["type_filling"] == api.ORDER_FILLING_FOK
+        return SimpleNamespace(retcode=0)
+
+    api.symbol_info_tick = matching_tick
+    api.order_check = broker_check
+    ledger = tmp_path / "demo.sqlite3"
+    observed = scan_and_submit_demo(api, config, ledger, now=clock)
+    assert observed.signal_detected and not observed.sent and not ledger.exists()
+    submitted = scan_and_submit_demo(api, config, ledger, execute=True,
+                                     kill_switch_off=True, now=clock)
+    assert submitted.accepted and submitted.signal_id == observed.signal_id
+    assert len(api.sends) == 1 and api.sends[0]["price"] == 4001.6
+
+
 def test_shifted_broker_bars_use_utc_signal_time_and_transport_gate(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     shifted_bars = [dict(row, time=row["time"] + 10800) for row in bars]
