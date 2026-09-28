@@ -141,6 +141,38 @@ def test_real_detector_can_confirm_latest_m5_retest_on_shifted_demo_clock(tmp_pa
     assert len(api.sends) == 1 and api.sends[0]["price"] == 4001.6
 
 
+def test_real_sell_detector_reaches_demo_bid_with_protective_levels(tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    bars[-2].update(open=4000.0, high=4000.1, low=3998.0,
+                    close=3998.2, tick_volume=200)
+    bars[-1].update(open=3999.0, high=3999.5, low=3998.3,
+                    close=3998.5, tick_volume=100)
+    api.symbol.filling_mode = 1
+    original_tick = api.symbol_info_tick
+
+    def matching_tick(symbol):
+        tick = original_tick(symbol)
+        tick.bid, tick.ask = 3998.5, 3998.6
+        return tick
+
+    def broker_check(request):
+        assert request["type"] == api.ORDER_TYPE_SELL
+        assert request["price"] == 3998.5
+        assert request["sl"] == 4000.0 and request["tp"] == 3996.25
+        assert request["type_filling"] == api.ORDER_FILLING_FOK
+        return SimpleNamespace(retcode=0)
+
+    api.symbol_info_tick = matching_tick
+    api.order_check = broker_check
+    ledger = tmp_path / "sell.sqlite3"
+    dry = scan_and_submit_demo(api, CONFIG, ledger, now=clock)
+    assert dry.signal_detected and not dry.sent and not ledger.exists()
+    sent = scan_and_submit_demo(api, CONFIG, ledger, execute=True,
+                                kill_switch_off=True, now=clock)
+    assert sent.accepted and sent.signal_id == dry.signal_id
+    assert len(api.sends) == 1 and api.sends[0]["type"] == api.ORDER_TYPE_SELL
+
+
 def test_shifted_broker_bars_use_utc_signal_time_and_transport_gate(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     shifted_bars = [dict(row, time=row["time"] + 10800) for row in bars]
