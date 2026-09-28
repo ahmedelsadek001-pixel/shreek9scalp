@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from core.enums import Direction
-from research.breakout_retest import ResearchBar, detect_breakout_retest
+from research.breakout_retest import BreakoutRetestConfig, ResearchBar, detect_breakout_retest
 
 
 def _bars() -> list[ResearchBar]:
@@ -62,3 +62,10 @@ def test_signal_converts_to_backtest_order():
 def test_invalid_pip_size_is_rejected():
     with pytest.raises(ValueError):
         detect_breakout_retest(_bars(), pip_size=0)
+
+
+def test_boolean_pip_size_and_boolean_config_threshold_are_rejected():
+    with pytest.raises(ValueError, match="pip_size"):
+        detect_breakout_retest(_bars(), pip_size=True)
+    with pytest.raises(ValueError, match="thresholds must be numeric"):
+        BreakoutRetestConfig(min_range_pips=True).validate()

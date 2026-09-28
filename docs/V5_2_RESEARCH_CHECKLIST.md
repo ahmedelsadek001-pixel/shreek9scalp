@@ -15,7 +15,7 @@ V5.2 is the evidence-generation phase. Passing software tests does not mean the 
 - [x] Advanced WFO stability measures OOS positivity and parameter churn.
 - [x] Performance metrics include expectancy, profit factor, payoff and SQN.
 - [x] Research evidence records are hashed and reproducible.
-- [x] V5.2 research release gate fails closed on missing evidence.
+- [x] V5.2 research release gate fails closed on missing evidence and requires commit-bound artifact references.
 
 ## Empirical evidence required
 

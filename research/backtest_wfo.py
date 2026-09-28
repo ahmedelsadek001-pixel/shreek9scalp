@@ -1,6 +1,7 @@
 """Backtest-aware purged walk-forward validation for SHREEK V5.2."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Callable, Mapping, Sequence
@@ -108,8 +109,12 @@ def run_backtest_wfo(
     oos_metrics: list[ResearchMetrics] = []
     oos_results: list[BacktestResult] = []
     for window, params in zip(validation.windows, validation.selected_parameters):
-        train_result = evaluator(data[window.train_start : window.train_end], params)
-        oos_result = evaluator(data[window.test_start : window.test_end], params)
+        train_result = evaluator(
+            data[window.train_start : window.train_end], deepcopy(params)
+        )
+        oos_result = evaluator(
+            data[window.test_start : window.test_end], deepcopy(params)
+        )
         if not isinstance(train_result, BacktestResult) or not isinstance(oos_result, BacktestResult):
             raise ValueError("evaluator must return a BacktestResult")
         train_metrics.append(calculate_research_metrics(train_result))

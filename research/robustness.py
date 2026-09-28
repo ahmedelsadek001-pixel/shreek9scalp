@@ -16,10 +16,60 @@ class RobustnessEvidence:
     oos_trade_pnl: tuple[float, ...]
     starting_equity: float
     summary: RobustnessSummary
+    simulations: int = 1000
+    seed: int | None = 42
+    slippage_multiplier: float = 1.0
+    spread_multiplier: float = 1.0
 
     @property
     def oos_trade_count(self) -> int:
         return len(self.oos_trade_pnl)
+
+    def validate(self, *, require_reproducible: bool = False) -> None:
+        if type(require_reproducible) is not bool:
+            raise ValueError("require_reproducible must be a bool")
+        if not self.oos_trade_pnl or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not isfinite(value)
+            for value in self.oos_trade_pnl
+        ):
+            raise ValueError("Monte Carlo OOS trade P&L must be non-empty and finite")
+        if (
+            isinstance(self.starting_equity, bool)
+            or not isinstance(self.starting_equity, (int, float))
+            or not isfinite(self.starting_equity)
+            or self.starting_equity <= 0
+        ):
+            raise ValueError("Monte Carlo starting equity must be positive and finite")
+        if type(self.simulations) is not int or self.simulations <= 0:
+            raise ValueError("Monte Carlo simulations must be a positive integer")
+        if self.seed is not None and type(self.seed) is not int:
+            raise ValueError("Monte Carlo seed must be an integer or None")
+        if require_reproducible and self.seed is None:
+            raise ValueError("a fixed Monte Carlo seed is required for an auditable export")
+        for name, value in (
+            ("slippage_multiplier", self.slippage_multiplier),
+            ("spread_multiplier", self.spread_multiplier),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+                or value < 1.0
+            ):
+                raise ValueError(f"{name} must be finite and >= 1")
+        if self.seed is not None:
+            expected = monte_carlo(
+                self.oos_trade_pnl,
+                starting_equity=self.starting_equity,
+                simulations=self.simulations,
+                seed=self.seed,
+                slippage_multiplier=self.slippage_multiplier,
+                spread_multiplier=self.spread_multiplier,
+            )
+            if expected != self.summary:
+                raise ValueError("Monte Carlo summary does not match its recorded inputs")
 
 
 def _extract_oos_trade_pnl(result: BacktestWFOResult) -> tuple[float, ...]:
@@ -61,4 +111,12 @@ def run_oos_monte_carlo(
         slippage_multiplier=slippage_multiplier,
         spread_multiplier=spread_multiplier,
     )
-    return RobustnessEvidence(pnl, float(starting_equity), summary)
+    return RobustnessEvidence(
+        pnl,
+        float(starting_equity),
+        summary,
+        simulations,
+        seed,
+        slippage_multiplier,
+        spread_multiplier,
+    )

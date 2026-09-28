@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -48,3 +49,16 @@ def test_fingerprint_requires_matching_validation():
     validation = validate_market_data(bars)
     with pytest.raises(ValueError, match="bar_count"):
         fingerprint_bars(bars[:1], validation)
+
+
+def test_fingerprint_rejects_validation_with_forged_time_bounds():
+    bars = _bars()
+    validation = validate_market_data(bars)
+    forged = replace(
+        validation,
+        first_timestamp=validation.first_timestamp - timedelta(days=1),
+        last_timestamp=validation.last_timestamp - timedelta(days=1),
+    )
+
+    with pytest.raises(ValueError, match="does not match dataset"):
+        fingerprint_bars(bars, forged)

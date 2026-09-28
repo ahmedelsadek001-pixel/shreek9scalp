@@ -4,6 +4,7 @@ import pytest
 
 from core.backtest_engine import BacktestResult, BacktestStats, BacktestTrade
 from core.enums import Direction
+from research.breakout_retest import ResearchBar
 from research.dataset_runner import run_csv_research, run_dataset_research
 
 
@@ -71,9 +72,91 @@ def test_dataset_runner_validates_before_evidence_pipeline(monkeypatch):
         test_size=2,
         purge_size=1,
         starting_equity=10000.0,
+        max_gap=timedelta(minutes=10),
     )
     assert result.validation.valid is True
+    assert result.max_gap_seconds == 600.0
     assert calls == [bars]
+
+
+def test_dataset_runner_blocks_cross_source_disagreement_before_backtest(monkeypatch):
+    from research import dataset_runner
+
+    def unexpected_pipeline(*args, **kwargs):
+        raise AssertionError("research pipeline must not run on inconsistent sources")
+
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", unexpected_pipeline)
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    primary = tuple(
+        ResearchBar(start + timedelta(minutes=15 * i), 3200, 3202, 3198, 3200, 10)
+        for i in range(100)
+    )
+    reference = tuple(
+        ResearchBar(start + timedelta(minutes=15 * i), 2450, 2452, 2448, 2450, 10)
+        for i in range(100)
+    )
+    with pytest.raises(ValueError, match="cross-dataset consistency check failed"):
+        run_dataset_research(
+            primary,
+            ({"x": 1},),
+            lambda rows, params: _result(1.0),
+            comparison_datasets=(reference,),
+            train_size=50,
+            test_size=20,
+            purge_size=1,
+            starting_equity=10000.0,
+        )
+
+
+def test_dataset_runner_blocks_overflowed_source_disagreement_before_backtest(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(
+        dataset_runner, "run_evidence_pipeline",
+        lambda *args, **kwargs: pytest.fail("disagreeing sources must be rejected before WFO"),
+    )
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    primary = tuple(
+        ResearchBar(start + timedelta(minutes=5 * index), 1e308, 1e308, 1e308, 1e308, 10)
+        for index in range(100)
+    )
+    reference = tuple(
+        ResearchBar(start + timedelta(minutes=5 * index), 1.1e308, 1.1e308, 1.1e308, 1.1e308, 10)
+        for index in range(100)
+    )
+    with pytest.raises(ValueError, match="cross-dataset consistency check failed"):
+        run_dataset_research(
+            primary,
+            ({"x": 1},),
+            lambda rows, params: _result(1.0),
+            comparison_datasets=(reference,),
+            train_size=50,
+            test_size=20,
+            purge_size=1,
+            starting_equity=10000.0,
+        )
+
+
+def test_dataset_runner_blocks_history_shorter_than_the_configured_minimum(monkeypatch):
+    from research import dataset_runner
+
+    monkeypatch.setattr(
+        dataset_runner,
+        "run_evidence_pipeline",
+        lambda *args, **kwargs: pytest.fail("short history must be rejected before WFO"),
+    )
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="dataset history is shorter than required"):
+        run_dataset_research(
+            bars,
+            ({"x": 1},),
+            lambda rows, params: _result(1.0),
+            minimum_history=timedelta(days=1),
+            train_size=3,
+            test_size=2,
+            purge_size=1,
+            starting_equity=10000.0,
+        )
 
 
 def test_csv_runner_requires_existing_file(tmp_path):

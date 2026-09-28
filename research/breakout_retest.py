@@ -29,7 +29,13 @@ class ResearchBar:
 
     def validate(self) -> None:
         values = (self.open, self.high, self.low, self.close, self.volume)
-        if any(not isfinite(float(value)) for value in values):
+        if any(isinstance(value, bool) or not isinstance(value, (int, float)) for value in values):
+            raise ValueError("bar OHLCV values must be numeric")
+        try:
+            finite = all(isfinite(float(value)) for value in values)
+        except (OverflowError, TypeError, ValueError):
+            finite = False
+        if not finite:
             raise ValueError("bar values must be finite")
         if self.low > self.high or not self.low <= self.open <= self.high or not self.low <= self.close <= self.high:
             raise ValueError("bar OHLC values are inconsistent")
@@ -65,6 +71,11 @@ class BreakoutRetestConfig:
             self.volume_multiplier, self.sl_buffer_pips, self.tp1_rr,
             self.tp2_rr, self.tp3_rr,
         )
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            for value in finite_positive
+        ):
+            raise ValueError("thresholds must be numeric")
         if any(not isfinite(float(value)) or value <= 0 for value in finite_positive):
             raise ValueError("thresholds must be finite and positive")
         if self.min_range_pips > self.max_range_pips or self.breakout_body_pct > 1.0:
@@ -173,7 +184,12 @@ def detect_breakout_retest(
 ) -> tuple[BreakoutRetestSignal, ...]:
     """Detect completed Breakout + Retest setups without look-ahead bias."""
     config.validate()
-    if not isfinite(float(pip_size)) or pip_size <= 0:
+    if (
+        isinstance(pip_size, bool)
+        or not isinstance(pip_size, (int, float))
+        or not isfinite(float(pip_size))
+        or pip_size <= 0
+    ):
         raise ValueError("pip_size must be finite and positive")
     if len(bars) < config.consolidation_bars + config.volume_lookback + 2:
         return ()

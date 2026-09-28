@@ -23,6 +23,7 @@ class MarketDataValidation:
     duplicate_timestamps: int
     non_monotonic_pairs: int
     gaps_over_limit: int
+    maximum_observed_gap_seconds: float | None = None
 
     @property
     def valid(self) -> bool:
@@ -31,6 +32,19 @@ class MarketDataValidation:
             and self.duplicate_timestamps == 0
             and self.non_monotonic_pairs == 0
             and self.gaps_over_limit == 0
+            and (
+                (self.bar_count <= 1 and self.maximum_observed_gap_seconds is None)
+                or (self.bar_count > 1 and self.maximum_observed_gap_seconds is not None)
+            )
+            and (
+                self.maximum_observed_gap_seconds is None
+                or (
+                    not isinstance(self.maximum_observed_gap_seconds, bool)
+                    and isinstance(self.maximum_observed_gap_seconds, (int, float))
+                    and isfinite(self.maximum_observed_gap_seconds)
+                    and self.maximum_observed_gap_seconds >= 0
+                )
+            )
         )
 
 
@@ -53,13 +67,14 @@ def validate_market_data(
     duplicate_timestamps = 0
     non_monotonic_pairs = 0
     gaps_over_limit = 0
+    maximum_observed_gap_seconds: float | None = None
     previous: datetime | None = None
 
     for bar in bars:
         if not isinstance(bar, ResearchBar):
             raise ValueError("all bars must be ResearchBar instances")
         bar.validate()
-        if not isinstance(bar.timestamp, datetime) or bar.timestamp.tzinfo is None:
+        if not isinstance(bar.timestamp, datetime) or bar.timestamp.utcoffset() is None:
             raise ValueError("bar timestamps must be timezone-aware datetimes")
         if not isfinite(float(bar.timestamp.timestamp())):
             raise ValueError("bar timestamp must be finite")
@@ -69,6 +84,12 @@ def validate_market_data(
                 duplicate_timestamps += 1
             if delta <= timedelta(0):
                 non_monotonic_pairs += 1
+            else:
+                gap_seconds = delta.total_seconds()
+                maximum_observed_gap_seconds = max(
+                    gap_seconds,
+                    maximum_observed_gap_seconds or 0.0,
+                )
             if max_gap is not None and delta > max_gap:
                 gaps_over_limit += 1
         previous = bar.timestamp
@@ -82,6 +103,7 @@ def validate_market_data(
         duplicate_timestamps=duplicate_timestamps,
         non_monotonic_pairs=non_monotonic_pairs,
         gaps_over_limit=gaps_over_limit,
+        maximum_observed_gap_seconds=maximum_observed_gap_seconds,
     )
     if not result.valid:
         raise ValueError(

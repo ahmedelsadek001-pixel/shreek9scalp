@@ -24,6 +24,16 @@ def test_accepts_text_stream():
     assert len(bars) == 2
 
 
+def test_accepts_mt5_dotted_date_with_explicit_offset():
+    raw_mt5 = """timestamp,open,high,low,close,volume
+2026.09.24T09:00:00+03:00,4279.11,4286.57,4278.85,4282.20,1927
+2026.09.24T09:15:00+03:00,4282.52,4286.50,4280.59,4281.75,1901
+"""
+    bars, validation = load_ohlcv_csv(raw_mt5)
+    assert validation.valid is True
+    assert bars[0].timestamp.isoformat() == "2026-09-24T09:00:00+03:00"
+
+
 def test_rejects_missing_header():
     with pytest.raises(ValueError, match="header"):
         load_ohlcv_csv("100,101,99,100,10\n")

@@ -51,6 +51,24 @@ def test_rejects_naive_timestamps():
         validate_market_data(bars)
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [("open", True), ("high", "101.0"), ("volume", False)],
+)
+def test_rejects_non_numeric_or_boolean_bar_values(field, value):
+    bar = _bars()[0]
+    changed = ResearchBar(
+        bar.timestamp,
+        value if field == "open" else bar.open,
+        value if field == "high" else bar.high,
+        bar.low,
+        bar.close,
+        value if field == "volume" else bar.volume,
+    )
+    with pytest.raises(ValueError, match="numeric"):
+        validate_market_data((changed,))
+
+
 def test_empty_dataset_is_rejected():
     with pytest.raises(ValueError, match="chronological validation"):
         validate_market_data([])

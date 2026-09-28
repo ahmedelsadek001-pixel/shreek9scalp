@@ -1,6 +1,7 @@
 """Purged/embargoed walk-forward validation primitives for SHREEK V5.2."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Callable, Mapping, Sequence
@@ -32,13 +33,19 @@ def build_purged_windows(
     step: int | None = None,
 ) -> tuple[PurgedWindow, ...]:
     """Build chronological windows with an explicit purge/embargo gap."""
+    if any(type(value) is not int for value in (length, train_size, test_size, purge_size)):
+        raise ValueError("window sizes must be integers")
     if length <= 0 or train_size <= 0 or test_size <= 0:
         raise ValueError("length, train_size and test_size must be positive")
     if purge_size < 0:
         raise ValueError("purge_size must be non-negative")
     step = test_size if step is None else step
+    if type(step) is not int:
+        raise ValueError("step must be an integer")
     if step <= 0:
         raise ValueError("step must be positive")
+    if step < test_size:
+        raise ValueError("step must be >= test_size to prevent overlapping OOS windows")
 
     windows = []
     start = 0
@@ -67,8 +74,13 @@ def run_purged_wfo(
     """Select parameters on train data only and evaluate after an embargo gap."""
     if not parameter_sets:
         raise ValueError("parameter_sets must be non-empty")
+    if any(not isinstance(params, Mapping) for params in parameter_sets):
+        raise ValueError("each parameter set must be a mapping")
+    isolated_parameter_sets = tuple(deepcopy(dict(params)) for params in parameter_sets)
     if not callable(evaluator):
         raise ValueError("evaluator must be callable")
+    if type(maximize) is not bool:
+        raise ValueError("maximize must be a bool")
     windows = build_purged_windows(len(data), train_size, test_size, purge_size, step)
     train_scores: list[float] = []
     test_scores: list[float] = []
@@ -77,17 +89,17 @@ def run_purged_wfo(
         train = data[window.train_start : window.train_end]
         test = data[window.test_start : window.test_end]
         scored = []
-        for params in parameter_sets:
-            score = float(evaluator(train, params))
+        for params in isolated_parameter_sets:
+            score = float(evaluator(train, deepcopy(params)))
             if not isfinite(score):
                 raise ValueError("evaluator scores must be finite")
             scored.append((score, params))
         scored.sort(key=lambda item: item[0], reverse=maximize)
         train_score, params = scored[0]
-        test_score = float(evaluator(test, params))
+        test_score = float(evaluator(test, deepcopy(params)))
         if not isfinite(test_score):
             raise ValueError("evaluator scores must be finite")
         train_scores.append(train_score)
         test_scores.append(test_score)
-        selected.append(dict(params))
+        selected.append(deepcopy(dict(params)))
     return PurgedWFOResult(tuple(windows), tuple(train_scores), tuple(test_scores), tuple(selected))

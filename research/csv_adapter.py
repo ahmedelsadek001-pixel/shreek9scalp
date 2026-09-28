@@ -22,6 +22,10 @@ def _parse_timestamp(value: str, row_number: int) -> datetime:
     text = value.strip()
     if not text:
         raise ValueError(f"row {row_number}: timestamp is required")
+    # MT5 exports use a dotted calendar date (YYYY.MM.DD) while retaining an
+    # explicit UTC offset. Normalize only that exact date shape before parsing.
+    if len(text) > 10 and text[4] == "." and text[7] == ".":
+        text = f"{text[:4]}-{text[5:7]}-{text[8:10]}{text[10:]}"
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
         timestamp = datetime.fromisoformat(normalized)
