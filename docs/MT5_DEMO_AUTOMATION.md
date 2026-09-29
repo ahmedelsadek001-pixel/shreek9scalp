@@ -44,9 +44,15 @@ enable order transport. A stale tick leaves the observed offset null.
 $ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'
 New-Item -ItemType Directory -Force -Path $ledgerDir | Out-Null
 $ledger = Join-Path $ledgerDir 'demo_orders.sqlite3'
+py -m execution.mt5_demo_preflight_cli
 py -m execution.mt5_demo_readiness_cli
 py -m execution.mt5_demo_auto_cli --ledger $ledger
 ```
+
+The preflight command combines identity, readiness and a disabled strategy
+scan in one redacted JSON report. It is read-only even when DEMO execution
+opt-ins are already present in the shell. It skips the strategy scan when
+readiness is blocked. A preflight pass is still only a current observation.
 
 The first command diagnoses DEMO permissions, USD account and symbol, FOK/IOC
 0.01-lot contract, Bid-based bars, existing exposure, and quote freshness.
