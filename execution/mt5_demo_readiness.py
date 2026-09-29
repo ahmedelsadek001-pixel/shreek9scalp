@@ -72,8 +72,9 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or symbol.volume_min <= 0 or symbol.volume_min > 0.01
                         or symbol.volume_step <= 0
                         or abs(round(0.01 / symbol.volume_step) * symbol.volume_step - 0.01) > 1e-9
-                        or not (getattr(symbol, "filling_mode", 0) & 2)):
-                    blockers.append("DEMO symbol or 0.01-lot IOC contract unavailable")
+                        or type(getattr(symbol, "filling_mode", None)) is not int
+                        or not (symbol.filling_mode & 3)):
+                    blockers.append("DEMO symbol or 0.01-lot FOK/IOC contract unavailable")
                 chart_bid = getattr(api, "SYMBOL_CHART_MODE_BID", 0)
                 if (symbol is None or type(chart_bid) is not int or chart_bid != 0
                         or type(getattr(symbol, "chart_mode", None)) is not int
@@ -86,7 +87,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                 if (tick is None or not all(_number(getattr(tick, x, None))
                                             for x in ("ask", "bid", "time_msc"))
                         or tick.bid <= 0 or tick.ask <= tick.bid
-                        or not 0 <= clock.timestamp() * 1000 - tick.time_msc <= 5000
+                        or not 0 <= clock.timestamp() * 1000 - (tick.time_msc - config.server_utc_offset_seconds * 1000) <= 5000
                         or tick.ask - tick.bid > 0.50):
                     blockers.append("DEMO quote missing, stale or wide")
                 last_terminal, last_account = api.terminal_info(), api.account_info()

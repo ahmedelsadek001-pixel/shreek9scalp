@@ -30,6 +30,12 @@ Open the already selected DEMO terminal and configure the four private
 [MT5_DEMO_CONNECTION.md](MT5_DEMO_CONNECTION.md). Never put the login or
 password into the repository. Use a local ledger directory outside Git:
 
+The default quote clock is UTC. For the observed JustMarkets DEMO feed that
+reports tick timestamps three hours ahead of Windows UTC, set
+`$env:SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS='10800'` in the same shell.
+Only `0` and `10800` are accepted; verify the broker offset before each
+session. The five-second quote freshness limit remains in force.
+
 ```powershell
 $ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'
 New-Item -ItemType Directory -Force -Path $ledgerDir | Out-Null
@@ -38,7 +44,7 @@ py -m execution.mt5_demo_readiness_cli
 py -m execution.mt5_demo_auto_cli --ledger $ledger
 ```
 
-The first command diagnoses DEMO permissions, USD account and symbol, IOC
+The first command diagnoses DEMO permissions, USD account and symbol, FOK/IOC
 0.01-lot contract, Bid-based bars, existing exposure, and quote freshness.
 It prints no account number and never sends an order. A positive report is an
 instantaneous environmental observation, not a signal, broker approval, or
@@ -72,7 +78,7 @@ file. Removing that file requires the operator to check account identity and
 settings again. The watcher never logs in, creates passwords, opens REAL
 positions, or authorizes other strategies. If terminal trading is disabled,
 the account changes, the market is closed, quotes are stale, the broker rejects
-IOC filling, there is another account position, or the risk budget is exceeded,
+advertised FOK/IOC filling, there is another account position, or the risk budget is exceeded,
 it fails closed. The account's DEMO currency and the symbol profit currency
 must both be USD.
 

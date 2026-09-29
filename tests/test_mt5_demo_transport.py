@@ -1,6 +1,7 @@
 """DEMO transport safety behaviour against a fake, unprivileged MT5 API."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from dataclasses import replace
 import sqlite3
 
 from execution.mt5_demo_probe import DemoTerminalConfig
@@ -48,6 +49,7 @@ class FakeMT5:
     ORDER_TYPE_SELL = 1
     ORDER_TIME_GTC = 0
     ORDER_FILLING_IOC = 1
+    ORDER_FILLING_FOK = 0
     TRADE_RETCODE_DONE = 10009
     DEAL_TYPE_BUY = 0
     DEAL_TYPE_SELL = 1
@@ -148,6 +150,32 @@ def test_terminal_disabled_and_stale_quote_never_send(tmp_path):
     api = FakeMT5()
     api.tick_ms -= 60_000
     assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not api.sends
+
+
+def test_broker_fok_and_explicit_three_hour_clock_offset(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    result = submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3")
+    assert result.accepted and api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
+
+
+def test_fok_future_quote_without_offset_and_stale_offset_quote_refuse(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    api.tick_ms -= 60_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert not submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not api.sends
+
+
+def test_unsupported_filling_and_invalid_offset_refuse(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=0))
+    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not submit_demo_order(FakeMT5(), replace(CONFIG, server_utc_offset_seconds=3600),
+                                 ORDER, tmp_path / "demo.sqlite3").sent
     assert not api.sends
 
 

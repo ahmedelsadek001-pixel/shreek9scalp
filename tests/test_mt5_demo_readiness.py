@@ -54,6 +54,17 @@ def test_missing_contract_details_cannot_look_ready():
     assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
 
 
+def test_fok_broker_with_explicit_offset_is_read_only_and_stale_refuses():
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert inspect_demo_readiness(api, config).ready_for_demo_attempt
+    assert not api.sends
+    api.tick_ms -= 60_000
+    assert not inspect_demo_readiness(api, config).ready_for_demo_attempt
+    assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
+
+
 def test_cli_redacts_account_even_for_ready_demo(monkeypatch, capsys):
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
@@ -64,6 +75,20 @@ def test_cli_redacts_account_even_for_ready_demo(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert str(CONFIG.expected_login) not in output and CONFIG.expected_server not in output
     assert json.loads(output)["order_transport_enabled"] is False
+
+
+def test_cli_uses_explicit_broker_tick_offset(monkeypatch, capsys):
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "10800")
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_readiness_cli, "read_only_mt5_runtime", lambda: api)
+    assert mt5_demo_readiness_cli.main() == 0
+    assert json.loads(capsys.readouterr().out)["ready_for_demo_attempt"]
+    assert not api.sends
 
 
 def test_future_or_naive_readiness_clock_refused():

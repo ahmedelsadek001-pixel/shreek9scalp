@@ -155,8 +155,9 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
                 or symbol.trade_contract_size <= 0 or symbol.point <= 0
                 or symbol.volume_min > order.volume or symbol.volume_step <= 0
                 or abs(round(order.volume / symbol.volume_step) * symbol.volume_step - order.volume) > 1e-9
-                or not (symbol.filling_mode & 2)):
-            return refused("DEMO contract or IOC filling unsupported")
+                or type(symbol.filling_mode) is not int or not (symbol.filling_mode & 3)):
+            return refused("DEMO contract or FOK/IOC filling unsupported")
+        filling = api.ORDER_FILLING_IOC if symbol.filling_mode & 2 else api.ORDER_FILLING_FOK
         # Existing positions and pending orders are refused, including broker read errors.
         positions = api.positions_get()
         pending = api.orders_get()
@@ -165,8 +166,8 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         tick = api.symbol_info_tick(config.symbol)
         if (tick is None or not all(_number(getattr(tick, x, None)) for x in ("ask", "bid", "time_msc"))
                 or tick.bid <= 0 or tick.ask <= tick.bid
-                or (clock.timestamp() * 1000 - tick.time_msc) < 0
-                or (clock.timestamp() * 1000 - tick.time_msc) > 5000
+                or (clock.timestamp() * 1000 - (tick.time_msc - config.server_utc_offset_seconds * 1000)) < 0
+                or (clock.timestamp() * 1000 - (tick.time_msc - config.server_utc_offset_seconds * 1000)) > 5000
                 or tick.ask - tick.bid > 0.50):
             return refused("missing, stale or wide DEMO quote")
         price = tick.ask if order.side == "BUY" else tick.bid
@@ -187,7 +188,7 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
             "volume": order.volume, "type": api.ORDER_TYPE_BUY if order.side == "BUY" else api.ORDER_TYPE_SELL,
             "price": price, "sl": order.stop_loss, "tp": order.take_profit,
             "deviation": 10, "magic": 521000, "comment": "SHREEK-DEMO-" + order.intent_id[:12],
-            "type_time": api.ORDER_TIME_GTC, "type_filling": api.ORDER_FILLING_IOC,
+            "type_time": api.ORDER_TIME_GTC, "type_filling": filling,
         }
         check = api.order_check(request)
         if check is None or getattr(check, "retcode", None) != 0:
@@ -199,7 +200,8 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         if (fresh is None or getattr(fresh, "time_msc", None) != tick.time_msc
                 or getattr(fresh, "ask", None) != tick.ask
                 or getattr(fresh, "bid", None) != tick.bid
-                or (datetime.now(timezone.utc).timestamp() * 1000 - tick.time_msc) > 5000):
+                or not 0 <= (datetime.now(timezone.utc).timestamp() * 1000
+                             - (tick.time_msc - config.server_utc_offset_seconds * 1000)) <= 5000):
             return refused("DEMO quote changed before send")
         try:
             reserved = _reserve(ledger, config, order)

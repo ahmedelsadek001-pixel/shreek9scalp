@@ -52,7 +52,7 @@ use this command when the terminal reports `trade_allowed=false`; the broker
 or operator must permit DEMO trading before a sandbox send can succeed.
 
 The transport checks actual account mode, exact login/server, terminal and
-account trading permissions, exact broker symbol, IOC filling, fresh quote,
+account trading permissions, exact broker symbol, advertised FOK or IOC filling, fresh quote,
 spread at most 0.50 in price units, no existing account positions or pending
 orders, a stop and target on the correct sides, and a maximum stop loss of
 0.5% of DEMO equity. It supports USD account and USD symbol profit currency

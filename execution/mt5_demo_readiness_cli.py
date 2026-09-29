@@ -17,7 +17,8 @@ def main() -> int:
             raise ValueError("DEMO login missing")
         config = DemoTerminalConfig(os.environ.get("SHREEK_DEMO_TERMINAL_PATH", ""), int(login),
                                     os.environ.get("SHREEK_DEMO_SERVER", ""),
-                                    symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"))
+                                    symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"),
+                                    server_utc_offset_seconds=int(os.environ.get("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "0")))
         report = inspect_demo_readiness(read_only_mt5_runtime(), config)
     except (TypeError, ValueError, OverflowError):
         report = DemoReadiness(False, ("DEMO binding incomplete",))

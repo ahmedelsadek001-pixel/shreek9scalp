@@ -34,7 +34,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("DEMO account binding incomplete")
         config = DemoTerminalConfig(os.environ.get("SHREEK_DEMO_TERMINAL_PATH", ""),
                                     int(login), os.environ.get("SHREEK_DEMO_SERVER", ""),
-                                    symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"))
+                                    symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"),
+                                    server_utc_offset_seconds=int(os.environ.get("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "0")))
         api = demo_only_mt5_runtime()
         deadline = time.monotonic() + args.watch_minutes * 60
         while True:
