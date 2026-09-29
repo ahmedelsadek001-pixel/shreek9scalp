@@ -48,6 +48,43 @@ def test_broker_history_observes_closed_demo_order_without_strategy_attribution(
     assert "strategy" in report.reason.lower() and "123456" not in str(report)
 
 
+def test_fok_multiple_opening_deals_reconcile_full_volume(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    first = Deal(456, 9001, 771, 0, 0, 0.004, 4000.1, 0, -0.04, 0, 0, timestamp)
+    second = Deal(458, 9001, 771, 0, 0, 0.006, 4000.1, 0, -0.06, 0, 0, timestamp + 1)
+    close = Deal(459, 9002, 771, 1, 1, 0.01, 4002, 1.9, -0.10, 0, 0, timestamp + 10000)
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (first, second) if ticket is not None else (first, second, close))
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo
+    assert report.attempts[0]["status"] == "closed_observed"
+    assert len(report.attempts[0]["broker_deals"]) == 3
+    assert report.attempts[0]["realized_net_usd"] == pytest.approx(1.70)
+
+
+def test_extra_or_duplicate_opening_deals_refuse_attribution(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    first = Deal(456, 9001, 771, 0, 0, 0.004, 4000.1, 0, 0, 0, 0, timestamp)
+    second = Deal(458, 9001, 771, 0, 0, 0.006, 4000.1, 0, 0, 0, 0, timestamp + 1)
+    foreign = Deal(460, 9003, 771, 0, 0, 0.01, 4000.2, 0, 0, 0, 0, timestamp + 2)
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (first, second) if ticket is not None else (first, second, foreign))
+    assert not inspect_demo_history(api, CONFIG, ledger).verified_demo
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (first, first, second) if ticket is not None else (first, second))
+    assert not inspect_demo_history(api, CONFIG, ledger).verified_demo
+
+
 def test_real_account_or_missing_broker_history_refused(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     api = FakeMT5()

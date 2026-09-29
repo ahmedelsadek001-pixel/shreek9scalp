@@ -95,45 +95,49 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                                     "symbol": symbol, "side": side, "local_source_kind": source_kind,
                                     "status": "opening_not_verified",
                                     "broker_deals": []}
-            if len(matching) == 1:
-                opened = matching[0]
+            if matching:
                 expected_type = (getattr(api, "DEAL_TYPE_BUY", None) if side == "BUY"
                                  else getattr(api, "DEAL_TYPE_SELL", None))
-                if (type(expected_type) is not int
-                        or getattr(opened, "type", None) != expected_type
-                        or (deal_id is not None and getattr(opened, "ticket", None) != deal_id)
-                        or type(getattr(opened, "volume", None)) not in (int, float)
-                        or not isfinite(opened.volume)
-                        or abs(opened.volume - volume) > 1e-9):
-                    return refused("broker opening deal contradicts DEMO ledger")
+                opening_info = [_deal_info(d) for d in matching]
+                opening_tickets = [getattr(d, "ticket", None) for d in matching]
                 position_id = getattr(matching[0], "position_id", None)
-                related = api.history_deals_get(position=position_id) if type(position_id) is int and position_id > 0 else None
+                if (type(expected_type) is not int or any(d is None for d in opening_info)
+                        or type(position_id) is not int or position_id <= 0
+                        or any(getattr(d, "type", None) != expected_type
+                               or getattr(d, "position_id", None) != position_id for d in matching)
+                        or len(set(opening_tickets)) != len(opening_tickets)
+                        or (deal_id is not None and deal_id not in opening_tickets)
+                        or abs(sum(d["volume"] for d in opening_info) - volume) > 1e-9):
+                    return refused("broker opening deal contradicts DEMO ledger")
+                related = api.history_deals_get(position=position_id)
                 if related is None:
                     return refused("broker position history lookup failed")
-                if not any(getattr(d, "ticket", None) == getattr(matching[0], "ticket", None)
-                           for d in related):
-                    return refused("opening deal missing from position history")
+                related_openings = [getattr(d, "ticket", None) for d in related
+                                    if getattr(d, "position_id", None) == position_id
+                                    and getattr(d, "entry", None) == api.DEAL_ENTRY_IN]
+                if (len(related_openings) != len(opening_tickets)
+                        or set(related_openings) != set(opening_tickets)):
+                    return refused("broker position opening history contradicts DEMO ledger")
                 deals = [_deal_info(d) for d in related if getattr(d, "position_id", None) == position_id
                          and getattr(d, "symbol", None) == symbol]
                 if any(d is None for d in deals):
                     return refused("broker deal metadata incomplete")
                 item["broker_deals"] = sorted(deals, key=lambda d: (d["time_utc"], d["ticket"]))
-                entry = _deal_info(matching[0])
                 closes = [d for d in related if getattr(d, "position_id", None) == position_id
                           and getattr(d, "symbol", None) == symbol
                           and getattr(d, "entry", None) == api.DEAL_ENTRY_OUT]
                 closed_volume = sum(getattr(d, "volume", 0) for d in closes)
-                if entry is not None and len([d for d in related if getattr(d, "position_id", None) == position_id
-                                               and getattr(d, "entry", None) == api.DEAL_ENTRY_IN]) == 1:
-                    item["status"] = ("closed_observed" if abs(closed_volume - entry["volume"]) < 1e-9
-                                      else "open_or_partial")
-                    item["manual_intervention"] = any(getattr(d, "magic", None) != 521000 for d in closes)
-                    if item["status"] == "closed_observed":
-                        realized = sum(d["profit"] + d["commission"] + d["swap"] + d["fee"]
-                                       for d in item["broker_deals"])
-                        if not isfinite(realized):
-                            return refused("broker realized net is invalid")
-                        item["realized_net_usd"] = realized
+                if not isfinite(closed_volume) or closed_volume > volume + 1e-9:
+                    return refused("broker closing volume contradicts DEMO ledger")
+                item["status"] = ("closed_observed" if abs(closed_volume - volume) < 1e-9
+                                  else "open_or_partial")
+                item["manual_intervention"] = any(getattr(d, "magic", None) != 521000 for d in closes)
+                if item["status"] == "closed_observed":
+                    realized = sum(d["profit"] + d["commission"] + d["swap"] + d["fee"]
+                                   for d in item["broker_deals"])
+                    if not isfinite(realized):
+                        return refused("broker realized net is invalid")
+                    item["realized_net_usd"] = realized
             output.append(item)
         if not _active_demo(api, config):
             return refused("DEMO account changed during history read")

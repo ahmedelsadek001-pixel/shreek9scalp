@@ -93,8 +93,12 @@ The read-only report includes the matched opening order, position deals,
 broker prices, volumes, and broker profit/commission/swap/fee fields. For a
 fully closed position it also reports `realized_net_usd`, the sum of those four
 broker deal fields. Both the account and symbol profit currency must be USD;
-other currencies are refused instead of being mislabeled USD. A manual
-close is marked `manual_intervention=true`. `closed_observed` means the broker
+other currencies are refused instead of being mislabeled USD.
+
+An order filled across multiple broker deals is reconciled only when their
+volumes sum to the reserved DEMO volume, all opening deals share the same
+position, and no unrelated opening deal appears in that position history.
+A manual close is marked `manual_intervention=true`. `closed_observed` means the broker
 history has a matching opening deal and fully offsetting exit volume; it does
 not assert strategy authorship or profitability. A history read error, REAL
 account, missing DEMO identity, unresolved `UNKNOWN` submission, missing opening
