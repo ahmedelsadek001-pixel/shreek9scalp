@@ -77,6 +77,12 @@ py -m execution.mt5_demo_auto_cli --execute-demo-auto --watch-minutes 60 --ledge
 
 The watcher polls every 30 seconds, scans completed candles, and stops after
 at most one broker submission or 60 minutes. A refused scan is not a trade.
+Each poll is also committed to `demo_orders.scans.sqlite3` beside the order
+ledger, including no-signal and rejected scans. The session journal contains
+UTC timestamps, a local session ID and the redacted result; it contains no
+login or password and is not independent broker-fill evidence. An unavailable
+journal prevents polling. If a write fails after submission, the command
+preserves the actual `sent` outcome and stops without retrying.
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
 
