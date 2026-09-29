@@ -60,26 +60,49 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, sqlite3.Error, ValueError):
             emit(DemoAutoResult(False, False, False, "DEMO scan journal unavailable; execution refused"))
             return 2
+    except (TypeError, ValueError, OverflowError):
+        result = DemoAutoResult(False, False, False, "automatic DEMO binding incomplete")
+        emit(result)
+        return 2
+
+    code, end_reason = 2, "aborted"
+    try:
         api = demo_only_mt5_runtime()
         deadline = time.monotonic() + args.watch_minutes * 60
         while True:
             if args.ledger.with_suffix(".stop").exists():
-                result = DemoAutoResult(False, False, False, "automatic DEMO stop file active")
-                emit(result)
-                return 2
+                emit(DemoAutoResult(False, False, False, "automatic DEMO stop file active"))
+                end_reason = "stop_file"
+                break
             result = scan_and_submit_demo(
                 api, config, args.ledger, execute=execute,
                 kill_switch_off=os.environ.get("SHREEK_DEMO_KILL_SWITCH") == "OFF",
             )
             if not emit(result):
-                return 2
+                end_reason = "journal_error"
+                break
             if result.sent or not args.watch_minutes or time.monotonic() >= deadline:
-                return 0 if result.accepted else 2
+                code = 0 if result.accepted else 2
+                end_reason = ("submission_attempted" if result.sent else
+                              "scan_complete" if not args.watch_minutes else "watch_expired")
+                break
             time.sleep(min(30, max(0, deadline - time.monotonic())))
+    except KeyboardInterrupt:
+        code, end_reason = 130, "interrupted"
+        # An interrupt can occur inside submission. Do not invent an unsent result.
+        print(json.dumps({"session_status": "interrupted",
+                          "reason": "inspect order ledger and broker history before retrying"}), flush=True)
     except (TypeError, ValueError, OverflowError):
-        result = DemoAutoResult(False, False, False, "automatic DEMO binding incomplete")
-    emit(result)
-    return 2
+        end_reason = "binding_error"
+        print(json.dumps({"session_status": "binding_error",
+                          "reason": "inspect order ledger and broker history before retrying"}), flush=True)
+    finally:
+        try:
+            journal.finish(end_reason)
+        except (OSError, sqlite3.Error, ValueError):
+            code = 2
+            print(json.dumps({"session_journal_error": "session end write failed; stop and inspect"}), flush=True)
+    return code
 
 
 if __name__ == "__main__":

@@ -25,7 +25,12 @@ class DemoSessionJournal:
             db.execute("CREATE TABLE IF NOT EXISTS scan_events "
                        "(event_id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, "
                        "recorded_at TEXT NOT NULL, result_json TEXT NOT NULL)")
-            db.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)",
+            columns = {row[1] for row in db.execute("PRAGMA table_info(sessions)")}
+            for column in ("ended_at", "end_reason"):
+                if column not in columns:
+                    db.execute(f"ALTER TABLE sessions ADD COLUMN {column} TEXT")
+            db.execute("INSERT INTO sessions (session_id, started_at, execute_requested, watch_minutes) "
+                       "VALUES (?, ?, ?, ?)",
                        (self.session_id, datetime.now(timezone.utc).isoformat(),
                         int(execute), watch_minutes))
 
@@ -46,3 +51,11 @@ class DemoSessionJournal:
             db.execute("INSERT INTO scan_events (session_id, recorded_at, result_json) VALUES (?, ?, ?)",
                        (self.session_id, datetime.now(timezone.utc).isoformat(),
                         json.dumps(asdict(result), sort_keys=True)))
+
+    def finish(self, reason: str) -> None:
+        if reason not in {"scan_complete", "submission_attempted", "watch_expired", "stop_file",
+                          "journal_error", "interrupted", "binding_error", "aborted"}:
+            raise ValueError("unknown DEMO session end reason")
+        with self._connect() as db:
+            db.execute("UPDATE sessions SET ended_at=?, end_reason=? WHERE session_id=? AND ended_at IS NULL",
+                       (datetime.now(timezone.utc).isoformat(), reason, self.session_id))

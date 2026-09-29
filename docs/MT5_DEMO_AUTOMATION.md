@@ -83,6 +83,27 @@ UTC timestamps, a local session ID and the redacted result; it contains no
 login or password and is not independent broker-fill evidence. An unavailable
 journal prevents polling. If a write fails after submission, the command
 preserves the actual `sent` outcome and stops without retrying.
+The journal also records the UTC session end and its reason, including Ctrl+C,
+stop-file stops and attempted submissions. Ctrl+C during a broker call does not
+claim that nothing was sent; inspect the order ledger and broker history before
+retrying. A process forcibly killed or a failed final journal write can leave
+the session without an end record.
+
+Read the five most recent local sessions without MT5 or account variables:
+
+```powershell
+py -m execution.mt5_demo_session_report_cli --ledger $ledger
+```
+
+The report includes scan/signal counts, submission and acceptance observations,
+the last scan result and the session end reason. Use `--limit 20` for more
+sessions (maximum 100). It opens the journal read-only and does not create a
+missing file. Older journals remain readable and gain end columns on the next
+runner session. `end_recorded=false` means no end was recorded: a watcher may
+still be running, the process may have been killed, or the session may predate
+end tracking. It does not prove a crash. Submission counts are local
+observations, not independently verified fills or profitability evidence.
+
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
 
