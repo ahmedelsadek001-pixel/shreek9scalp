@@ -35,6 +35,10 @@ reports tick timestamps three hours ahead of Windows UTC, set
 `$env:SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS='10800'` in the same shell.
 Only `0` and `10800` are accepted; verify the broker offset before each
 session. The five-second quote freshness limit remains in force.
+The read-only readiness report shows `observed_filling_policy` and
+`observed_tick_utc_offset_seconds` when a currently fresh tick supports one
+of those offsets. These observations do not set the offset automatically or
+enable order transport. A stale tick leaves the observed offset null.
 
 ```powershell
 $ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'

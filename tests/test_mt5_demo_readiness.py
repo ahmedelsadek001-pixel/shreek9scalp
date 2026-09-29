@@ -58,11 +58,26 @@ def test_fok_broker_with_explicit_offset_is_read_only_and_stale_refuses():
     api = FakeMT5(symbol=Symbol(filling_mode=1))
     api.tick_ms += 10_800_000
     config = replace(CONFIG, server_utc_offset_seconds=10800)
-    assert inspect_demo_readiness(api, config).ready_for_demo_attempt
+    ready = inspect_demo_readiness(api, config)
+    assert ready.ready_for_demo_attempt
+    assert ready.observed_filling_policy == "FOK"
+    assert ready.observed_tick_utc_offset_seconds == 10800
     assert not api.sends
     api.tick_ms -= 60_000
     assert not inspect_demo_readiness(api, config).ready_for_demo_attempt
+    assert inspect_demo_readiness(api, config).observed_tick_utc_offset_seconds is None
     assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
+
+
+def test_diagnostic_does_not_turn_future_quote_into_readiness():
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    report = inspect_demo_readiness(api, CONFIG)
+    assert not report.ready_for_demo_attempt
+    assert report.observed_filling_policy == "FOK"
+    assert report.observed_tick_utc_offset_seconds == 10800
+    assert "DEMO quote missing, stale or wide" in report.blockers
+    assert not api.sends
 
 
 def test_cli_redacts_account_even_for_ready_demo(monkeypatch, capsys):

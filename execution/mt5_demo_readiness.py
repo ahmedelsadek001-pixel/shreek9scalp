@@ -19,6 +19,25 @@ class DemoReadiness:
     blockers: tuple[str, ...]
     symbol: str | None = None
     order_transport_enabled: bool = False
+    observed_filling_policy: str | None = None
+    observed_tick_utc_offset_seconds: int | None = None
+
+
+def _tick_offset_candidate(tick: Any, clock: datetime) -> int | None:
+    """Report a fresh supported offset for diagnosis, never grant authority."""
+    timestamp = getattr(tick, "time_msc", None)
+    if not _number(timestamp):
+        return None
+    matches = [offset for offset in (0, 10800)
+               if 0 <= clock.timestamp() * 1000 - (timestamp - offset * 1000) <= 5000]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _filling_policy(symbol: Any) -> str | None:
+    flags = getattr(symbol, "filling_mode", None)
+    if type(flags) is not int:
+        return None
+    return {1: "FOK", 2: "IOC", 3: "FOK+IOC"}.get(flags & 3)
 
 
 def _number(value: Any) -> bool:
@@ -98,7 +117,9 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or getattr(last_account, "trade_allowed", None) is not True
                         or getattr(last_account, "trade_expert", None) is not True):
                     blockers.append("DEMO identity changed during inspection")
-                report = DemoReadiness(not blockers, tuple(blockers), config.symbol)
+                report = DemoReadiness(not blockers, tuple(blockers), config.symbol,
+                                       observed_filling_policy=_filling_policy(symbol),
+                                       observed_tick_utc_offset_seconds=_tick_offset_candidate(tick, clock))
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError):
         report = refused("DEMO inspection failed")
     finally:
