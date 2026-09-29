@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
 import json
+import sqlite3
+
+import pytest
 
 from execution import mt5_demo_preflight_cli
 from test_mt5_demo_auto import _api
 from test_mt5_demo_transport import Account, FakeMT5, Symbol, CONFIG, ORDER
 from execution.mt5_demo_transport import submit_demo_order
+from execution.mt5_demo_session_journal import DemoSessionJournal
 
 
 def _env(monkeypatch):
@@ -104,3 +108,43 @@ def test_preflight_rejects_malformed_or_missing_ledger_location(monkeypatch, cap
     report = json.loads(capsys.readouterr().out)
     assert "DEMO ledger directory unavailable" in report["session_blockers"]
     assert not api.sends
+
+
+@pytest.mark.parametrize("kind", ["corrupt", "wrong_schema", "directory"])
+def test_preflight_blocks_invalid_scan_journal_without_modifying_it(monkeypatch, capsys, tmp_path, kind):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    journal = ledger.with_suffix(".scans.sqlite3")
+    if kind == "directory":
+        journal.mkdir()
+    elif kind == "wrong_schema":
+        with sqlite3.connect(journal) as db:
+            db.execute("CREATE TABLE unrelated (value TEXT)")
+    else:
+        journal.write_bytes(b"invalid journal")
+    before = journal.read_bytes() if journal.is_file() else None
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["ready_for_demo_attempt"] and not report["ready_for_demo_session"]
+    assert "DEMO scan journal unreadable or malformed" in report["session_blockers"]
+    assert report["strategy_scan"] is None and not api.sends
+    assert not ledger.exists()
+    if before is not None:
+        assert journal.read_bytes() == before
+
+
+def test_preflight_accepts_healthy_scan_journal_read_only(monkeypatch, capsys, tmp_path):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=False, watch_minutes=0)
+    journal.finish("scan_complete")
+    before = journal.path.read_bytes()
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 0
+    assert json.loads(capsys.readouterr().out)["ready_for_demo_session"]
+    assert journal.path.read_bytes() == before and not ledger.exists() and not api.sends

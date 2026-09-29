@@ -51,6 +51,11 @@ py -m execution.mt5_demo_auto_cli --ledger $ledger
 
 The preflight command combines identity, broker readiness, local ledger and
 stop-file checks, and a disabled strategy scan in one redacted JSON report.
+An existing scan journal is also checked read-only for database integrity and
+required tables/columns; a corrupt journal blocks session readiness before
+the strategy scan. A missing journal is allowed because the runner creates
+it before polling. Preflight does not test writes; the runner independently
+refuses polling if journal creation, migration or writes fail.
 `ready_for_demo_attempt` covers the broker environment;
 `ready_for_demo_session` also requires no stop file or unresolved ledger
 submission. It is read-only even when DEMO execution opt-ins are present in

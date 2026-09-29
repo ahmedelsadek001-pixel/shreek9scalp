@@ -1,6 +1,7 @@
 """Read-only local ledger and stop-file checks for a DEMO session."""
 from __future__ import annotations
 
+from contextlib import closing
 from hashlib import sha256
 from pathlib import Path
 import sqlite3
@@ -31,4 +32,22 @@ def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig) -> tuple[s
                     blockers.append("unresolved DEMO submission in ledger")
     except (OSError, ValueError, sqlite3.Error):
         blockers.append("DEMO ledger or stop file unreadable or malformed")
+    journal = ledger.with_suffix(".scans.sqlite3")
+    try:
+        if journal.exists():
+            if not journal.is_file():
+                raise OSError("not a file")
+            with closing(sqlite3.connect(journal.resolve().as_uri() + "?mode=ro", uri=True, timeout=1)) as db:
+                db.execute("BEGIN")
+                if db.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                    raise sqlite3.DatabaseError("journal integrity failure")
+                for table, required in (
+                    ("sessions", {"session_id", "started_at", "execute_requested", "watch_minutes"}),
+                    ("scan_events", {"event_id", "session_id", "recorded_at", "result_json"}),
+                ):
+                    columns = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+                    if not required <= columns:
+                        raise sqlite3.DatabaseError("missing journal columns")
+    except (OSError, ValueError, sqlite3.Error):
+        blockers.append("DEMO scan journal unreadable or malformed")
     return tuple(blockers)
