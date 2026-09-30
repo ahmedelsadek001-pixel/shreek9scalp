@@ -20,6 +20,11 @@ free on the drive containing `%LOCALAPPDATA%`; an existing runtime needs at
 least 64 MiB. `INSUFFICIENT_LOCALAPPDATA_SPACE` identifies that drive as the
 blocker. Free space there and run the diagnosis again; do not delete the
 existing `%LOCALAPPDATA%\SHREEK` order ledger or scan journal.
+If a runtime with MetaTrader5 is already installed, `--report-demo` can read
+existing sessions and broker history while this reserve is unavailable. It
+does not install packages or authorize a new session. The report can still
+fail if Windows or MT5 cannot read the local records; inspect that failure
+without retrying an uncertain order.
 
 When the diagnosis passes, run:
 

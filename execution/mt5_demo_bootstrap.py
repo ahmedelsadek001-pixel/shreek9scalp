@@ -50,13 +50,13 @@ def _status() -> tuple[dict[str, object], Path | None]:
         free = shutil.disk_usage(local).free
     except OSError:
         report["reason"] = "DISK_STATUS_UNAVAILABLE"
-        return report, None
+        return report, runtime_python
     required = RUN_FREE_BYTES if present else SETUP_FREE_BYTES
     report["available_free_mib"] = free // (1024 * 1024)
     report["required_free_mib"] = required // (1024 * 1024)
     if free < required:
         report["reason"] = "INSUFFICIENT_LOCALAPPDATA_SPACE"
-        return report, None
+        return report, runtime_python
     report["ready_to_prepare"] = True
     report["reason"] = None
     return report, runtime_python
@@ -70,9 +70,34 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--report-demo", action="store_true", help="read session and broker reports")
     args = parser.parse_args(argv)
     report, runtime_python = _status()
-    if args.doctor or runtime_python is None:
+    if args.doctor:
         print(json.dumps(report, sort_keys=True))
         return 0 if report["ready_to_prepare"] else 2
+    # Recovery must remain observable even when the reserve for a new session
+    # is exhausted. Reporting uses an existing runtime and never installs MT5.
+    if args.report_demo:
+        if not report["runtime_present"]:
+            print(json.dumps({"reason": "DEMO_RUNTIME_NOT_PREPARED"}, sort_keys=True))
+            return 2
+        try:
+            probe = subprocess.run(
+                [str(runtime_python), "-c", "import MetaTrader5"],
+                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            if probe.returncode != 0:
+                print(json.dumps({"reason": "MT5_PACKAGE_IMPORT_FAILED"}, sort_keys=True))
+                return 2
+            result = subprocess.run(
+                [str(runtime_python), "-m", "execution.mt5_demo_windows_cli", "--report-demo"],
+                check=False,
+            )
+            return 0 if result.returncode == 0 else 2
+        except OSError:
+            print(json.dumps({"reason": "RUNTIME_LAUNCH_FAILED"}, sort_keys=True))
+            return 2
+    if not report["ready_to_prepare"]:
+        print(json.dumps(report, sort_keys=True))
+        return 2
     if not report["runtime_present"]:
         try:
             venv.create(str(runtime_python.parent.parent), with_pip=True)

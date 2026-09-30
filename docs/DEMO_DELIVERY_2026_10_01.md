@@ -33,6 +33,8 @@ record its commit alongside the exact successful CI run before acceptance.
    intent matches local broker history but still lacks independent evidence;
    `blocked` means the reports are missing, inconsistent or need inspection.
    No state marks paper trading validated or grants live authority.
+   An existing runtime can read this report even if the local disk reserve
+   blocks another session; the watcher remains blocked until space is freed.
 7. Review the report locally and provide only the redacted JSON for review.
    Reports do not automatically synchronize to ChatGPT. Reconcile any
    submitted attempt against an independent broker history export.

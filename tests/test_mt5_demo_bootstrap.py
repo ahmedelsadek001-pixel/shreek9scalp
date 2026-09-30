@@ -52,6 +52,41 @@ def test_existing_runtime_uses_lower_reserve_and_skips_reinstall(monkeypatch, tm
     ]
 
 
+def test_full_disk_allows_existing_read_only_report_but_blocks_watch(monkeypatch, tmp_path):
+    executable = _windows(monkeypatch, tmp_path, free=1 * 1024 * 1024, runtime=True)
+    calls = []
+    monkeypatch.setattr(bootstrap.subprocess, "run",
+                        lambda argv, **kwargs: calls.append(argv) or SimpleNamespace(returncode=0))
+    monkeypatch.setattr(bootstrap.venv, "create", lambda *a, **k: pytest.fail("created runtime"))
+
+    assert bootstrap.main(["--report-demo"]) == 0
+    assert calls == [[str(executable), "-c", "import MetaTrader5"],
+                     [str(executable), "-m", "execution.mt5_demo_windows_cli", "--report-demo"]]
+    assert bootstrap.main(["--watch-demo"]) == 2
+    assert len(calls) == 2
+
+
+def test_report_never_installs_missing_mt5_or_creates_runtime(monkeypatch, tmp_path, capsys):
+    _windows(monkeypatch, tmp_path, runtime=True)
+    calls = []
+    monkeypatch.setattr(bootstrap.venv, "create", lambda *a, **k: pytest.fail("created runtime"))
+    monkeypatch.setattr(bootstrap.subprocess, "run",
+                        lambda argv, **kwargs: calls.append(argv) or SimpleNamespace(returncode=1))
+
+    assert bootstrap.main(["--report-demo"]) == 2
+    assert len(calls) == 1
+    assert json.loads(capsys.readouterr().out)["reason"] == "MT5_PACKAGE_IMPORT_FAILED"
+
+
+def test_report_without_runtime_does_not_install(monkeypatch, tmp_path, capsys):
+    _windows(monkeypatch, tmp_path, free=1 * 1024 * 1024)
+    monkeypatch.setattr(bootstrap.venv, "create", lambda *a, **k: pytest.fail("created runtime"))
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: pytest.fail("ran child"))
+
+    assert bootstrap.main(["--report-demo"]) == 2
+    assert json.loads(capsys.readouterr().out)["reason"] == "DEMO_RUNTIME_NOT_PREPARED"
+
+
 def test_missing_package_installs_once_then_verifies_before_watch(monkeypatch, tmp_path):
     executable = _windows(monkeypatch, tmp_path)
     calls = []
