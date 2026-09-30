@@ -1,5 +1,41 @@
 # MT5 DEMO connection: read-only preflight
 
+## Windows connection launcher
+
+On the Windows PC containing the already logged-in DEMO terminal, download
+the latest `v5.1-development` source and extract it. Open PowerShell in that
+folder and run:
+
+```powershell
+.\connect_mt5_demo.cmd
+```
+
+Python 3.9 or newer and the Windows `py` launcher must already be installed.
+The command prepares a local Python environment under `%LOCALAPPDATA%\SHREEK`,
+installs the native MetaTrader5 package, and prompts for the exact terminal
+path, hidden expected login, server, symbol and verified UTC offset.
+Existing `SHREEK_DEMO_*` binding variables are accepted instead of prompts.
+Inputs stay in the child process; no password is requested or saved.
+The default mode prints the redacted, read-only preflight JSON and sends no order.
+Check `connected_demo` separately from `ready_for_demo_session`: attachment
+can succeed while permissions, exposure, local evidence or quotes block trading.
+
+For the previously authorized experimental DEMO watcher, run:
+
+```powershell
+.\connect_mt5_demo.cmd --watch-demo
+```
+
+This mode starts the existing bounded watcher only after successful preflight.
+It stops after one submission attempt or 60 minutes and needs a valid current
+strategy signal. It cannot guarantee a trade. Both modes use the same local
+ledger and lock. This connects the project to the terminal on your Windows PC;
+it does not create remote access from ChatGPT or convert the Linux workspace
+into Windows. A remote connection requires a separately configured reachable
+Windows endpoint and an authorized access method.
+
+## Manual environment binding
+
 SHREEK's current MT5 boundary can check a local, already logged-in DEMO
 terminal without passwords or trading authority. It requires an explicit
 terminal path, expected login and exact server name. These values live only
