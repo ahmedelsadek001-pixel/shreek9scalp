@@ -103,6 +103,11 @@ observations: unavailable bars, a stale or unfinished last bar, or no unique
 current signal. A session gap, detected signal without submission, or any
 other safety refusal ends the watch and records `safety_refusal`; correct the
 underlying condition before a new preflight. A refused scan is not a trade.
+For the current Breakout + Retest settings, the gap check covers the most
+recent 39 completed M5 candles (about 3 hours and 15 minutes). This includes
+the detector's volume, consolidation and maximum retest lookback. A market
+reopen or missing broker bar inside that window stops the watch; do not
+disable the continuity check to force a signal.
 Failed MT5 shutdown overrides any pending scan outcome and stops the watch;
 it never permits a broker submission from that scan.
 Each poll is also committed to `demo_orders.scans.sqlite3` beside the order
