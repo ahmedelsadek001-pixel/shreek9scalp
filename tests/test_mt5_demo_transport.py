@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from dataclasses import replace
 import sqlite3
+import pytest
 
 from execution.mt5_demo_probe import DemoTerminalConfig
 from execution.mt5_demo_transport import DemoOrder, submit_demo_order
@@ -256,6 +257,7 @@ def test_unknown_outcome_stays_reserved_and_blocks_following_orders(tmp_path):
 
 
 def test_cli_needs_explicit_ack_and_never_displays_identity(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
@@ -272,4 +274,76 @@ def test_cli_needs_explicit_ack_and_never_displays_identity(monkeypatch, capsys,
     assert mt5_demo_order_cli.main(["--execute-demo"] + args) == 0
     output = capsys.readouterr().out
     assert "123456" not in output and "Sandbox-Demo" not in output
+    assert len(api.sends) == 1
+
+
+@pytest.mark.parametrize("blocker", ["kill", "lock", "stop", "ledger", "journal"])
+def test_manual_cli_local_blockers_prevent_runtime_access(monkeypatch, capsys, tmp_path, blocker):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_TRADING_ACK", "DEMO_ONLY")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    if blocker == "kill":
+        monkeypatch.delenv("SHREEK_DEMO_KILL_SWITCH")
+    else:
+        path = {"lock": ledger.with_suffix(".watch.lock"),
+                "stop": ledger.with_suffix(".stop"),
+                "ledger": ledger,
+                "journal": ledger.with_suffix(".scans.sqlite3")}[blocker]
+        path.write_text("blocked")
+
+    def forbidden_runtime():
+        pytest.fail("blocked manual order accessed broker runtime")
+
+    monkeypatch.setattr(mt5_demo_order_cli, "demo_only_mt5_runtime", forbidden_runtime)
+    args = ["--execute-demo", "--intent-id", "manual-blocked", "--side", "BUY",
+            "--stop-loss", "3998", "--take-profit", "4002", "--ledger", str(ledger)]
+    assert mt5_demo_order_cli.main(args) == 2
+    import json
+    result = json.loads(capsys.readouterr().out)
+    assert not result["sent"] and not result["accepted"]
+    assert ledger.with_suffix(".watch.lock").exists() == (blocker == "lock")
+
+
+def test_manual_cli_holds_shared_lock_and_preserves_sent_outcome_on_cleanup_failure(
+        monkeypatch, capsys, tmp_path):
+    from contextlib import contextmanager
+    import json
+    from execution.mt5_demo_session_journal import exclusive_demo_session
+
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_TRADING_ACK", "DEMO_ONLY")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    original_send = api.order_send
+
+    def checked_send(request):
+        assert ledger.with_suffix(".watch.lock").exists()
+        with pytest.raises(FileExistsError):
+            with exclusive_demo_session(ledger):
+                pytest.fail("second runner acquired an active manual session")
+        return original_send(request)
+
+    @contextmanager
+    def failed_cleanup(path):
+        with exclusive_demo_session(path):
+            yield
+        raise OSError("cleanup failure")
+
+    api.order_send = checked_send
+    monkeypatch.setattr(mt5_demo_order_cli, "demo_only_mt5_runtime", lambda: api)
+    monkeypatch.setattr(mt5_demo_order_cli, "exclusive_demo_session", failed_cleanup)
+    args = ["--execute-demo", "--intent-id", "manual-cleanup", "--side", "BUY",
+            "--stop-loss", "3998", "--take-profit", "4002", "--ledger", str(ledger)]
+    assert mt5_demo_order_cli.main(args) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["sent"] and result["accepted"]
+    assert "session_lock_error" in result
     assert len(api.sends) == 1

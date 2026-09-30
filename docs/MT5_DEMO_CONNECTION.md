@@ -46,7 +46,13 @@ the exact reviewed DEMO-only sandbox module; live MT5 trading remains disabled.
 
 The optional `execution.mt5_demo_order_cli` sends **one manually specified**
 0.01-lot DEMO market order only when `--execute-demo` and the separate local
-`SHREEK_DEMO_TRADING_ACK=DEMO_ONLY` flag are present. This does not prove a
+`SHREEK_DEMO_TRADING_ACK=DEMO_ONLY` flag and
+`SHREEK_DEMO_KILL_SWITCH=OFF` are present. The manual command holds the same
+exclusive session lock as the automatic runner and checks the local stop
+file, unresolved ledger submissions, and scan journal before loading MT5.
+Both commands must use the same ledger path for this shared exclusion.
+A lock cleanup error preserves the broker outcome and requires inspection;
+do not retry an already sent order. This does not prove a
 strategy signal and does not qualify as a paper-account strategy trade. Do not
 use this command when the terminal reports `trade_allowed=false`; the broker
 or operator must permit DEMO trading before a sandbox send can succeed.
@@ -69,6 +75,7 @@ appropriate protective prices as local inputs:
 
 ```powershell
 $env:SHREEK_DEMO_TRADING_ACK = 'DEMO_ONLY'
+$env:SHREEK_DEMO_KILL_SWITCH = 'OFF'
 $ledgerDir = Join-Path $env:LOCALAPPDATA 'SHREEK'
 New-Item -ItemType Directory -Force -Path $ledgerDir | Out-Null
 $stop = Read-Host 'Protective stop price (DEMO)'
