@@ -34,7 +34,10 @@ The default quote clock is UTC. For the observed JustMarkets DEMO feed that
 reports tick timestamps three hours ahead of Windows UTC, set
 `$env:SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS='10800'` in the same shell.
 Only `0` and `10800` are accepted; verify the broker offset before each
-session. The five-second quote freshness limit remains in force.
+session. The same explicit offset maps completed M5 candle timestamps to UTC
+before the last-bar and signal checks. A missing or incorrect offset refuses
+stale or future candles; it is never inferred from the tick. The five-second
+quote freshness limit remains in force.
 The read-only readiness report shows `observed_filling_policy` and
 `observed_tick_utc_offset_seconds` when a currently fresh tick supports one
 of those offsets. These observations do not set the offset automatically or
@@ -97,6 +100,8 @@ observations: unavailable bars, a stale or unfinished last bar, or no unique
 current signal. A session gap, detected signal without submission, or any
 other safety refusal ends the watch and records `safety_refusal`; correct the
 underlying condition before a new preflight. A refused scan is not a trade.
+Failed MT5 shutdown overrides any pending scan outcome and stops the watch;
+it never permits a broker submission from that scan.
 Each poll is also committed to `demo_orders.scans.sqlite3` beside the order
 ledger, including no-signal and rejected scans. The session journal contains
 UTC timestamps, a local session ID and the redacted result; it contains no

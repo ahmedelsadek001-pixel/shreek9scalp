@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -71,6 +72,83 @@ def test_missing_completed_candles_and_failed_shutdown_never_send(monkeypatch, t
                                   execute=True, kill_switch_off=True, now=clock)
     assert result.reason == "automatic DEMO session shutdown failed"
     assert not result.sent and not api.sends
+
+
+def test_failed_shutdown_overrides_an_early_no_bar_result(tmp_path):
+    api, clock, _ = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: None
+    api.shutdown = lambda: (_ for _ in ()).throw(RuntimeError("terminal failure"))
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3", now=clock)
+    assert result.reason == "automatic DEMO session shutdown failed"
+    assert not result.sent and not result.signal_detected and not api.sends
+
+
+def test_shifted_m5_bars_use_explicit_utc_mapping_and_broker_quote(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: [dict(row, time=row["time"] + 10800) for row in bars]
+    api.tick_ms += 10_800_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+
+    def current_signal(rows, *_args, **_kwargs):
+        assert rows[-1].timestamp == datetime.fromtimestamp(bars[-1]["time"], timezone.utc)
+        return (SimpleNamespace(direction=Direction.BUY, signal_time=rows[-1].timestamp,
+                                breakout_time=rows[-2].timestamp, entry_price=4000.0,
+                                sl_price=3998.0, tp1=4002.0),)
+
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest", current_signal)
+    ledger = tmp_path / "demo.sqlite3"
+    assert not scan_and_submit_demo(api, CONFIG, ledger, now=clock).signal_detected
+    dry = scan_and_submit_demo(api, config, ledger, now=clock)
+    assert dry.signal_detected and not dry.sent and not ledger.exists()
+    sent = scan_and_submit_demo(api, config, ledger, execute=True,
+                                kill_switch_off=True, now=clock)
+    assert sent.accepted and sent.signal_id == dry.signal_id and len(api.sends) == 1
+
+
+def test_real_last_bar_retest_reaches_fake_fok_demo_transport_on_shifted_feed(tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    bars[-2].update(open=4000.0, high=4002.0, low=3999.9,
+                    close=4001.8, tick_volume=200)
+    bars[-1].update(open=4001.0, high=4001.7, low=4000.5,
+                    close=4001.5, tick_volume=100)
+    api.copy_rates_from_pos = lambda *args: [dict(row, time=row["time"] + 10800) for row in bars]
+    api.tick_ms += 10_800_000
+    api.symbol.filling_mode = 1
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    original_tick = api.symbol_info_tick
+
+    def matching_tick(symbol):
+        tick = original_tick(symbol)
+        tick.bid, tick.ask = 4001.5, 4001.6
+        return tick
+
+    def broker_check(request):
+        assert request["sl"] == 4000.0 and request["tp"] == 4003.75
+        assert request["type_filling"] == api.ORDER_FILLING_FOK
+        return SimpleNamespace(retcode=0)
+
+    api.symbol_info_tick = matching_tick
+    api.order_check = broker_check
+    ledger = tmp_path / "demo.sqlite3"
+    dry = scan_and_submit_demo(api, config, ledger, now=clock)
+    assert dry.signal_detected and not dry.sent and not ledger.exists()
+    submitted = scan_and_submit_demo(api, config, ledger, execute=True,
+                                     kill_switch_off=True, now=clock)
+    assert submitted.accepted and submitted.signal_id == dry.signal_id
+    assert len(api.sends) == 1 and api.sends[0]["price"] == 4001.6
+
+
+def test_shifted_m5_bars_with_unshifted_quote_never_send(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    api.copy_rates_from_pos = lambda *args: [dict(row, time=row["time"] + 10800) for row in bars]
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest", lambda rows, *args, **kwargs: (
+        SimpleNamespace(direction=Direction.BUY, signal_time=rows[-1].timestamp,
+                        breakout_time=rows[-2].timestamp, entry_price=4000.0,
+                        sl_price=3998.0, tp1=4002.0),))
+    result = scan_and_submit_demo(api, config, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.signal_detected and not result.sent and not api.sends
 
 
 def test_only_last_completed_bar_can_generate_demo_order(monkeypatch, tmp_path):

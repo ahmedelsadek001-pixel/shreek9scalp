@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from math import isfinite
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from core.enums import Direction
 from execution.mt5_demo_probe import DemoTerminalConfig, _matches_demo_account
@@ -22,6 +22,7 @@ from research.data_validation import validate_market_data
 STRATEGY_ID = "breakout-retest-research-v1-pip0.1"
 PIP_SIZE = 0.1
 BAR_SECONDS = 300
+SESSION_SHUTDOWN_FAILED_REASON = "automatic DEMO session shutdown failed"
 _SAFE_BAR_ERRORS = frozenset({
     "80 completed M5 bars unavailable",
     "M5 context has a session gap",
@@ -39,20 +40,32 @@ class DemoAutoResult:
     broker_order_id: int | None = None
 
 
-def _closed_m5_bars(api: Any, symbol: str, now: datetime) -> tuple[ResearchBar, ...]:
+class _DemoSessionShutdownError(RuntimeError):
+    """Internal sentinel used to override every pending session result."""
+
+
+def m5_context_is_contiguous(bars: Sequence[ResearchBar]) -> bool:
+    """Check the entire M5 history that can contribute to the latest signal."""
+    return len(bars) >= 33 and all(
+        int((right.timestamp - left.timestamp).total_seconds()) == BAR_SECONDS
+        for left, right in zip(bars[-33:-1], bars[-32:])
+    )
+
+
+def _closed_m5_bars(api: Any, config: DemoTerminalConfig,
+                    now: datetime) -> tuple[ResearchBar, ...]:
     # MT5 index 0 is a forming candle; index 1 is the last closed candle.
-    rates = api.copy_rates_from_pos(symbol, api.TIMEFRAME_M5, 1, 80)
+    rates = api.copy_rates_from_pos(config.symbol, api.TIMEFRAME_M5, 1, 80)
     if rates is None or len(rates) != 80:
         raise ValueError("80 completed M5 bars unavailable")
     bars = tuple(sorted((ResearchBar(
-        datetime.fromtimestamp(int(row["time"]), timezone.utc),
+        datetime.fromtimestamp(int(row["time"]) - config.server_utc_offset_seconds, timezone.utc),
         float(row["open"]), float(row["high"]), float(row["low"]),
         float(row["close"]), float(row["tick_volume"]),
     ) for row in rates), key=lambda bar: bar.timestamp))
     validate_market_data(bars)
     # Avoid a cross-session setup or a delayed broker feed after market reopen.
-    if any(int((right.timestamp - left.timestamp).total_seconds()) != BAR_SECONDS
-           for left, right in zip(bars[-33:-1], bars[-32:])):
+    if not m5_context_is_contiguous(bars):
         raise ValueError("M5 context has a session gap")
     since_close = (now - bars[-1].timestamp).total_seconds() - BAR_SECONDS
     if not 0 <= since_close <= 120:
@@ -60,9 +73,9 @@ def _closed_m5_bars(api: Any, symbol: str, now: datetime) -> tuple[ResearchBar, 
     return bars
 
 
-def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
-                         *, execute: bool = False, kill_switch_off: bool = False,
-                         now: datetime | None = None) -> DemoAutoResult:
+def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
+                          *, execute: bool = False, kill_switch_off: bool = False,
+                          now: datetime | None = None) -> DemoAutoResult:
     refused = lambda reason: DemoAutoResult(False, False, False, reason)
     if (api is None or not isinstance(config, DemoTerminalConfig) or not isinstance(ledger, Path)
             or type(execute) is not bool or type(kill_switch_off) is not bool):
@@ -77,7 +90,6 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
     if not isinstance(clock, datetime) or clock.tzinfo is None or clock.utcoffset() is None:
         return refused("automatic DEMO clock invalid")
     initialized = False
-    shutdown_failed = False
     try:
         initialized = api.initialize(config.terminal_path, timeout=config.timeout_ms) is True
         if not initialized:
@@ -92,7 +104,7 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 or type(getattr(symbol_info, "chart_mode", None)) is not int
                 or symbol_info.chart_mode != chart_mode_bid):
             return refused("automatic DEMO requires Bid-based broker candles")
-        bars = _closed_m5_bars(api, config.symbol, clock)
+        bars = _closed_m5_bars(api, config, clock)
         signals = detect_breakout_retest(bars, PIP_SIZE, BreakoutRetestConfig(),
                                          min_signal_index=len(bars) - 1)
         if len(signals) != 1 or signals[0].signal_time != bars[-1].timestamp:
@@ -134,10 +146,11 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
         if initialized:
             try:
                 api.shutdown()
-            except (AttributeError, OSError, RuntimeError):
-                shutdown_failed = True
-    if shutdown_failed:
-        return refused("automatic DEMO session shutdown failed")
+            except (AttributeError, OSError, RuntimeError) as exc:
+                # Raising here intentionally replaces a pending early return.
+                # The public wrapper converts the sentinel into a fail-closed
+                # result, so no scan outcome can conceal a leaked MT5 session.
+                raise _DemoSessionShutdownError from exc
     if ledger.with_suffix(".stop").exists():
         return DemoAutoResult(True, False, False, "automatic DEMO stop file active", signal_id)
     order = DemoOrder(signal_id, config.symbol, side, 0.01,
@@ -146,3 +159,18 @@ def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
     submission = submit_demo_order(api, config, order, ledger)
     return DemoAutoResult(True, submission.sent, submission.accepted,
                           submission.reason, signal_id, submission.broker_order_id)
+
+
+def scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
+                         *, execute: bool = False, kill_switch_off: bool = False,
+                         now: datetime | None = None) -> DemoAutoResult:
+    """Run one DEMO scan while treating session shutdown as authoritative."""
+    try:
+        return _scan_and_submit_demo(
+            api, config, ledger, execute=execute,
+            kill_switch_off=kill_switch_off, now=now,
+        )
+    except _DemoSessionShutdownError:
+        return DemoAutoResult(
+            False, False, False, SESSION_SHUTDOWN_FAILED_REASON
+        )
