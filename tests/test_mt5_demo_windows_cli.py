@@ -1,5 +1,6 @@
 """Windows launcher gates without native MT5 or any broker connection."""
 import os
+import json
 
 import pytest
 
@@ -25,6 +26,39 @@ def test_windows_launcher_refuses_linux_without_prompts_or_runtime(monkeypatch, 
     monkeypatch.setattr(mt5_demo_windows_cli.platform, "system", lambda: "Linux")
     assert mt5_demo_windows_cli.main(["--watch-demo"]) == 2
     assert "Windows PC" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("session_code,history_code", [(0, 0), (2, 0), (0, 2)])
+def test_report_mode_bypasses_trading_preflight_and_keeps_execution_disabled(
+        monkeypatch, tmp_path, capsys, session_code, history_code):
+    from execution import mt5_demo_session_report_cli, mt5_demo_history_cli
+    ledger = binding(monkeypatch, tmp_path)
+    calls = []
+
+    def command(label, code):
+        def run(argv):
+            assert argv == ["--ledger", str(ledger)]
+            assert os.environ["SHREEK_DEMO_AUTO_ACK"] == ""
+            assert os.environ["SHREEK_DEMO_KILL_SWITCH"] == "ON"
+            calls.append(label)
+            print(json.dumps({"reason": label}))
+            return code
+        return run
+
+    monkeypatch.setattr(mt5_demo_session_report_cli, "main", command("sessions", session_code))
+    monkeypatch.setattr(mt5_demo_history_cli, "main", command("history", history_code))
+    monkeypatch.setattr(mt5_demo_preflight_cli, "main", lambda argv: pytest.fail("report needs no trading preflight"))
+    monkeypatch.setattr(mt5_demo_auto_cli, "main", lambda argv: pytest.fail("report started a watcher"))
+    assert mt5_demo_windows_cli.main(["--report-demo"]) == (0 if session_code == history_code == 0 else 2)
+    result = json.loads(capsys.readouterr().out)
+    assert calls == ["sessions", "history"]
+    assert not result["independent_broker_export_verified"]
+    assert result["broker_history"]["exit_code"] == history_code
+
+
+def test_report_modes_are_mutually_exclusive():
+    with pytest.raises(SystemExit):
+        mt5_demo_windows_cli.main(["--report-demo", "--watch-demo"])
 
 
 @pytest.mark.parametrize("watch_requested,preflight_code", [(False, 0), (False, 2), (True, 2)])
@@ -71,7 +105,7 @@ def test_explicit_watch_follows_preflight_and_restores_flags_on_failure(monkeypa
     assert os.environ["SHREEK_DEMO_AUTO_ACK"] == "old-value"
 
 
-@pytest.mark.parametrize("invalid", ["runtime", "terminal", "clock", "login", "local_data"])
+@pytest.mark.parametrize("invalid", ["runtime", "terminal", "clock", "account", "local_data"])
 def test_invalid_windows_binding_never_calls_preflight(monkeypatch, tmp_path, invalid):
     binding(monkeypatch, tmp_path)
     if invalid == "runtime":
@@ -79,7 +113,7 @@ def test_invalid_windows_binding_never_calls_preflight(monkeypatch, tmp_path, in
     else:
         key, value = {"terminal": ("SHREEK_DEMO_TERMINAL_PATH", str(tmp_path / "missing.exe")),
                       "clock": ("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "3600"),
-                      "login": ("SHREEK_DEMO_LOGIN", "invalid"),
+                      "account": ("SHREEK_DEMO_LOGIN", "invalid"),
                       "local_data": ("LOCALAPPDATA", "relative")}[invalid]
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(mt5_demo_preflight_cli, "main", lambda argv: pytest.fail("invalid preflight"))

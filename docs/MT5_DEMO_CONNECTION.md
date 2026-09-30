@@ -36,6 +36,12 @@ Windows endpoint and an authorized access method.
 
 ## Manual environment binding
 
+After a session, collect both read-only reports with
+`.\connect_mt5_demo.cmd --report-demo`. This mode cannot be combined with
+`--watch-demo` and does not require a new trading-readiness pass.
+See [the 1 October DEMO handover](DEMO_DELIVERY_2026_10_01.md) for the delivery
+sequence and acceptance evidence.
+
 SHREEK's current MT5 boundary can check a local, already logged-in DEMO
 terminal without passwords or trading authority. It requires an explicit
 terminal path, expected login and exact server name. These values live only
