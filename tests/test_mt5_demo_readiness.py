@@ -54,6 +54,14 @@ def test_missing_contract_details_cannot_look_ready():
     assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
 
 
+def test_unusable_filling_constants_cannot_look_ready():
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.ORDER_FILLING_FOK = None
+    assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
+    api = FakeMT5(symbol=Symbol(filling_mode=-1))
+    assert not inspect_demo_readiness(api, CONFIG).ready_for_demo_attempt
+
+
 def test_fok_broker_with_explicit_offset_is_read_only_and_stale_refuses():
     api = FakeMT5(symbol=Symbol(filling_mode=1))
     api.tick_ms += 10_800_000

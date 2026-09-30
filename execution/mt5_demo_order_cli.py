@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 
 from execution.mt5_demo_probe import DemoTerminalConfig
+from execution.mt5_demo_clock import configured_demo_server_utc_offset_seconds
 from execution.mt5_demo_transport import DemoOrder, DemoSubmission, submit_demo_order
 from utils.mt5_compat import demo_only_mt5_runtime
 
@@ -31,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
                 os.environ.get("SHREEK_DEMO_TERMINAL_PATH", ""), int(login),
                 os.environ.get("SHREEK_DEMO_SERVER", ""),
                 symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"),
-                server_utc_offset_seconds=int(os.environ.get("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "0")),
+                server_utc_offset_seconds=configured_demo_server_utc_offset_seconds(),
             )
             order = DemoOrder(args.intent_id, config.symbol, args.side, 0.01,
                               args.stop_loss, args.take_profit)

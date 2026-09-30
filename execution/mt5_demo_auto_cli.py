@@ -11,6 +11,7 @@ import sqlite3
 import time
 
 from execution.mt5_demo_auto import DemoAutoResult, scan_and_submit_demo
+from execution.mt5_demo_clock import configured_demo_server_utc_offset_seconds
 from execution.mt5_demo_ledger_preflight import ledger_session_blockers
 from execution.mt5_demo_probe import DemoTerminalConfig
 from execution.mt5_demo_session_journal import DemoSessionJournal, exclusive_demo_session
@@ -67,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         config = DemoTerminalConfig(os.environ.get("SHREEK_DEMO_TERMINAL_PATH", ""),
                                     int(login), os.environ.get("SHREEK_DEMO_SERVER", ""),
                                     symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"),
-                                    server_utc_offset_seconds=int(os.environ.get("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "0")))
+                                    server_utc_offset_seconds=configured_demo_server_utc_offset_seconds())
         config.validate()
         if execute:
             try:

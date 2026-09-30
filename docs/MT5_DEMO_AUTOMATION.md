@@ -22,6 +22,8 @@ The local SQLite ledger labels these attempts `strategy_experiment`; manually
 entered sandbox attempts are `manual_sandbox`, and migrated older rows remain
 `legacy_unattributed`. These local labels help separate observations but are
 not broker authentication or independent proof of strategy performance.
+Each new reserved intent also records the explicit DEMO server UTC offset;
+older ledger rows migrate with a zero offset and retain their original source.
 
 On the Windows machine, download the latest `v5.1-development` snapshot.
 Open the already selected DEMO terminal and configure the four private
@@ -33,11 +35,12 @@ password into the repository. Use a local ledger directory outside Git:
 The default quote clock is UTC. For the observed JustMarkets DEMO feed that
 reports tick timestamps three hours ahead of Windows UTC, set
 `$env:SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS='10800'` in the same shell.
-Only `0` and `10800` are accepted; verify the broker offset before each
+Only the exact values `0` and `10800` are accepted; verify the broker offset before each
 session. The same explicit offset maps completed M5 candle timestamps to UTC
 before the last-bar and signal checks. A missing or incorrect offset refuses
 stale or future candles; it is never inferred from the tick. The five-second
-quote freshness limit remains in force.
+quote freshness limit remains in force. Only the explicitly mapped +03:00
+DEMO feed permits at most one second of future tick skew; UTC mode permits none.
 The read-only readiness report shows `observed_filling_policy` and
 `observed_tick_utc_offset_seconds` when a currently fresh tick supports one
 of those offsets. These observations do not set the offset automatically or
@@ -149,6 +152,10 @@ must both be USD.
 To observe broker deals after a DEMO attempt, run the read-only
 `execution.mt5_demo_history_cli --ledger $ledger`. A broker acknowledgement
 or an observed closed deal does not establish the strategy's profitability.
+The history report checks opening deal timestamps against the local reservation
+and reports the observed deal clock offset separately from the stored tick/bar
+offset. An unbound clock or a future/chronologically inconsistent deal blocks
+the report. This read-only check cannot authenticate a broker export by itself.
 The separate research and paper-account evidence gates stay FAILED until
 independent out-of-sample and broker export audits pass.
 

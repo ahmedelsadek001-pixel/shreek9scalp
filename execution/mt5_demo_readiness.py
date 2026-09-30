@@ -5,11 +5,12 @@ Its result expires immediately and the transport independently rechecks all gate
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from math import isfinite
 from typing import Any
 
+from execution.mt5_demo_clock import fresh_demo_quote_age_ms
 from execution.mt5_demo_probe import DemoTerminalConfig, _matches_demo_account
 
 
@@ -23,21 +24,28 @@ class DemoReadiness:
     observed_tick_utc_offset_seconds: int | None = None
 
 
-def _tick_offset_candidate(tick: Any, clock: datetime) -> int | None:
+def _tick_offset_candidate(tick: Any, config: DemoTerminalConfig, clock: datetime) -> int | None:
     """Report a fresh supported offset for diagnosis, never grant authority."""
-    timestamp = getattr(tick, "time_msc", None)
-    if not _number(timestamp):
-        return None
     matches = [offset for offset in (0, 10800)
-               if 0 <= clock.timestamp() * 1000 - (timestamp - offset * 1000) <= 5000]
+               if fresh_demo_quote_age_ms(
+                   tick, replace(config, server_utc_offset_seconds=offset), clock) is not None]
     return matches[0] if len(matches) == 1 else None
 
 
 def _filling_policy(symbol: Any) -> str | None:
     flags = getattr(symbol, "filling_mode", None)
-    if type(flags) is not int:
+    if type(flags) is not int or flags < 0:
         return None
     return {1: "FOK", 2: "IOC", 3: "FOK+IOC"}.get(flags & 3)
+
+
+def _can_fill(api: Any, symbol: Any) -> bool:
+    flags = getattr(symbol, "filling_mode", None)
+    return (type(flags) is int and flags >= 0 and (
+        (bool(flags & 2) and type(getattr(api, "ORDER_FILLING_IOC", None)) is int
+         and api.ORDER_FILLING_IOC == 1)
+        or (bool(flags & 1) and type(getattr(api, "ORDER_FILLING_FOK", None)) is int
+            and api.ORDER_FILLING_FOK == 0)))
 
 
 def _number(value: Any) -> bool:
@@ -91,8 +99,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or symbol.volume_min <= 0 or symbol.volume_min > 0.01
                         or symbol.volume_step <= 0
                         or abs(round(0.01 / symbol.volume_step) * symbol.volume_step - 0.01) > 1e-9
-                        or type(getattr(symbol, "filling_mode", None)) is not int
-                        or not (symbol.filling_mode & 3)):
+                        or not _can_fill(api, symbol)):
                     blockers.append("DEMO symbol or 0.01-lot FOK/IOC contract unavailable")
                 chart_bid = getattr(api, "SYMBOL_CHART_MODE_BID", 0)
                 if (symbol is None or type(chart_bid) is not int or chart_bid != 0
@@ -106,7 +113,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                 if (tick is None or not all(_number(getattr(tick, x, None))
                                             for x in ("ask", "bid", "time_msc"))
                         or tick.bid <= 0 or tick.ask <= tick.bid
-                        or not 0 <= clock.timestamp() * 1000 - (tick.time_msc - config.server_utc_offset_seconds * 1000) <= 5000
+                        or fresh_demo_quote_age_ms(tick, config, clock) is None
                         or tick.ask - tick.bid > 0.50):
                     blockers.append("DEMO quote missing, stale or wide")
                 last_terminal, last_account = api.terminal_info(), api.account_info()
@@ -119,7 +126,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                     blockers.append("DEMO identity changed during inspection")
                 report = DemoReadiness(not blockers, tuple(blockers), config.symbol,
                                        observed_filling_policy=_filling_policy(symbol),
-                                       observed_tick_utc_offset_seconds=_tick_offset_candidate(tick, clock))
+                                       observed_tick_utc_offset_seconds=_tick_offset_candidate(tick, config, clock))
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError):
         report = refused("DEMO inspection failed")
     finally:

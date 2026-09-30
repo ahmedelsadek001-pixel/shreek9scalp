@@ -6,6 +6,7 @@ import sqlite3
 
 from execution.mt5_demo_probe import DemoTerminalConfig
 from execution.mt5_demo_transport import DemoOrder, submit_demo_order
+from execution.mt5_demo_readiness import inspect_demo_readiness
 from execution import mt5_demo_order_cli
 
 
@@ -159,6 +160,30 @@ def test_broker_fok_and_explicit_three_hour_clock_offset(tmp_path):
     config = replace(CONFIG, server_utc_offset_seconds=10800)
     result = submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3")
     assert result.accepted and api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
+
+
+def test_shifted_tick_with_subsecond_future_skew_is_bound_through_order_ledger(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    ledger = tmp_path / "demo.sqlite3"
+    readiness = inspect_demo_readiness(api, config)
+    assert readiness.ready_for_demo_attempt
+    assert readiness.observed_tick_utc_offset_seconds == 10800
+    assert not submit_demo_order(api, CONFIG, ORDER, ledger).sent
+    sent = submit_demo_order(api, config, ORDER, ledger)
+    assert sent.accepted and len(api.sends) == 1
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT server_utc_offset_seconds FROM attempts").fetchone() == (10800,)
+
+
+def test_shifted_tick_beyond_one_second_future_tolerance_never_sends(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_803_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert not inspect_demo_readiness(api, config).ready_for_demo_attempt
+    assert not submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not api.sends
 
 
 def test_fok_future_quote_without_offset_and_stale_offset_quote_refuse(tmp_path):

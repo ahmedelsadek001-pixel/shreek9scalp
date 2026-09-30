@@ -94,6 +94,11 @@ broker prices, volumes, and broker profit/commission/swap/fee fields. For a
 fully closed position it also reports `realized_net_usd`, the sum of those four
 broker deal fields. Both the account and symbol profit currency must be USD;
 other currencies are refused instead of being mislabeled USD.
+The ledger stores the explicit tick/bar clock offset for each new intent. The
+history report separately verifies whether opening deals use UTC or that
+recorded DEMO offset by comparing them with the local reservation time. It
+reports the observed deal offset and rejects unbound or future deal timestamps;
+this local check does not replace an independent broker export.
 
 An order filled across multiple broker deals is reconciled only when their
 volumes sum to the reserved DEMO volume, all opening deals share the same
