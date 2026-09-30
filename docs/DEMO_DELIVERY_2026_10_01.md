@@ -27,7 +27,12 @@ record its commit alongside the exact successful CI run before acceptance.
 6. After it ends, run `.\connect_mt5_demo.cmd --report-demo`. This prints
    one JSON envelope with local sessions and broker history, with execution
    opt-ins disabled. It can inspect history even when current positions or
-   quotes would refuse a new trading preflight.
+   quotes would refuse a new trading preflight. The envelope also includes
+   `handover_assessment`: `observation_only` means no order was submitted in
+   the latest clean session; `manual_review_required` means a submitted
+   intent matches local broker history but still lacks independent evidence;
+   `blocked` means the reports are missing, inconsistent or need inspection.
+   No state marks paper trading validated or grants live authority.
 7. Review the report locally and provide only the redacted JSON for review.
    Reports do not automatically synchronize to ChatGPT. Reconcile any
    submitted attempt against an independent broker history export.

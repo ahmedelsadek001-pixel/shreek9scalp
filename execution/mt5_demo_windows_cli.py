@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _read_reports(ledger: Path) -> int:
+    from execution.mt5_demo_handover import assess_handover
     from execution.mt5_demo_session_report_cli import main as sessions
     from execution.mt5_demo_history_cli import main as history
 
@@ -109,6 +110,7 @@ def _read_reports(ledger: Path) -> int:
             code, payload = 2, {"reason": "DEMO report unavailable or malformed"}
         report[label] = {"exit_code": code, "report": payload}
         codes.append(code)
+    report["handover_assessment"] = assess_handover(report)
     print(json.dumps(report, sort_keys=True))
     return 0 if all(code == 0 for code in codes) else 2
 

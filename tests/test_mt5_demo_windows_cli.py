@@ -53,6 +53,8 @@ def test_report_mode_bypasses_trading_preflight_and_keeps_execution_disabled(
     result = json.loads(capsys.readouterr().out)
     assert calls == ["sessions", "history"]
     assert not result["independent_broker_export_verified"]
+    assert result["handover_assessment"]["state"] == "blocked"
+    assert result["handover_assessment"]["paper_trading_validated"] is False
     assert result["broker_history"]["exit_code"] == history_code
 
 
