@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from math import isfinite
+from core.enums import Direction
 from execution.decision_provenance import IssuedDecisionRegistry
 
 _QUOTE_DECISION_CAPABILITY = object()
@@ -17,6 +18,8 @@ class QuoteSafetyDecision:
     quote_time: datetime | None = None
     evaluated_at: datetime | None = None
     max_age_seconds: float | None = None
+    symbol: str | None = None
+    direction: Direction | None = None
 
 
 def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
@@ -28,11 +31,16 @@ def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
             decision, (
                 decision.allowed, decision.reason, decision.intended_price,
                 decision.quote_time, decision.evaluated_at, decision.max_age_seconds,
+                decision.symbol, decision.direction,
             ),
         )
     )
 
-def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:float, market_price:float, max_age_seconds:float, max_deviation_points:float, point_size:float)->QuoteSafetyDecision:
+def evaluate_quote_safety(*, symbol:str, direction:Direction, quote_time:datetime, now:datetime, intended_price:float, market_price:float, max_age_seconds:float, max_deviation_points:float, point_size:float)->QuoteSafetyDecision:
+    if not isinstance(symbol,str) or not symbol.strip() or symbol != symbol.strip():
+        return QuoteSafetyDecision(False,"quote symbol must be exact and non-empty")
+    if type(direction) is not Direction or direction not in (Direction.BUY,Direction.SELL):
+        return QuoteSafetyDecision(False,"quote direction must be BUY or SELL")
     if not isinstance(quote_time,datetime) or not isinstance(now,datetime) or quote_time.tzinfo is None or now.tzinfo is None:
         return QuoteSafetyDecision(False,"timestamps must be timezone-aware")
     values=(intended_price,market_price,max_age_seconds,max_deviation_points,point_size)
@@ -54,10 +62,11 @@ def evaluate_quote_safety(*, quote_time:datetime, now:datetime, intended_price:f
         return QuoteSafetyDecision(False,"market price deviation exceeds limit")
     decision = QuoteSafetyDecision(
         True,"quote freshness and deviation accepted",intended,
-        _QUOTE_DECISION_CAPABILITY,quote_time,now,max_age,
+        _QUOTE_DECISION_CAPABILITY,quote_time,now,max_age,symbol,direction,
     )
     _ISSUED_QUOTES.issue(decision, (
         decision.allowed, decision.reason, decision.intended_price,
         decision.quote_time, decision.evaluated_at, decision.max_age_seconds,
+        decision.symbol, decision.direction,
     ))
     return decision
