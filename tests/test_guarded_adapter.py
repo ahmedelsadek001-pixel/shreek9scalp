@@ -49,9 +49,11 @@ def _intent() -> OrderIntent:
 
 
 def _safe_quote(intent: OrderIntent | None = None):
-    price = (intent or _intent()).expected_price
+    intent = intent or _intent()
+    price = intent.expected_price
     now = datetime.now(timezone.utc)
     return evaluate_quote_safety(
+        symbol=intent.symbol, direction=intent.direction,
         quote_time=now, now=now, intended_price=price,
         market_price=price, max_age_seconds=2,
         max_deviation_points=3, point_size=0.01,

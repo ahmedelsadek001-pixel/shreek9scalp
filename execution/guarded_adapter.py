@@ -76,6 +76,8 @@ class GuardedExecutionAdapter(Generic[T]):
             return GuardedExecutionResult(False,None,(f"quote safety: {quote_safety.reason}",))
         if not is_quote_issued(quote_safety):
             return GuardedExecutionResult(False,None,("quote safety decision not issued by quote gate",))
+        if quote_safety.symbol != intent.symbol or quote_safety.direction is not intent.direction:
+            return GuardedExecutionResult(False,None,("quote safety symbol or direction does not match intent",))
         if quote_safety.intended_price != intent.expected_price:
             return GuardedExecutionResult(False,None,("quote safety price does not match intent",))
         now = utc_now()
@@ -84,7 +86,10 @@ class GuardedExecutionAdapter(Generic[T]):
             return GuardedExecutionResult(False,None,("quote timing evidence missing",))
         if (now - quote_safety.evaluated_at).total_seconds() < 0:
             return GuardedExecutionResult(False,None,("quote evaluated in the future",))
-        if (now - quote_safety.quote_time).total_seconds() > quote_safety.max_age_seconds:
+        quote_age = (now - quote_safety.quote_time).total_seconds()
+        if quote_age < 0:
+            return GuardedExecutionResult(False,None,("quote timestamp is in the future at submission",))
+        if quote_age > quote_safety.max_age_seconds:
             return GuardedExecutionResult(False,None,("quote expired before submission",))
         if self._ledger is None:
             return GuardedExecutionResult(False,None,("idempotency ledger required",))
