@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from dataclasses import asdict
 import json
 import os
@@ -10,9 +11,17 @@ import sqlite3
 import time
 
 from execution.mt5_demo_auto import DemoAutoResult, scan_and_submit_demo
+from execution.mt5_demo_ledger_preflight import ledger_session_blockers
 from execution.mt5_demo_probe import DemoTerminalConfig
-from execution.mt5_demo_session_journal import DemoSessionJournal
+from execution.mt5_demo_session_journal import DemoSessionJournal, exclusive_demo_session
 from utils.mt5_compat import demo_only_mt5_runtime
+
+
+_WATCH_RETRYABLE_REASONS = frozenset({
+    "80 completed M5 bars unavailable",
+    "last completed M5 candle is stale or not yet closed",
+    "no unique current closed-bar strategy signal",
+})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -30,7 +39,12 @@ def main(argv: list[str] | None = None) -> int:
         result = DemoAutoResult(False, False, False, "watching requires explicit DEMO opt-in")
         print(json.dumps(asdict(result), sort_keys=True))
         return 2
+    if args.watch_minutes and os.environ.get("SHREEK_DEMO_KILL_SWITCH") != "OFF":
+        result = DemoAutoResult(False, False, False, "automatic DEMO kill switch active")
+        print(json.dumps(asdict(result), sort_keys=True))
+        return 2
     journal = None
+    session_guard = ExitStack()
 
     def emit(result):
         payload = asdict(result)
@@ -55,6 +69,19 @@ def main(argv: list[str] | None = None) -> int:
                                     symbol=os.environ.get("SHREEK_DEMO_SYMBOL", "XAUUSD"),
                                     server_utc_offset_seconds=int(os.environ.get("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "0")))
         config.validate()
+        if execute:
+            try:
+                session_guard.enter_context(exclusive_demo_session(args.ledger))
+            except (OSError, ValueError):
+                emit(DemoAutoResult(False, False, False,
+                                    "automatic DEMO session already active or lock unavailable"))
+                return 2
+            # The runner holds its own exclusive lock, so inspect the other
+            # local blockers before loading MT5 or recording a new scan.
+            if ledger_session_blockers(args.ledger, config, check_lock=False):
+                emit(DemoAutoResult(False, False, False,
+                                    "automatic DEMO local preflight blocked; inspect ledger and journal"))
+                return 2
         try:
             journal = DemoSessionJournal(args.ledger, execute=execute, watch_minutes=args.watch_minutes)
         except (OSError, sqlite3.Error, ValueError):
@@ -64,6 +91,9 @@ def main(argv: list[str] | None = None) -> int:
         result = DemoAutoResult(False, False, False, "automatic DEMO binding incomplete")
         emit(result)
         return 2
+    finally:
+        if journal is None:
+            session_guard.close()
 
     code, end_reason = 2, "aborted"
     try:
@@ -81,10 +111,13 @@ def main(argv: list[str] | None = None) -> int:
             if not emit(result):
                 end_reason = "journal_error"
                 break
-            if result.sent or not args.watch_minutes or time.monotonic() >= deadline:
+            retryable = (not result.signal_detected and not result.sent
+                         and result.reason in _WATCH_RETRYABLE_REASONS)
+            if not retryable or not args.watch_minutes or time.monotonic() >= deadline:
                 code = 0 if result.accepted else 2
                 end_reason = ("submission_attempted" if result.sent else
-                              "scan_complete" if not args.watch_minutes else "watch_expired")
+                              "scan_complete" if not args.watch_minutes else
+                              "watch_expired" if retryable else "safety_refusal")
                 break
             time.sleep(min(30, max(0, deadline - time.monotonic())))
     except KeyboardInterrupt:
@@ -102,6 +135,12 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, sqlite3.Error, ValueError):
             code = 2
             print(json.dumps({"session_journal_error": "session end write failed; stop and inspect"}), flush=True)
+        finally:
+            try:
+                session_guard.close()
+            except OSError:
+                code = 2
+                print(json.dumps({"session_lock_error": "session lock release failed; stop and inspect"}), flush=True)
     return code
 
 

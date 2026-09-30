@@ -5,11 +5,40 @@ from dataclasses import asdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
+from stat import S_ISREG
 from uuid import uuid4
 
 from execution.mt5_demo_auto import DemoAutoResult
+
+
+@contextmanager
+def exclusive_demo_session(ledger: Path):
+    """Allow one local opt-in DEMO runner; a crash leaves a blocking lock."""
+    if not isinstance(ledger, Path) or not ledger.is_absolute() or ledger.suffix != ".sqlite3":
+        raise ValueError("absolute DEMO ledger required")
+    if not ledger.parent.is_dir():
+        raise ValueError("DEMO ledger directory unavailable")
+    path = ledger.with_suffix(".watch.lock")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(fd, b"SHREEK DEMO session in progress\n")
+        os.fsync(fd)
+        yield
+    finally:
+        original = os.fstat(fd)
+        os.close(fd)
+        try:
+            current = path.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            # Never remove a replacement lock belonging to another process.
+            if (S_ISREG(current.st_mode) and current.st_dev == original.st_dev
+                    and current.st_ino == original.st_ino):
+                path.unlink()
 
 
 class DemoSessionJournal:
@@ -54,7 +83,7 @@ class DemoSessionJournal:
 
     def finish(self, reason: str) -> None:
         if reason not in {"scan_complete", "submission_attempted", "watch_expired", "stop_file",
-                          "journal_error", "interrupted", "binding_error", "aborted"}:
+                          "journal_error", "interrupted", "binding_error", "safety_refusal", "aborted"}:
             raise ValueError("unknown DEMO session end reason")
         with self._connect() as db:
             db.execute("UPDATE sessions SET ended_at=?, end_reason=? WHERE session_id=? AND ended_at IS NULL",

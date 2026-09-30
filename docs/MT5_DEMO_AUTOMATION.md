@@ -56,6 +56,17 @@ required tables/columns; a corrupt journal blocks session readiness before
 the strategy scan. A missing journal is allowed because the runner creates
 it before polling. Preflight does not test writes; the runner independently
 refuses polling if journal creation, migration or writes fail.
+An existing `demo_orders.watch.lock` also blocks session readiness. The
+opt-in runner creates this lock exclusively before opening MT5 and removes it
+after the session end is recorded. A second local opt-in runner refuses to
+start while the lock exists. A forced termination can leave the lock behind;
+inspect the order ledger, session report and broker history, confirm no
+runner is still active, then remove the stale lock manually before a new
+preflight. Never remove the lock while a runner is active.
+While holding its lock, the opt-in runner also checks the local order ledger,
+stop file and scan journal read-only. Any unresolved submission or malformed
+local evidence blocks MT5 access. This local check complements the operator's
+full read-only broker preflight command above.
 `ready_for_demo_attempt` covers the broker environment;
 `ready_for_demo_session` also requires no stop file or unresolved ledger
 submission. It is read-only even when DEMO execution opt-ins are present in
@@ -81,7 +92,11 @@ py -m execution.mt5_demo_auto_cli --execute-demo-auto --watch-minutes 60 --ledge
 ```
 
 The watcher polls every 30 seconds, scans completed candles, and stops after
-at most one broker submission or 60 minutes. A refused scan is not a trade.
+at most one broker submission or 60 minutes. It retries only known passive
+observations: unavailable bars, a stale or unfinished last bar, or no unique
+current signal. A session gap, detected signal without submission, or any
+other safety refusal ends the watch and records `safety_refusal`; correct the
+underlying condition before a new preflight. A refused scan is not a trade.
 Each poll is also committed to `demo_orders.scans.sqlite3` beside the order
 ledger, including no-signal and rejected scans. The session journal contains
 UTC timestamps, a local session ID and the redacted result; it contains no

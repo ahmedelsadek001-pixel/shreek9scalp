@@ -9,14 +9,20 @@ import sqlite3
 from execution.mt5_demo_probe import DemoTerminalConfig
 
 
-def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig) -> tuple[str, ...]:
+def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,
+                            *, check_lock: bool = True) -> tuple[str, ...]:
     config.validate()
+    if type(check_lock) is not bool:
+        return ("DEMO session lock check invalid",)
     if not isinstance(ledger, Path) or not ledger.is_absolute() or ledger.suffix != ".sqlite3":
         return ("absolute DEMO SQLite ledger path required",)
     blockers = []
     try:
         if ledger.with_suffix(".stop").exists():
             blockers.append("automatic DEMO stop file active")
+        lock = ledger.with_suffix(".watch.lock")
+        if check_lock and (lock.exists() or lock.is_symlink()):
+            blockers.append("automatic DEMO session lock present")
         if not ledger.parent.is_dir():
             blockers.append("DEMO ledger directory unavailable")
         if ledger.exists():

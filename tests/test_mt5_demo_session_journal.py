@@ -6,8 +6,9 @@ import pytest
 
 from execution import mt5_demo_auto_cli
 from execution.mt5_demo_auto import DemoAutoResult
-from execution.mt5_demo_session_journal import DemoSessionJournal
+from execution.mt5_demo_session_journal import DemoSessionJournal, exclusive_demo_session
 from execution.mt5_demo_session_report_cli import inspect_sessions, main as report_main
+from execution.mt5_demo_ledger_preflight import ledger_session_blockers
 from test_mt5_demo_transport import CONFIG
 
 
@@ -16,6 +17,83 @@ def _env(monkeypatch):
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
     monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+
+
+def test_opt_in_session_lock_blocks_second_runner_and_preflight(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    lock = ledger.with_suffix(".watch.lock")
+    with exclusive_demo_session(ledger):
+        assert lock.is_file()
+        assert "automatic DEMO session lock present" in ledger_session_blockers(ledger, CONFIG)
+        with pytest.raises(FileExistsError):
+            with exclusive_demo_session(ledger):
+                pytest.fail("second runner entered the DEMO session")
+    assert not lock.exists()
+    assert "automatic DEMO session lock present" not in ledger_session_blockers(ledger, CONFIG)
+
+
+def test_stale_lock_requires_manual_reconciliation_before_new_session(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    lock = ledger.with_suffix(".watch.lock")
+    lock.write_text("prior runner terminated", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        with exclusive_demo_session(ledger):
+            pytest.fail("stale lock was ignored")
+    assert "automatic DEMO session lock present" in ledger_session_blockers(ledger, CONFIG)
+    assert lock.read_text(encoding="utf-8") == "prior runner terminated"
+
+
+def test_watcher_stops_after_passive_scan_then_session_gap(monkeypatch, tmp_path, capsys):
+    _env(monkeypatch)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: object())
+    results = iter((
+        DemoAutoResult(False, False, False, "no unique current closed-bar strategy signal"),
+        DemoAutoResult(False, False, False, "M5 context has a session gap"),
+    ))
+    monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", lambda *a, **k: next(results))
+    monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep", lambda seconds: None)
+    assert mt5_demo_auto_cli.main(["--ledger", str(ledger), "--execute-demo-auto",
+                                    "--watch-minutes", "1"]) == 2
+    assert len(capsys.readouterr().out.splitlines()) == 2
+    session = inspect_sessions(ledger)["sessions"][0]
+    assert session["scans"] == 2 and session["end_reason"] == "safety_refusal"
+    assert not ledger.with_suffix(".watch.lock").exists()
+
+
+def test_active_watcher_lock_prevents_any_broker_runtime(monkeypatch, tmp_path, capsys):
+    _env(monkeypatch)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    def forbidden_runtime():
+        raise AssertionError("second runner must not reach MT5")
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", forbidden_runtime)
+    with exclusive_demo_session(ledger):
+        assert mt5_demo_auto_cli.main(["--ledger", str(ledger), "--execute-demo-auto",
+                                        "--watch-minutes", "1"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert not result["sent"] and "lock unavailable" in result["reason"]
+    assert not ledger.with_suffix(".scans.sqlite3").exists()
+
+
+def test_opt_in_runner_refuses_corrupt_scan_journal_before_mt5(monkeypatch, tmp_path, capsys):
+    _env(monkeypatch)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    journal = ledger.with_suffix(".scans.sqlite3")
+    journal.write_bytes(b"corrupt prior scan journal")
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime",
+                        lambda: pytest.fail("local preflight must prevent MT5 access"))
+    assert mt5_demo_auto_cli.main(["--ledger", str(ledger), "--execute-demo-auto",
+                                    "--watch-minutes", "1"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert not result["sent"] and "local preflight blocked" in result["reason"]
+    assert journal.read_bytes() == b"corrupt prior scan journal"
+    assert not ledger.with_suffix(".watch.lock").exists()
 
 
 def test_no_signal_observation_is_durable_and_contains_no_identity(monkeypatch, tmp_path, capsys):
@@ -186,10 +264,11 @@ def test_stop_file_records_end_without_polling(monkeypatch, tmp_path):
 def test_watch_expiry_records_end_and_does_not_sleep(monkeypatch, tmp_path):
     _env(monkeypatch)
     monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
     ledger = tmp_path / "demo.sqlite3"
     monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: object())
     monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", lambda *a, **k:
-                        DemoAutoResult(False, False, False, "no signal"))
+                        DemoAutoResult(False, False, False, "no unique current closed-bar strategy signal"))
     ticks = iter((0, 61))
     monkeypatch.setattr(mt5_demo_auto_cli.time, "monotonic", lambda: next(ticks))
     def unexpected(*a):
