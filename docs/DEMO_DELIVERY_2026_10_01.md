@@ -65,3 +65,6 @@ crash, inspect broker history and confirm no watcher is active before
 manually removing a stale lock. Do not retry a sent or uncertain attempt.
 The report command returns status 2 if either report is unavailable. This
 does not mean a previous order was unsent and does not authorize a retry.
+When MT5 is unavailable, `--report-local` can recover the local session
+observations without installing the package or accessing the broker. It is
+insufficient to reconcile an order or mark paper trading validated.

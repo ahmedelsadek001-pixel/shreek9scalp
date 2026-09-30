@@ -65,6 +65,12 @@ Windows endpoint and an authorized access method.
 After a session, collect both read-only reports with
 `.\connect_mt5_demo.cmd --report-demo`. This mode cannot be combined with
 `--watch-demo` and does not require a new trading-readiness pass.
+If MT5 or its Python package is unavailable, run
+`.\connect_mt5_demo.cmd --report-local` in PowerShell to read only the
+existing local session journal. It requires no login, package install,
+runtime, free-space reserve or broker connection; it never verifies a broker
+fill. A missing or malformed journal returns `journal_readable=false` and
+does not create a replacement. Preserve the original ledger and journal.
 See [the 1 October DEMO handover](DEMO_DELIVERY_2026_10_01.md) for the delivery
 sequence and acceptance evidence.
 

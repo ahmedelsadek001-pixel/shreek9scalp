@@ -68,7 +68,16 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--doctor", action="store_true", help="read-only setup diagnosis")
     mode.add_argument("--watch-demo", action="store_true", help="start a bounded DEMO watcher")
     mode.add_argument("--report-demo", action="store_true", help="read session and broker reports")
+    mode.add_argument("--report-local", action="store_true", help="read only the local session journal without MT5")
     args = parser.parse_args(argv)
+    if args.report_local:
+        local, reason = _environment()
+        if local is None:
+            print(json.dumps({"journal_readable": False, "broker_history_verified": False,
+                              "reason": reason}, sort_keys=True))
+            return 2
+        from execution.mt5_demo_session_report_cli import main as report_sessions
+        return report_sessions(["--ledger", str(local / "SHREEK" / "demo_orders.sqlite3")])
     report, runtime_python = _status()
     if args.doctor:
         print(json.dumps(report, sort_keys=True))
@@ -135,8 +144,6 @@ def main(argv: list[str] | None = None) -> int:
         child_args = [str(runtime_python), "-m", "execution.mt5_demo_windows_cli"]
         if args.watch_demo:
             child_args.append("--watch-demo")
-        elif args.report_demo:
-            child_args.append("--report-demo")
         result = subprocess.run(child_args, check=False)
         return 0 if result.returncode == 0 else 2
     except OSError:

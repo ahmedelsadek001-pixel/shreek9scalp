@@ -87,6 +87,34 @@ def test_report_without_runtime_does_not_install(monkeypatch, tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["reason"] == "DEMO_RUNTIME_NOT_PREPARED"
 
 
+def test_local_report_reads_journal_without_runtime_disk_probe_or_broker(monkeypatch, tmp_path, capsys):
+    _windows(monkeypatch, tmp_path, free=0)
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setattr(bootstrap.shutil, "disk_usage", lambda *a: pytest.fail("probed disk"))
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: pytest.fail("ran child"))
+    monkeypatch.setattr(bootstrap.venv, "create", lambda *a, **k: pytest.fail("created runtime"))
+
+    assert bootstrap.main(["--report-local"]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert report["journal_readable"] is False
+    assert report["broker_history_verified"] is False
+    assert "123456" not in json.dumps(report)
+    assert not (tmp_path / "SHREEK").exists()
+
+
+def test_local_report_routes_to_bounded_session_reader(monkeypatch, tmp_path):
+    _windows(monkeypatch, tmp_path, free=0)
+    from execution import mt5_demo_session_report_cli
+    calls = []
+    monkeypatch.setattr(mt5_demo_session_report_cli, "main",
+                        lambda argv: calls.append(argv) or 0)
+    monkeypatch.setattr(bootstrap.shutil, "disk_usage", lambda *a: pytest.fail("probed disk"))
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: pytest.fail("ran child"))
+
+    assert bootstrap.main(["--report-local"]) == 0
+    assert calls == [["--ledger", str(tmp_path / "SHREEK" / "demo_orders.sqlite3")]]
+
+
 def test_missing_package_installs_once_then_verifies_before_watch(monkeypatch, tmp_path):
     executable = _windows(monkeypatch, tmp_path)
     calls = []
