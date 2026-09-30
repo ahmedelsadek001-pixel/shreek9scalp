@@ -42,6 +42,8 @@ The following must be generated from real historical/paper datasets and retained
 7. A reproducible evidence record bound to dataset and an explicit strategy ID/version; phase labels or branch names are not substitutes for strategy identity.
 8. Timestamped WFO windows and the exact candidate/selected parameter sets retained in the artifact.
 9. The declared label horizon covered by the purge/embargo used for the retained WFO evidence.
+10. A fixed integer seed for Monte Carlo and block bootstrap, retained in the
+    research artifact. Unseeded exploratory runs cannot support promotion.
 
 ## Promotion rule
 

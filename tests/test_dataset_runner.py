@@ -160,6 +160,16 @@ def test_dataset_runner_rejects_manifest_timezone_mismatch(monkeypatch):
         )
 
 
+@pytest.mark.parametrize("seed", [None, True, "42"])
+def test_manifest_bound_runner_rejects_non_reproducible_seed(seed):
+    with pytest.raises(ValueError, match="fixed integer seed"):
+        run_xauusd_breakout_retest_research(
+            (), ({},), source_manifest=_utc_manifest(), pip_size=0.1,
+            volume=0.01, seed=seed, train_size=3, test_size=2,
+            purge_size=1, starting_equity=10000.0,
+        )
+
+
 def test_manifest_bound_runner_applies_costs_and_marks_artifact(monkeypatch):
     from research import dataset_runner
 

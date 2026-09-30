@@ -132,6 +132,8 @@ def _artifact_promotion_failures(artifact: ResearchRunArtifact) -> tuple[str, ..
         timestamps = wfo.get("window_timestamps")
         if not isinstance(timestamps, list) or not timestamps:
             failures.append("research artifact lacks timestamped WFO windows")
+        if type(config.get("seed")) is not int:
+            failures.append("research artifact lacks deterministic Monte Carlo seed")
         if config.get("purge_size", -1) < config.get("label_horizon", 0):
             failures.append("research artifact purge does not cover label horizon")
         if (
