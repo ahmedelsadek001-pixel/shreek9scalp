@@ -4,7 +4,24 @@
 
 On the Windows PC containing the already logged-in DEMO terminal, download
 the latest `v5.1-development` source and extract it. Open PowerShell in that
-folder and run:
+folder. Keep PowerShell open so its output remains visible; double-clicking
+the `.cmd` file can close the window before you read a failure. First run the
+read-only setup diagnosis:
+
+```powershell
+.\connect_mt5_demo.cmd --doctor
+```
+
+It never prompts for a login, creates a runtime, installs a package or
+contacts the terminal. `ready_to_prepare=true` means only that Windows,
+Python and a conservative local disk reserve passed. It does not mean MT5 is
+connected or that a trade can be sent. A fresh runtime needs at least 300 MiB
+free on the drive containing `%LOCALAPPDATA%`; an existing runtime needs at
+least 64 MiB. `INSUFFICIENT_LOCALAPPDATA_SPACE` identifies that drive as the
+blocker. Free space there and run the diagnosis again; do not delete the
+existing `%LOCALAPPDATA%\SHREEK` order ledger or scan journal.
+
+When the diagnosis passes, run:
 
 ```powershell
 .\connect_mt5_demo.cmd
@@ -12,10 +29,14 @@ folder and run:
 
 Python 3.9 or newer and the Windows `py` launcher must already be installed.
 The command prepares a local Python environment under `%LOCALAPPDATA%\SHREEK`,
-installs the native MetaTrader5 package, and prompts for the exact terminal
+installs the native MetaTrader5 package if it is missing, and prompts for the exact terminal
 path, hidden expected login, server, symbol and verified UTC offset.
 Existing `SHREEK_DEMO_*` binding variables are accepted instead of prompts.
 Inputs stay in the child process; no password is requested or saved.
+The bootstrap prints fixed reason codes on setup failure, without paths,
+account numbers or broker credentials. `MT5_PACKAGE_INSTALL_FAILED` and
+`MT5_PACKAGE_IMPORT_FAILED` block the connection and watcher; resolve the
+local Python package installation before attempting a session.
 The default mode prints the redacted, read-only preflight JSON and sends no order.
 Check `connected_demo` separately from `ready_for_demo_session`: attachment
 can succeed while permissions, exposure, local evidence or quotes block trading.

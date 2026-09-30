@@ -10,7 +10,10 @@ record its commit alongside the exact successful CI run before acceptance.
 1. Extract the development archive into a new directory on the Windows PC.
    Keep the existing `%LOCALAPPDATA%\SHREEK` ledger and scan journal.
 2. Open the dedicated, already logged-in DEMO terminal. Install Python 3.9+
-   with the Windows `py` launcher if missing.
+   with the Windows `py` launcher if missing. Run
+   `.\connect_mt5_demo.cmd --doctor` from PowerShell and require
+   `ready_to_prepare=true`. Diagnose local disk space before entering the
+   hidden account number; keep the existing ledger and scan journal.
 3. Open PowerShell in the extracted project folder. Run
    `.\connect_mt5_demo.cmd` and enter the local terminal binding. Use the
    exact symbol and verified broker clock offset. Never send credentials
