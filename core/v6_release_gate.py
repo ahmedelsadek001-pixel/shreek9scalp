@@ -28,8 +28,9 @@ def _validated_evidence(bundle: ReleaseEvidenceBundle) -> Mapping[str, bool]:
     return bundle.as_map()
 
 
-def evaluate_v6_release(bundle: ReleaseEvidenceBundle) -> V6ReleaseDecision:
-    """Return a fail-closed V6 decision from provenance-bound evidence only."""
+def evaluate_v6_release(bundle: ReleaseEvidenceBundle, *,
+                        expected_commit_sha: str | None = None) -> V6ReleaseDecision:
+    """Require evidence bound to the exact candidate commit being evaluated."""
     try:
         evidence = _validated_evidence(bundle)
     except (TypeError, ValueError, OverflowError):
@@ -39,13 +40,21 @@ def evaluate_v6_release(bundle: ReleaseEvidenceBundle) -> V6ReleaseDecision:
             live,
             ("evidence bundle integrity validation failed",),
         )
+    if (type(expected_commit_sha) is not str or len(expected_commit_sha) != 40
+            or any(char not in "0123456789abcdef" for char in expected_commit_sha)):
+        live = LiveAuthorization(False, REQUIRED_EVIDENCE)
+        return V6ReleaseDecision(False, live, ("release candidate commit SHA is missing or invalid",))
+    if bundle.commit_sha != expected_commit_sha:
+        live = LiveAuthorization(False, REQUIRED_EVIDENCE)
+        return V6ReleaseDecision(False, live, ("evidence commit SHA does not match release candidate",))
     live = evaluate_live_authorization(evidence)
     failures = tuple(f"missing/failed evidence: {item}" for item in live.missing)
     return V6ReleaseDecision(live.authorized, live, failures)
 
 
-def require_v6_release(bundle: ReleaseEvidenceBundle) -> None:
+def require_v6_release(bundle: ReleaseEvidenceBundle, *,
+                       expected_commit_sha: str | None = None) -> None:
     """Raise when any V6 live-release prerequisite is absent or false."""
-    decision = evaluate_v6_release(bundle)
+    decision = evaluate_v6_release(bundle, expected_commit_sha=expected_commit_sha)
     if not decision.release_ready:
         raise RuntimeError("V6 release blocked; " + "; ".join(decision.failures))

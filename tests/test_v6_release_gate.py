@@ -28,7 +28,7 @@ def full_bundle(passed=True):
 
 
 def test_v6_release_ready_with_complete_provenance():
-    decision = evaluate_v6_release(full_bundle())
+    decision = evaluate_v6_release(full_bundle(), expected_commit_sha=_COMMIT)
     assert decision.release_ready is True
     assert decision.failures == ()
 
@@ -40,11 +40,13 @@ def test_v6_release_fails_closed_on_failed_evidence():
                        r.source, r.run_id, r.recorded_at, r.commit_sha)
         for r in bundle.records
     )
-    decision = evaluate_v6_release(ReleaseEvidenceBundle.from_records(records))
+    decision = evaluate_v6_release(ReleaseEvidenceBundle.from_records(records),
+                                   expected_commit_sha=_COMMIT)
     assert decision.release_ready is False
     assert any("robustness_passed" in item for item in decision.failures)
     with pytest.raises(RuntimeError):
-        require_v6_release(ReleaseEvidenceBundle.from_records(records))
+        require_v6_release(ReleaseEvidenceBundle.from_records(records),
+                           expected_commit_sha=_COMMIT)
 
 
 def test_v6_release_blocks_raw_boolean_mapping():
@@ -57,7 +59,7 @@ def test_v6_release_blocks_raw_boolean_mapping():
 def test_v6_release_requires_all_provenance_records():
     bundle = full_bundle()
     incomplete = ReleaseEvidenceBundle.from_records(bundle.records[:-1])
-    decision = evaluate_v6_release(incomplete)
+    decision = evaluate_v6_release(incomplete, expected_commit_sha=_COMMIT)
     assert decision.release_ready is False
     assert "operator_approval" in decision.failures[0]
 
@@ -81,3 +83,17 @@ def test_v6_release_blocks_mixed_commit_provenance():
     assert decision.release_ready is False
     assert decision.live.authorized is False
     assert decision.failures == ("evidence bundle integrity validation failed",)
+
+
+def test_v6_release_requires_exact_candidate_commit_even_with_all_positive_records():
+    bundle = full_bundle()
+    missing = evaluate_v6_release(bundle)
+    assert missing.release_ready is False and missing.live.authorized is False
+    assert missing.failures == ("release candidate commit SHA is missing or invalid",)
+    for candidate in ("b" * 40, _COMMIT.upper(), "not-a-commit"):
+        decision = evaluate_v6_release(bundle, expected_commit_sha=candidate)
+        assert decision.release_ready is False and decision.live.authorized is False
+    with pytest.raises(RuntimeError, match="commit SHA"):
+        require_v6_release(bundle)
+    with pytest.raises(RuntimeError, match="does not match"):
+        require_v6_release(bundle, expected_commit_sha="b" * 40)
