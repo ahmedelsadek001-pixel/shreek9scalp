@@ -53,7 +53,9 @@ class EvidenceRecord:
             raise ValueError(f"unsupported evidence name: {self.name}")
         if type(self.passed) is not bool:
             raise TypeError("evidence passed must be bool")
-        if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
+        if (not isinstance(self.recorded_at, datetime)
+                or self.recorded_at.tzinfo is None
+                or self.recorded_at.utcoffset() is None):
             raise ValueError("recorded_at must be timezone-aware")
         normalized_sha = _validate_commit_sha(self.commit_sha)
         if self.commit_sha != normalized_sha:

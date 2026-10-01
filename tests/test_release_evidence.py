@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 
 import pytest
 
@@ -8,6 +8,16 @@ from core.release_gate import ReleaseEvidence
 
 
 _COMMIT = "a" * 40
+
+
+class _FloatingTimezone(tzinfo):
+    """Carries tzinfo but no UTC offset, so it is still a naive timestamp."""
+
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
 
 
 def _required() -> ReleaseEvidence:
@@ -46,6 +56,15 @@ def test_release_evaluation_blocks_malformed_record_values(record):
 def test_record_requires_provenance():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "", "run-1", datetime.now(timezone.utc), _COMMIT).validate()
+
+
+def test_record_rejects_tzinfo_without_utc_offset():
+    ambiguous = datetime(2026, 10, 2, tzinfo=_FloatingTimezone())
+    record = EvidenceRecord("ci_green", True, "test", "run-1", ambiguous, _COMMIT)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        record.validate()
+    with pytest.raises(ValueError, match="timezone-aware"):
+        ReleaseEvidenceBundle.from_records((record,))
 
 
 def test_record_requires_valid_commit_sha():
