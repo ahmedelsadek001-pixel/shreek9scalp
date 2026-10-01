@@ -68,3 +68,14 @@ does not mean a previous order was unsent and does not authorize a retry.
 When MT5 is unavailable, `--report-local` can recover the local session
 observations without installing the package or accessing the broker. It is
 insufficient to reconcile an order or mark paper trading validated.
+
+### No-submission session without an order ledger
+
+A clean latest opt-in session with zero signals/submissions and no order IDs
+can be classified `local_observation_only` when broker reporting specifically
+returns `durable DEMO ledger unavailable`. This describes only the retained
+local session, not the account's complete trading history. Broker verification
+and paper validation remain false; the report still exits 2 because broker
+history is unavailable. Never create an empty replacement ledger to clear this
+condition. Any recorded submission, ambiguous outcome, incomplete session,
+safety refusal, conflicting identifier or other broker error remains blocked.
