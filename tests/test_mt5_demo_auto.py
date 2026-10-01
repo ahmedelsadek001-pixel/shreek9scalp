@@ -255,3 +255,14 @@ def test_cli_never_enables_automation_without_both_opt_ins(monkeypatch, capsys, 
     assert mt5_demo_auto_cli.main(["--execute-demo-auto"] + args) == 2
     assert not api.sends
     assert "123456" not in capsys.readouterr().out
+
+
+def test_no_signal_exposes_diagnostics_without_submission(tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert not result.sent and not result.signal_detected and not api.sends
+    assert result.strategy_diagnostics["schema"] == "shreek.strategy-diagnostics.v1"
+    assert result.strategy_diagnostics["returned_signals"] == 0
+    assert result.strategy_diagnostics["rejected"]["breakout_body"] > 0
+    assert not (tmp_path / "demo.sqlite3").exists()

@@ -172,3 +172,22 @@ independent out-of-sample and broker export audits pass.
 MetaQuotes references: [closed-bar indices](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py),
 [DEMO account mode](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),
 [DEMO order result](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py).
+
+### Strategy diagnostics during no-signal scans
+
+A fresh, valid scan with no unique current signal now includes
+`strategy_diagnostics` in console JSON. `rejected` counts the first failed
+breakout filter per candidate (range, body, tick volume or outside close),
+and retest failures per evaluated confirmation bar. Counts describe multiple
+historical candidates, not a single current trade or a probability of success.
+`latest_valid_breakout`, when present, contains the most recent qualifying
+breakout's level, direction, time and measured values. A qualifying breakout
+alone does not authorize execution. The detector uses the same conditions
+and returns the same signals with or without diagnostics.
+
+Diagnostics are console-only in this version: the durable session journal
+retains its existing six-field outcome schema for compatibility with older
+report readers. Stale bars and connection failures do not receive strategy
+diagnostics because they never reach the detector. This feature does not
+change strategy thresholds, the M5 freshness window, risk limits or DEMO-only
+submission gates, and does not establish profitable or live-ready trading.

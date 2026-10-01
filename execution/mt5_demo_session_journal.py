@@ -76,10 +76,14 @@ class DemoSessionJournal:
     def record(self, result: DemoAutoResult) -> None:
         if not isinstance(result, DemoAutoResult):
             raise TypeError("DEMO scan result required")
+        # Keep the established durable outcome schema compatible with older
+        # offline readers. Strategy diagnostics are console observations only.
+        payload = asdict(result)
+        payload.pop("strategy_diagnostics", None)
         with self._connect() as db:
             db.execute("INSERT INTO scan_events (session_id, recorded_at, result_json) VALUES (?, ?, ?)",
                        (self.session_id, datetime.now(timezone.utc).isoformat(),
-                        json.dumps(asdict(result), sort_keys=True)))
+                        json.dumps(payload, sort_keys=True)))
 
     def finish(self, reason: str) -> None:
         if reason not in {"scan_complete", "submission_attempted", "watch_expired", "stop_file",
