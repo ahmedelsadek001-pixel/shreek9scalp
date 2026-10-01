@@ -3,6 +3,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from core.enums import Direction
 from execution.mt5_demo_auto import scan_and_submit_demo
 from execution import mt5_demo_auto, mt5_demo_auto_cli
@@ -237,6 +239,21 @@ def test_local_stop_file_prevents_auto_submission(monkeypatch, tmp_path):
     (tmp_path / "demo.stop").write_text("stop", encoding="utf-8")
     result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
                                   execute=True, kill_switch_off=True, now=clock)
+    assert result.signal_detected and not result.sent and not api.sends
+
+
+def test_dangling_stop_marker_prevents_auto_submission(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+    marker = tmp_path / "demo.stop"
+    try:
+        marker.symlink_to(tmp_path / "missing-stop-target")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.reason == "automatic DEMO stop file active"
     assert result.signal_detected and not result.sent and not api.sends
 
 

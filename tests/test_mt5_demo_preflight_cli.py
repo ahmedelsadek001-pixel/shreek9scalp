@@ -94,6 +94,22 @@ def test_preflight_blocks_stop_file_and_unresolved_ledger(monkeypatch, capsys, t
     assert not api.sends
 
 
+def test_preflight_blocks_dangling_stop_marker(monkeypatch, capsys, tmp_path):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    try:
+        ledger.with_suffix(".stop").symlink_to(tmp_path / "missing-stop-target")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert "automatic DEMO stop file active" in report["session_blockers"]
+    assert report["strategy_scan"] is None and not api.sends
+
+
 def test_preflight_rejects_malformed_or_missing_ledger_location(monkeypatch, capsys, tmp_path):
     _env(monkeypatch)
     api, _, _ = _api(datetime.now(timezone.utc))

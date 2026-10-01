@@ -9,6 +9,12 @@ import sqlite3
 from execution.mt5_demo_probe import DemoTerminalConfig
 
 
+def stop_marker_present(ledger: Path) -> bool:
+    """Treat a dangling stop-marker symlink as an active stop request."""
+    marker = ledger.with_suffix(".stop")
+    return marker.exists() or marker.is_symlink()
+
+
 def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,
                             *, check_lock: bool = True) -> tuple[str, ...]:
     config.validate()
@@ -18,7 +24,7 @@ def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,
         return ("absolute DEMO SQLite ledger path required",)
     blockers = []
     try:
-        if ledger.with_suffix(".stop").exists():
+        if stop_marker_present(ledger):
             blockers.append("automatic DEMO stop file active")
         lock = ledger.with_suffix(".watch.lock")
         if check_lock and (lock.exists() or lock.is_symlink()):
