@@ -12,7 +12,7 @@ import time
 
 from execution.mt5_demo_auto import DemoAutoResult, scan_and_submit_demo
 from execution.mt5_demo_clock import configured_demo_server_utc_offset_seconds
-from execution.mt5_demo_ledger_preflight import ledger_session_blockers
+from execution.mt5_demo_ledger_preflight import ledger_session_blockers, stop_marker_present
 from execution.mt5_demo_probe import DemoTerminalConfig
 from execution.mt5_demo_session_journal import DemoSessionJournal, exclusive_demo_session
 from utils.mt5_compat import demo_only_mt5_runtime
@@ -101,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         api = demo_only_mt5_runtime()
         deadline = time.monotonic() + args.watch_minutes * 60
         while True:
-            if args.ledger.with_suffix(".stop").exists():
+            if stop_marker_present(args.ledger):
                 emit(DemoAutoResult(False, False, False, "automatic DEMO stop file active"))
                 end_reason = "stop_file"
                 break
