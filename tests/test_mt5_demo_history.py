@@ -109,3 +109,33 @@ def test_non_usd_demo_cannot_report_usd_profit(tmp_path, account_currency, symbo
     api.account.currency = account_currency
     api.symbol.currency_profit = symbol_currency
     assert not inspect_demo_history(api, CONFIG, ledger).verified_demo
+
+
+@pytest.mark.parametrize("failure", ["account", "unknown", "lookup", "empty"])
+def test_history_shutdown_failure_overrides_early_refusal_and_success(tmp_path, failure):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    if failure == "account":
+        api.account = Account(trade_mode=2)
+    elif failure == "unknown":
+        with sqlite3.connect(ledger) as db:
+            db.execute("UPDATE attempts SET status='UNKNOWN'")
+    elif failure == "lookup":
+        api.history_deals_get = lambda **kwargs: None
+    else:
+        with sqlite3.connect(ledger) as db:
+            db.execute("DELETE FROM attempts")
+    shutdown_calls = []
+
+    def broken_shutdown():
+        shutdown_calls.append(True)
+        raise RuntimeError("private terminal details")
+
+    api.shutdown = broken_shutdown
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "DEMO history shutdown failed"
+    assert shutdown_calls == [True]
+    assert "private" not in str(report)

@@ -45,7 +45,11 @@ def _deal_info(deal: Any) -> dict[str, Any] | None:
     return result
 
 
-def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> DemoHistoryReport:
+class _DemoHistoryShutdownError(RuntimeError):
+    """Override pending results when the inspection session cannot close."""
+
+
+def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> DemoHistoryReport:
     """Read only verified DEMO deals, bound to broker order tickets in ledger.
 
     This is observational sandbox evidence, never strategy accreditation.
@@ -144,6 +148,14 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
         if initialized:
             try:
                 api.shutdown()
-            except (AttributeError, OSError, RuntimeError):
-                report = refused("DEMO history shutdown failed")
+            except (AttributeError, OSError, RuntimeError) as exc:
+                raise _DemoHistoryShutdownError from exc
     return report
+
+
+def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> DemoHistoryReport:
+    """Inspect read-only evidence, making shutdown failure authoritative."""
+    try:
+        return _inspect_demo_history(api, config, ledger)
+    except _DemoHistoryShutdownError:
+        return DemoHistoryReport(False, "DEMO history shutdown failed")
