@@ -29,13 +29,27 @@ def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,
             if not ledger.is_file():
                 raise OSError("not a file")
             fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
-            with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as db:
+            with closing(sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro",
+                                         uri=True, timeout=1)) as db:
+                # Inspect one read-only snapshot. A readable attempts table does
+                # not establish that the rest of the order evidence is intact.
+                db.execute("BEGIN")
+                if db.execute("PRAGMA quick_check").fetchall() != [("ok",)]:
+                    raise sqlite3.DatabaseError("ledger integrity failure")
                 columns = {row[1] for row in db.execute("PRAGMA table_info(attempts)")}
                 if not {"account_hash", "status", "intent_id"} <= columns:
                     raise sqlite3.DatabaseError("missing ledger columns")
-                if db.execute("SELECT 1 FROM attempts WHERE account_hash=? AND status='UNKNOWN' LIMIT 1",
-                              (fingerprint,)).fetchone():
-                    blockers.append("unresolved DEMO submission in ledger")
+                for account_hash, status in db.execute(
+                        "SELECT DISTINCT account_hash, status FROM attempts"):
+                    if (type(account_hash) is not str or len(account_hash) != 64
+                            or any(c not in "0123456789abcdef" for c in account_hash)
+                            or status not in ("UNKNOWN", "ACCEPTED")):
+                        raise sqlite3.DatabaseError("malformed ledger identity or status")
+                    if account_hash != fingerprint:
+                        if "DEMO ledger account mismatch" not in blockers:
+                            blockers.append("DEMO ledger account mismatch")
+                    elif status == "UNKNOWN":
+                        blockers.append("unresolved DEMO submission in ledger")
     except (OSError, ValueError, sqlite3.Error):
         blockers.append("DEMO ledger or stop file unreadable or malformed")
     journal = ledger.with_suffix(".scans.sqlite3")

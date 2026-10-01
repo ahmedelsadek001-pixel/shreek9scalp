@@ -66,7 +66,11 @@ def main(argv: list[str] | None = None) -> int:
         if not local_data or not Path(local_data).is_absolute():
             raise ValueError("local data directory unavailable")
         directory = Path(local_data) / "SHREEK"
-        directory.mkdir(parents=True, exist_ok=True)
+        if args.report_demo:
+            if not directory.is_dir():
+                raise ValueError("local DEMO evidence directory unavailable")
+        else:
+            directory.mkdir(parents=True, exist_ok=True)
         ledger = directory / "demo_orders.sqlite3"
         values = {"SHREEK_DEMO_TERMINAL_PATH": str(path), "SHREEK_DEMO_LOGIN": login,
                   "SHREEK_DEMO_SERVER": server, "SHREEK_DEMO_SYMBOL": symbol,

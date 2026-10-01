@@ -4,8 +4,8 @@
 
 On the Windows PC containing the already logged-in DEMO terminal, download
 the latest `v5.1-development` source and extract it. Open PowerShell in that
-folder. Keep PowerShell open so its output remains visible; double-clicking
-the `.cmd` file can close the window before you read a failure. First run the
+folder. The launcher keeps the result visible and waits for a key after it
+finishes; set `SHREEK_NO_PAUSE=1` only for an unattended caller. First run the
 read-only setup diagnosis:
 
 ```powershell
@@ -110,9 +110,10 @@ changed identity, or missing symbol details exits with status 2. The module
 closes the terminal connection after every inspection. It never logs in, sends
 orders, opens/closes positions, or makes `paper_trading_validated` true.
 
-Strategy-driven DEMO order submission and immutable matching of SHREEK signal IDs
-to observed broker deals are still to be implemented and independently validated
-before the [paper account evidence requirements](PAPER_ACCOUNT_EVIDENCE.md)
+The experimental strategy runner now reserves each signal ID in the local
+ledger and can match acknowledged DEMO attempts to observed broker deals.
+An independent broker export and sustained paper run are still required before
+the [paper account evidence requirements](PAPER_ACCOUNT_EVIDENCE.md)
 can pass. The production security gate blocks all broker send calls except
 the exact reviewed DEMO-only sandbox module; live MT5 trading remains disabled.
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from hashlib import sha256
 import json
 import sqlite3
 
@@ -108,6 +109,53 @@ def test_preflight_rejects_malformed_or_missing_ledger_location(monkeypatch, cap
     report = json.loads(capsys.readouterr().out)
     assert "DEMO ledger directory unavailable" in report["session_blockers"]
     assert not api.sends
+
+
+def test_preflight_blocks_ledger_from_another_demo_account(monkeypatch, capsys, tmp_path):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    assert submit_demo_order(FakeMT5(), CONFIG, ORDER, ledger).accepted
+    with sqlite3.connect(ledger) as db:
+        db.execute("UPDATE attempts SET account_hash=?",
+                   (sha256(b"another-demo-account").hexdigest(),))
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert "DEMO ledger account mismatch" in report["session_blockers"]
+    assert not report["ready_for_demo_session"] and report["strategy_scan"] is None
+    assert str(CONFIG.expected_login) not in json.dumps(report)
+    assert not api.sends
+
+
+def test_preflight_blocks_damage_outside_the_attempts_table(monkeypatch, capsys, tmp_path):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    assert submit_demo_order(FakeMT5(), CONFIG, ORDER, ledger).accepted
+    with sqlite3.connect(ledger) as db:
+        db.execute("CREATE TABLE unused_payload (content BLOB)")
+        db.execute("INSERT INTO unused_payload VALUES (?)", (b"x" * 20000,))
+        page = db.execute("SELECT rootpage FROM sqlite_master "
+                          "WHERE name='unused_payload'").fetchone()[0]
+        page_size = db.execute("PRAGMA page_size").fetchone()[0]
+    # Damage a separate table page. Reading the attempts table still succeeds.
+    with ledger.open("r+b") as file:
+        file.seek((page - 1) * page_size)
+        file.write(b"\xff" * 30)
+    with sqlite3.connect(ledger.resolve().as_uri() + "?mode=ro", uri=True) as db:
+        assert db.execute("SELECT status FROM attempts").fetchone() == ("ACCEPTED",)
+    before = ledger.read_bytes()
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert "DEMO ledger or stop file unreadable or malformed" in report["session_blockers"]
+    assert report["strategy_scan"] is None and not api.sends
+    assert ledger.read_bytes() == before
 
 
 @pytest.mark.parametrize("kind", ["corrupt", "wrong_schema", "directory"])

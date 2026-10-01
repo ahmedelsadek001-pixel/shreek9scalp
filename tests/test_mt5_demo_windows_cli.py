@@ -33,6 +33,7 @@ def test_report_mode_bypasses_trading_preflight_and_keeps_execution_disabled(
         monkeypatch, tmp_path, capsys, session_code, history_code):
     from execution import mt5_demo_session_report_cli, mt5_demo_history_cli
     ledger = binding(monkeypatch, tmp_path)
+    ledger.parent.mkdir()
     calls = []
 
     def command(label, code):
@@ -61,6 +62,14 @@ def test_report_mode_bypasses_trading_preflight_and_keeps_execution_disabled(
 def test_report_modes_are_mutually_exclusive():
     with pytest.raises(SystemExit):
         mt5_demo_windows_cli.main(["--report-demo", "--watch-demo"])
+
+
+def test_report_does_not_create_a_missing_local_evidence_directory(monkeypatch, tmp_path):
+    binding(monkeypatch, tmp_path)
+    monkeypatch.setattr(mt5_demo_windows_cli, "_read_reports",
+                        lambda ledger: pytest.fail("missing evidence was read"))
+    assert mt5_demo_windows_cli.main(["--report-demo"]) == 2
+    assert not (tmp_path / "SHREEK").exists()
 
 
 @pytest.mark.parametrize("watch_requested,preflight_code", [(False, 0), (False, 2), (True, 2)])

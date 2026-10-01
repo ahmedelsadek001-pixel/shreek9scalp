@@ -62,6 +62,11 @@ required tables/columns; a corrupt journal blocks session readiness before
 the strategy scan. A missing journal is allowed because the runner creates
 it before polling. Preflight does not test writes; the runner independently
 refuses polling if journal creation, migration or writes fail.
+An existing order ledger is checked read-only for full SQLite integrity,
+recognized submission states and the bound DEMO account fingerprint. A ledger
+from another account blocks the session, even if its previous attempts were
+acknowledged. Restore the matching DEMO binding and inspect broker history;
+do not delete or overwrite the ledger to clear a blocker.
 An existing `demo_orders.watch.lock` also blocks session readiness. The
 opt-in runner creates this lock exclusively before opening MT5 and removes it
 after the session end is recorded. A second local opt-in runner refuses to

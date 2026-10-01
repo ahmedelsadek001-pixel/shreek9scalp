@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 import sqlite3
 from dataclasses import asdict
 
@@ -9,7 +10,8 @@ from execution.mt5_demo_auto import DemoAutoResult
 from execution.mt5_demo_session_journal import DemoSessionJournal, exclusive_demo_session
 from execution.mt5_demo_session_report_cli import inspect_sessions, main as report_main
 from execution.mt5_demo_ledger_preflight import ledger_session_blockers
-from test_mt5_demo_transport import CONFIG
+from test_mt5_demo_transport import CONFIG, FakeMT5, ORDER
+from execution.mt5_demo_transport import submit_demo_order
 
 
 def _env(monkeypatch):
@@ -94,6 +96,26 @@ def test_opt_in_runner_refuses_corrupt_scan_journal_before_mt5(monkeypatch, tmp_
     assert not result["sent"] and "local preflight blocked" in result["reason"]
     assert journal.read_bytes() == b"corrupt prior scan journal"
     assert not ledger.with_suffix(".watch.lock").exists()
+
+
+def test_opt_in_runner_refuses_foreign_ledger_before_mt5(monkeypatch, tmp_path, capsys):
+    _env(monkeypatch)
+    monkeypatch.setenv("SHREEK_DEMO_AUTO_ACK", "DEMO_ONLY_RESEARCH")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    assert submit_demo_order(FakeMT5(), CONFIG, ORDER, ledger).accepted
+    with sqlite3.connect(ledger) as db:
+        db.execute("UPDATE attempts SET account_hash=?",
+                   (sha256(b"another-demo-account").hexdigest(),))
+    monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime",
+                        lambda: pytest.fail("foreign ledger must prevent MT5 access"))
+
+    assert mt5_demo_auto_cli.main(["--ledger", str(ledger), "--execute-demo-auto",
+                                   "--watch-minutes", "1"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert not result["sent"] and "local preflight blocked" in result["reason"]
+    assert not ledger.with_suffix(".watch.lock").exists()
+    assert not ledger.with_suffix(".scans.sqlite3").exists()
 
 
 def test_no_signal_observation_is_durable_and_contains_no_identity(monkeypatch, tmp_path, capsys):
