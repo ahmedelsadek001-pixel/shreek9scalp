@@ -10,9 +10,15 @@ from execution.mt5_demo_probe import DemoTerminalConfig
 
 
 def stop_marker_present(ledger: Path) -> bool:
-    """Treat a dangling stop-marker symlink as an active stop request."""
+    """Fail closed when a stop marker exists or cannot be inspected."""
     marker = ledger.with_suffix(".stop")
-    return marker.exists() or marker.is_symlink()
+    try:
+        marker.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,

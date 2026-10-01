@@ -257,6 +257,26 @@ def test_dangling_stop_marker_prevents_auto_submission(monkeypatch, tmp_path):
     assert result.signal_detected and not result.sent and not api.sends
 
 
+def test_unreadable_stop_marker_prevents_auto_submission(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+    ledger = tmp_path / "demo.sqlite3"
+    original_lstat = Path.lstat
+
+    def unreadable_stop(path):
+        if path == ledger.with_suffix(".stop"):
+            raise PermissionError("private filesystem details")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", unreadable_stop)
+    result = scan_and_submit_demo(api, CONFIG, ledger,
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.reason == "automatic DEMO stop file active"
+    assert result.signal_detected and not result.sent and not api.sends
+    assert "private" not in str(result)
+
+
 def test_cli_never_enables_automation_without_both_opt_ins(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
