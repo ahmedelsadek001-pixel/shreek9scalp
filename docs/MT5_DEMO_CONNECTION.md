@@ -4,7 +4,29 @@
 
 On the Windows PC containing the already logged-in DEMO terminal, download
 the latest `v5.1-development` source and extract it. Open PowerShell in that
-folder and run:
+folder. The launcher keeps the result visible and waits for a key after it
+finishes; set `SHREEK_NO_PAUSE=1` only for an unattended caller. First run the
+read-only setup diagnosis:
+
+```powershell
+.\connect_mt5_demo.cmd --doctor
+```
+
+It never prompts for a login, creates a runtime, installs a package or
+contacts the terminal. `ready_to_prepare=true` means only that Windows,
+Python and a conservative local disk reserve passed. It does not mean MT5 is
+connected or that a trade can be sent. A fresh runtime needs at least 300 MiB
+free on the drive containing `%LOCALAPPDATA%`; an existing runtime needs at
+least 64 MiB. `INSUFFICIENT_LOCALAPPDATA_SPACE` identifies that drive as the
+blocker. Free space there and run the diagnosis again; do not delete the
+existing `%LOCALAPPDATA%\SHREEK` order ledger or scan journal.
+If a runtime with MetaTrader5 is already installed, `--report-demo` can read
+existing sessions and broker history while this reserve is unavailable. It
+does not install packages or authorize a new session. The report can still
+fail if Windows or MT5 cannot read the local records; inspect that failure
+without retrying an uncertain order.
+
+When the diagnosis passes, run:
 
 ```powershell
 .\connect_mt5_demo.cmd
@@ -12,10 +34,14 @@ folder and run:
 
 Python 3.9 or newer and the Windows `py` launcher must already be installed.
 The command prepares a local Python environment under `%LOCALAPPDATA%\SHREEK`,
-installs the native MetaTrader5 package, and prompts for the exact terminal
+installs the native MetaTrader5 package if it is missing, and prompts for the exact terminal
 path, hidden expected login, server, symbol and verified UTC offset.
 Existing `SHREEK_DEMO_*` binding variables are accepted instead of prompts.
 Inputs stay in the child process; no password is requested or saved.
+The bootstrap prints fixed reason codes on setup failure, without paths,
+account numbers or broker credentials. `MT5_PACKAGE_INSTALL_FAILED` and
+`MT5_PACKAGE_IMPORT_FAILED` block the connection and watcher; resolve the
+local Python package installation before attempting a session.
 The default mode prints the redacted, read-only preflight JSON and sends no order.
 Check `connected_demo` separately from `ready_for_demo_session`: attachment
 can succeed while permissions, exposure, local evidence or quotes block trading.
@@ -39,6 +65,12 @@ Windows endpoint and an authorized access method.
 After a session, collect both read-only reports with
 `.\connect_mt5_demo.cmd --report-demo`. This mode cannot be combined with
 `--watch-demo` and does not require a new trading-readiness pass.
+If MT5 or its Python package is unavailable, run
+`.\connect_mt5_demo.cmd --report-local` in PowerShell to read only the
+existing local session journal. It requires no login, package install,
+runtime, free-space reserve or broker connection; it never verifies a broker
+fill. A missing or malformed journal returns `journal_readable=false` and
+does not create a replacement. Preserve the original ledger and journal.
 See [the 1 October DEMO handover](DEMO_DELIVERY_2026_10_01.md) for the delivery
 sequence and acceptance evidence.
 
@@ -78,9 +110,10 @@ changed identity, or missing symbol details exits with status 2. The module
 closes the terminal connection after every inspection. It never logs in, sends
 orders, opens/closes positions, or makes `paper_trading_validated` true.
 
-Strategy-driven DEMO order submission and immutable matching of SHREEK signal IDs
-to observed broker deals are still to be implemented and independently validated
-before the [paper account evidence requirements](PAPER_ACCOUNT_EVIDENCE.md)
+The experimental strategy runner now reserves each signal ID in the local
+ledger and can match acknowledged DEMO attempts to observed broker deals.
+An independent broker export and sustained paper run are still required before
+the [paper account evidence requirements](PAPER_ACCOUNT_EVIDENCE.md)
 can pass. The production security gate blocks all broker send calls except
 the exact reviewed DEMO-only sandbox module; live MT5 trading remains disabled.
 

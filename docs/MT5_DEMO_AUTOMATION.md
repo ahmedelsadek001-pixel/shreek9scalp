@@ -62,6 +62,11 @@ required tables/columns; a corrupt journal blocks session readiness before
 the strategy scan. A missing journal is allowed because the runner creates
 it before polling. Preflight does not test writes; the runner independently
 refuses polling if journal creation, migration or writes fail.
+An existing order ledger is checked read-only for full SQLite integrity,
+recognized submission states and the bound DEMO account fingerprint. A ledger
+from another account blocks the session, even if its previous attempts were
+acknowledged. Restore the matching DEMO binding and inspect broker history;
+do not delete or overwrite the ledger to clear a blocker.
 An existing `demo_orders.watch.lock` also blocks session readiness. The
 opt-in runner creates this lock exclusively before opening MT5 and removes it
 after the session end is recorded. A second local opt-in runner refuses to
@@ -103,6 +108,11 @@ observations: unavailable bars, a stale or unfinished last bar, or no unique
 current signal. A session gap, detected signal without submission, or any
 other safety refusal ends the watch and records `safety_refusal`; correct the
 underlying condition before a new preflight. A refused scan is not a trade.
+For the current Breakout + Retest settings, the gap check covers the most
+recent 39 completed M5 candles (about 3 hours and 15 minutes). This includes
+the detector's volume, consolidation and maximum retest lookback. A market
+reopen or missing broker bar inside that window stops the watch; do not
+disable the continuity check to force a signal.
 Failed MT5 shutdown overrides any pending scan outcome and stops the watch;
 it never permits a broker submission from that scan.
 Each poll is also committed to `demo_orders.scans.sqlite3` beside the order
