@@ -203,6 +203,33 @@ def test_old_signal_gap_changed_price_and_active_kill_switch_block(monkeypatch, 
     assert not api.sends
 
 
+def test_gap_inside_complete_strategy_lookback_blocks_even_when_latest_33_are_clean(
+        monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    assert mt5_demo_auto.CONTEXT_BARS == 39
+    # A gap just before the latest 35 bars used to pass the 33-bar check.
+    for row in bars[:-35]:
+        row["time"] -= 300
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *a, **k: (_signal(bars),))
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.reason == "M5 context has a session gap"
+    assert not result.signal_detected and not result.sent and not api.sends
+
+
+def test_gap_older_than_complete_strategy_lookback_does_not_block_current_signal(
+        monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    for row in bars[:-mt5_demo_auto.CONTEXT_BARS]:
+        row["time"] -= 300
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *a, **k: (_signal(bars),))
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3", now=clock)
+    assert result.signal_detected and not result.sent
+    assert not api.sends
+
+
 def test_local_stop_file_prevents_auto_submission(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",

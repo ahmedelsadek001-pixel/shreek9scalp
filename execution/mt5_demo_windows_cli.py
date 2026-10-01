@@ -66,7 +66,11 @@ def main(argv: list[str] | None = None) -> int:
         if not local_data or not Path(local_data).is_absolute():
             raise ValueError("local data directory unavailable")
         directory = Path(local_data) / "SHREEK"
-        directory.mkdir(parents=True, exist_ok=True)
+        if args.report_demo:
+            if not directory.is_dir():
+                raise ValueError("local DEMO evidence directory unavailable")
+        else:
+            directory.mkdir(parents=True, exist_ok=True)
         ledger = directory / "demo_orders.sqlite3"
         values = {"SHREEK_DEMO_TERMINAL_PATH": str(path), "SHREEK_DEMO_LOGIN": login,
                   "SHREEK_DEMO_SERVER": server, "SHREEK_DEMO_SYMBOL": symbol,
@@ -92,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _read_reports(ledger: Path) -> int:
+    from execution.mt5_demo_handover import assess_handover
     from execution.mt5_demo_session_report_cli import main as sessions
     from execution.mt5_demo_history_cli import main as history
 
@@ -109,6 +114,7 @@ def _read_reports(ledger: Path) -> int:
             code, payload = 2, {"reason": "DEMO report unavailable or malformed"}
         report[label] = {"exit_code": code, "report": payload}
         codes.append(code)
+    report["handover_assessment"] = assess_handover(report)
     print(json.dumps(report, sort_keys=True))
     return 0 if all(code == 0 for code in codes) else 2
 

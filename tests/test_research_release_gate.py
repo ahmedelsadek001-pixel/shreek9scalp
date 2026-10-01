@@ -120,7 +120,7 @@ def _release_artifact(strategy_id="breakout-retest", strategy_version="research-
 
 def _promotion_artifact(
     *, include_cost_provenance=True, adverse_cost_stress=True,
-    bound_costs=True, causal_context=True, audited_sources=True,
+    bound_costs=True, causal_context=True, audited_sources=True, seed=7,
 ):
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
     bars = tuple(
@@ -185,7 +185,7 @@ def _promotion_artifact(
         step=2,
         starting_equity=10000.0,
         simulations=20,
-        seed=7,
+        seed=seed,
         slippage_multiplier=1.5 if adverse_cost_stress else 1.0,
         spread_multiplier=1.5 if adverse_cost_stress else 1.0,
         policy=EvidenceGatePolicy(
@@ -337,6 +337,16 @@ def test_release_package_blocks_unstressed_execution_costs():
     decision = evaluate_research_release_package(package)
     assert decision.ready is False
     assert "research artifact lacks adverse execution-cost stress" in decision.failures
+
+
+def test_release_package_blocks_unseeded_monte_carlo_even_if_other_evidence_passes():
+    package = ResearchReleasePackage(
+        complete(), _promotion_artifact(seed=None), "breakout-retest",
+        "research-v1", CODE_REVISION,
+    )
+    decision = evaluate_research_release_package(package)
+    assert not decision.ready
+    assert "research artifact lacks deterministic Monte Carlo seed" in decision.failures
 
 
 def test_release_package_blocks_unbound_broker_costs():

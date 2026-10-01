@@ -201,6 +201,8 @@ def run_xauusd_breakout_retest_research(
     """
     if not isinstance(source_manifest, XAUUSDSourceManifest):
         raise ValueError("source_manifest must be an XAUUSDSourceManifest")
+    if type(kwargs.get("seed", 42)) is not int:
+        raise ValueError("manifest-bound XAUUSD research requires a fixed integer seed")
     source_manifest.validate()
     resolved_volume = _validate_manifest_volume(source_manifest, volume)
     signal_configs = tuple(_signal_config(params) for params in parameter_sets)

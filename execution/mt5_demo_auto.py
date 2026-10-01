@@ -22,6 +22,11 @@ from research.data_validation import validate_market_data
 STRATEGY_ID = "breakout-retest-research-v1-pip0.1"
 PIP_SIZE = 0.1
 BAR_SECONDS = 300
+STRATEGY_CONFIG = BreakoutRetestConfig()
+# The detector's earliest breakout has volume + consolidation warm-up, and
+# the newest confirmation may be at the end of its retest window.
+CONTEXT_BARS = (STRATEGY_CONFIG.volume_lookback + STRATEGY_CONFIG.consolidation_bars
+                + STRATEGY_CONFIG.retest_max_bars + 1)
 SESSION_SHUTDOWN_FAILED_REASON = "automatic DEMO session shutdown failed"
 _SAFE_BAR_ERRORS = frozenset({
     "80 completed M5 bars unavailable",
@@ -46,9 +51,9 @@ class _DemoSessionShutdownError(RuntimeError):
 
 def m5_context_is_contiguous(bars: Sequence[ResearchBar]) -> bool:
     """Check the entire M5 history that can contribute to the latest signal."""
-    return len(bars) >= 33 and all(
+    return len(bars) >= CONTEXT_BARS and all(
         int((right.timestamp - left.timestamp).total_seconds()) == BAR_SECONDS
-        for left, right in zip(bars[-33:-1], bars[-32:])
+        for left, right in zip(bars[-CONTEXT_BARS:-1], bars[-CONTEXT_BARS + 1:])
     )
 
 
@@ -105,7 +110,7 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 or symbol_info.chart_mode != chart_mode_bid):
             return refused("automatic DEMO requires Bid-based broker candles")
         bars = _closed_m5_bars(api, config, clock)
-        signals = detect_breakout_retest(bars, PIP_SIZE, BreakoutRetestConfig(),
+        signals = detect_breakout_retest(bars, PIP_SIZE, STRATEGY_CONFIG,
                                          min_signal_index=len(bars) - 1)
         if len(signals) != 1 or signals[0].signal_time != bars[-1].timestamp:
             return refused("no unique current closed-bar strategy signal")
