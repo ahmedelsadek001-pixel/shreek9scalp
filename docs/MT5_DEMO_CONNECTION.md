@@ -202,3 +202,9 @@ cannot promote failed strategy research to an approved live strategy.
 Broker references: [Python account_info](https://www.mql5.com/en/docs/python_metatrader5/mt5accountinfo_py),
 [account trade modes](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),
 and [Python initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py).
+
+Quote readiness samples current UTC after the broker tick is received, so
+terminal initialization latency is not mistaken for a future quote. Explicit
+injected test clocks remain fixed. Supported broker offsets and freshness,
+spread, permission and account checks are unchanged; this read-only correction
+does not grant execution authority or explain prior disconnects by itself.
