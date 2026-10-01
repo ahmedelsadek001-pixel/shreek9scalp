@@ -298,3 +298,52 @@ def test_watch_expiry_records_end_and_does_not_sleep(monkeypatch, tmp_path):
     monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep", unexpected)
     assert mt5_demo_auto_cli.main(["--ledger", str(ledger), "--execute-demo-auto", "--watch-minutes", "1"]) == 2
     assert inspect_sessions(ledger)["sessions"][0]["end_reason"] == "watch_expired"
+
+
+def _diagnostics():
+    return dict(schema="shreek.strategy-diagnostics.v1", candidates=4,
+                valid_breakouts=0, returned_signals=0,
+                rejected={"consolidation_range": 4})
+
+
+def test_strategy_diagnostics_survive_later_stale_scan_and_remain_read_only(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    diagnostic = _diagnostics()
+    diagnostic["unknown_private_field"] = "must not persist"
+    journal.record(DemoAutoResult(False, False, False, "no unique current closed-bar strategy signal",
+                                  strategy_diagnostics=diagnostic))
+    journal.record(DemoAutoResult(False, False, False,
+                                  "last completed M5 candle is stale or not yet closed"))
+    before = journal.path.read_bytes()
+    report = inspect_sessions(ledger)["sessions"][0]
+    assert report["last_strategy_diagnostics"]["counters"] == _diagnostics()
+    assert report["scans"] == 2 and report["submission_observations"] == 0
+    assert "strategy_diagnostics" not in report["last_result"]
+    assert "must not persist" not in json.dumps(report)
+    assert journal.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("field,value", [("candidates", True), ("valid_breakouts", -1),
+                                         ("returned_signals", 5),
+                                         ("rejected", {"account_secret": 1})])
+def test_invalid_diagnostics_do_not_write_partial_scan(tmp_path, field, value):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    diagnostic = _diagnostics()
+    diagnostic[field] = value
+    with pytest.raises(ValueError):
+        journal.record(DemoAutoResult(False, False, False, "no signal",
+                                      strategy_diagnostics=diagnostic))
+    assert inspect_sessions(ledger)["sessions"][0]["scans"] == 0
+
+
+def test_corrupt_strategy_diagnostics_block_report(tmp_path, capsys):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    journal.record(DemoAutoResult(False, False, False, "no signal",
+                                  strategy_diagnostics=_diagnostics()))
+    with sqlite3.connect(journal.path) as db:
+        db.execute("UPDATE strategy_scan_diagnostics SET diagnostics_json='{}'")
+    assert report_main(["--ledger", str(ledger)]) == 2
+    assert not json.loads(capsys.readouterr().out)["journal_readable"]

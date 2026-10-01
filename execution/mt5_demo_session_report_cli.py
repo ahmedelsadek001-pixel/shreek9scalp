@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import sqlite3
 
+from execution.strategy_diagnostics import bounded_diagnostics
+
 
 def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
     if (not ledger.is_absolute() or ledger.suffix != ".sqlite3"
@@ -22,6 +24,9 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
         end_columns = "ended_at, end_reason" if lifecycle else "NULL, NULL"
         rows = db.execute("SELECT session_id, started_at, execute_requested, watch_minutes, "
                           + end_columns + " FROM sessions ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
+        has_diagnostics = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='strategy_scan_diagnostics'"
+        ).fetchone() is not None
         sessions = []
         for session_id, started_at, execute, minutes, ended_at, end_reason in rows:
             counts = {"scans": 0, "signals": 0, "submission_observations": 0, "accepted_observations": 0}
@@ -42,11 +47,22 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
                 counts["accepted_observations"] += int(result["accepted"])
                 # Emit only the known result fields, never arbitrary JSON additions.
                 last_at, last_result = recorded_at, result
+            diagnostics = None
+            if has_diagnostics:
+                row = db.execute(
+                    "SELECT e.recorded_at, d.diagnostics_json FROM strategy_scan_diagnostics d "
+                    "JOIN scan_events e ON e.event_id=d.event_id WHERE e.session_id=? "
+                    "ORDER BY e.event_id DESC LIMIT 1", (session_id,)
+                ).fetchone()
+                if row is not None:
+                    diagnostics = {"recorded_at": row[0],
+                                   "counters": bounded_diagnostics(json.loads(row[1]))}
             sessions.append({"session_id": session_id, "started_at": started_at,
                              "execute_requested": bool(execute), "watch_minutes": minutes,
                              "ended_at": ended_at, "end_reason": end_reason,
                              "end_recorded": ended_at is not None,
-                             **counts, "last_scan_at": last_at, "last_result": last_result})
+                             **counts, "last_scan_at": last_at, "last_result": last_result,
+                             "last_strategy_diagnostics": diagnostics})
     return {"journal_readable": True, "broker_history_verified": False,
             "sessions": sessions}
 

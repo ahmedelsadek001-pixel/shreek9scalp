@@ -12,6 +12,7 @@ from stat import S_ISREG
 from uuid import uuid4
 
 from execution.mt5_demo_auto import DemoAutoResult
+from execution.strategy_diagnostics import bounded_diagnostics
 
 
 @contextmanager
@@ -54,6 +55,8 @@ class DemoSessionJournal:
             db.execute("CREATE TABLE IF NOT EXISTS scan_events "
                        "(event_id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, "
                        "recorded_at TEXT NOT NULL, result_json TEXT NOT NULL)")
+            db.execute("CREATE TABLE IF NOT EXISTS strategy_scan_diagnostics "
+                       "(event_id INTEGER PRIMARY KEY, diagnostics_json TEXT NOT NULL)")
             columns = {row[1] for row in db.execute("PRAGMA table_info(sessions)")}
             for column in ("ended_at", "end_reason"):
                 if column not in columns:
@@ -76,14 +79,19 @@ class DemoSessionJournal:
     def record(self, result: DemoAutoResult) -> None:
         if not isinstance(result, DemoAutoResult):
             raise TypeError("DEMO scan result required")
-        # Keep the established durable outcome schema compatible with older
-        # offline readers. Strategy diagnostics are console observations only.
+        # Preserve the existing outcome schema; diagnostics use a separate
+        # table in the same transaction so old report readers remain usable.
         payload = asdict(result)
-        payload.pop("strategy_diagnostics", None)
+        raw_diagnostics = payload.pop("strategy_diagnostics", None)
+        diagnostics = (bounded_diagnostics(raw_diagnostics)
+                       if raw_diagnostics is not None else None)
         with self._connect() as db:
-            db.execute("INSERT INTO scan_events (session_id, recorded_at, result_json) VALUES (?, ?, ?)",
+            cursor = db.execute("INSERT INTO scan_events (session_id, recorded_at, result_json) VALUES (?, ?, ?)",
                        (self.session_id, datetime.now(timezone.utc).isoformat(),
                         json.dumps(payload, sort_keys=True)))
+            if diagnostics is not None:
+                db.execute("INSERT INTO strategy_scan_diagnostics VALUES (?, ?)",
+                           (cursor.lastrowid, json.dumps(diagnostics, sort_keys=True)))
 
     def finish(self, reason: str) -> None:
         if reason not in {"scan_complete", "submission_attempted", "watch_expired", "stop_file",

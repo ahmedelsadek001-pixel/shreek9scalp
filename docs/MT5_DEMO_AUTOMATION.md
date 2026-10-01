@@ -185,9 +185,14 @@ breakout's level, direction, time and measured values. A qualifying breakout
 alone does not authorize execution. The detector uses the same conditions
 and returns the same signals with or without diagnostics.
 
-Diagnostics are console-only in this version: the durable session journal
-retains its existing six-field outcome schema for compatibility with older
-report readers. Stale bars and connection failures do not receive strategy
+The journal now also persists a bounded projection of diagnostic counters
+in a separate table, atomically with the corresponding scan. The existing
+six-field outcome schema stays compatible with older report readers.
+`--report-local` includes `last_strategy_diagnostics` with its own observation
+time, so later stale scans cannot hide the last actual strategy evaluation.
+Older journals without the table return null. Only known reasons and bounded
+integer counters are persisted; breakout measurements remain console-only.
+Malformed diagnostics block reporting and cannot certify a session. Stale bars and connection failures do not receive strategy
 diagnostics because they never reach the detector. This feature does not
 change strategy thresholds, the M5 freshness window, risk limits or DEMO-only
 submission gates, and does not establish profitable or live-ready trading.
