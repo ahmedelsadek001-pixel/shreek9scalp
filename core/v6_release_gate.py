@@ -23,8 +23,6 @@ class V6ReleaseDecision:
 def _validated_evidence(bundle: ReleaseEvidenceBundle) -> Mapping[str, bool]:
     if not isinstance(bundle, ReleaseEvidenceBundle):
         raise TypeError("V6 release requires ReleaseEvidenceBundle")
-    for record in bundle.records:
-        record.validate()
     return bundle.as_map()
 
 

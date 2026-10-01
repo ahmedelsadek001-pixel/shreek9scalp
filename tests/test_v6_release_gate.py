@@ -56,6 +56,17 @@ def test_v6_release_blocks_raw_boolean_mapping():
     assert decision.failures == ("evidence bundle integrity validation failed",)
 
 
+@pytest.mark.parametrize("records", [None, (), (None,), ({"name": "ci_green"},)])
+def test_v6_release_blocks_malformed_record_container_and_values(records):
+    tampered = replace(full_bundle(), records=records)
+    decision = evaluate_v6_release(tampered, expected_commit_sha=_COMMIT)
+    assert decision.release_ready is False
+    assert decision.live.authorized is False
+    assert decision.failures == ("evidence bundle integrity validation failed",)
+    with pytest.raises(RuntimeError, match="integrity validation failed"):
+        require_v6_release(tampered, expected_commit_sha=_COMMIT)
+
+
 def test_v6_release_requires_all_provenance_records():
     bundle = full_bundle()
     incomplete = ReleaseEvidenceBundle.from_records(bundle.records[:-1])

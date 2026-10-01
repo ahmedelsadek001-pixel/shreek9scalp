@@ -32,6 +32,17 @@ def test_bundle_requires_nonempty_records():
         ReleaseEvidenceBundle.from_records(())
 
 
+@pytest.mark.parametrize("record", [None, {"name": "ci_green"}, "ci_green"])
+def test_release_evaluation_blocks_malformed_record_values(record):
+    original = _bundle()
+    tampered = replace(original, records=(record,) + original.records[1:])
+    with pytest.raises(TypeError, match="EvidenceRecord"):
+        tampered.validate()
+    decision = evaluate_evidence_bundle(tampered, _required())
+    assert not decision.ready
+    assert decision.failures == ("evidence bundle integrity validation failed",)
+
+
 def test_record_requires_provenance():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "", "run-1", datetime.now(timezone.utc), _COMMIT).validate()

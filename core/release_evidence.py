@@ -112,6 +112,8 @@ class ReleaseEvidenceBundle:
         ):
             raise ValueError("bundle_id must be a normalized SHA-256")
         for record in self.records:
+            if not isinstance(record, EvidenceRecord):
+                raise TypeError("records must contain EvidenceRecord values")
             record.validate()
         expected = sha256(self._canonical(self.records).encode("utf-8")).hexdigest()
         if self.bundle_id != expected:
