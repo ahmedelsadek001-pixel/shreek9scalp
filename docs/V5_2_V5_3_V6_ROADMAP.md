@@ -28,6 +28,11 @@
   This consistency fingerprint and journal checksum do not authenticate broker
   evidence or authorize execution. Low-level identity-only ledger transitions
   still require explicit, independently verified outcome/presence evidence.
+- Shadow execution owns detached snapshots of submitted intents and matched
+  reports. Mutating the caller's original intent, the submission returned by
+  registration, or a later submission listing cannot rewrite the comparison
+  used to clear a pending order or reopen the recovery gate. These in-memory
+  snapshots remain offline consistency controls, not broker evidence.
 - Every stored ledger key must equal its record's canonical order identity.
   Reads, reservations, transitions and journal/recovery snapshots reject a
   mismatched or aliased identity before it can hide a prior transport attempt.
