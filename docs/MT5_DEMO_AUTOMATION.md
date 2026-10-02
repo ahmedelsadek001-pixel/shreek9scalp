@@ -183,6 +183,11 @@ The history report checks opening deal timestamps against the local reservation
 and reports the observed deal clock offset separately from the stored tick/bar
 offset. An unbound clock or a future/chronologically inconsistent deal blocks
 the report. This read-only check cannot authenticate a broker export by itself.
+Repeated deal tickets in the bound position's reported deals block the entire
+report before closing volume or net amounts are calculated, even when the
+repeated rows differ. Distinct deal tickets may share one broker order; valid
+split fills and partial closes remain observable. Deal ticket uniqueness is
+defined in the [MetaQuotes deal properties](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties).
 Failure to close the history inspection session overrides every result,
 including earlier refusals or an empty ledger. The report returns
 `verified_demo=false`, no attempts and `DEMO history shutdown failed` without

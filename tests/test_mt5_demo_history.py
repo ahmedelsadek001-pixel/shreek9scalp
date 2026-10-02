@@ -125,6 +125,65 @@ def test_extra_or_duplicate_opening_deals_refuse_attribution(tmp_path):
     assert not inspect_demo_history(api, CONFIG, ledger).verified_demo
 
 
+@pytest.mark.parametrize("duplicate", ["same_close", "conflicting_close", "opening_collision"])
+def test_duplicate_position_deal_tickets_cannot_report_a_full_close(tmp_path, duplicate):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) - 2000
+    opened = Deal(456, 9001, 771, 0, 0, .01, 4000.1, 0, -.10, 0, 0, timestamp)
+    closed = Deal(457, 9002, 771, 1, 1, .005, 4002, .95, -.05, 0, 0,
+                  timestamp + 1000, magic=0)
+    if duplicate == "same_close":
+        related = (opened, closed, closed)
+    elif duplicate == "conflicting_close":
+        related = (opened, replace(closed, volume=.004), replace(closed, volume=.006))
+    else:
+        related = (opened, replace(closed, ticket=opened.ticket, volume=.01))
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else related)
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "duplicate broker deal ticket in position history"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+
+
+@pytest.mark.parametrize("fully_closed", [False, True])
+def test_unique_split_closes_preserve_partial_or_full_observations(tmp_path, fully_closed):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) - 2000
+    opened = Deal(456, 9001, 771, 0, 0, .01, 4000.1, 0, -.10, 0, 0, timestamp)
+    first = Deal(457, 9002, 771, 1, 1, .004, 4002, .76, -.04, 0, 0,
+                 timestamp + 1000, magic=0)
+    second = Deal(458, 9002, 771, 1, 1, .006 if fully_closed else .002,
+                  4002, 1.14 if fully_closed else .38, -.06 if fully_closed else -.02,
+                  0, 0, timestamp + 1001, magic=0)
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else (second, opened, first))
+    sends_before = len(api.sends)
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo
+    item = report.attempts[0]
+    assert [deal["ticket"] for deal in item["broker_deals"]] == [456, 457, 458]
+    assert item["manual_intervention"] is True
+    if fully_closed:
+        assert item["status"] == "closed_observed"
+        assert item["realized_net_usd"] == pytest.approx(1.70)
+    else:
+        assert item["status"] == "open_or_partial"
+        assert "realized_net_usd" not in item
+    assert len(api.sends) == sends_before
+
+
 def test_real_account_or_missing_broker_history_refused(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     api = FakeMT5()

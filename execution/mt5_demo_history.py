@@ -157,6 +157,10 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                          and getattr(d, "symbol", None) == symbol]
                 if any(d is None for d in deals):
                     return refused("broker deal metadata incomplete")
+                # Split fills may share an order, but every deal ticket is unique.
+                tickets = [d["ticket"] for d in deals]
+                if len(set(tickets)) != len(tickets):
+                    return refused("duplicate broker deal ticket in position history")
                 opening_time = min(datetime.fromisoformat(d["time_utc"]) for d in opening_info)
                 if any(not opening_time <= datetime.fromisoformat(d["time_utc"]) <=
                        datetime.now(timezone.utc) + timedelta(seconds=1) for d in deals):
