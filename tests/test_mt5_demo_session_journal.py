@@ -301,6 +301,81 @@ def test_valid_session_chronology_normalizes_offsets_without_changing_journal(
     assert journal.path.read_bytes() == before and not ledger.exists()
 
 
+@pytest.fixture
+def metadata_session(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    journal.record(DemoAutoResult(False, False, False, "no signal"))
+    journal.finish("watch_expired")
+    return ledger, journal
+
+
+@pytest.mark.parametrize("fault", [
+    "invalid_session_id", "non_boolean_execute", "text_execute", "negative_watch",
+    "excessive_watch", "text_watch", "passive_watch", "invalid_end_reason",
+    "missing_end_reason", "dangling_end_reason",
+])
+def test_invalid_session_metadata_blocks_report_without_disclosure(metadata_session, fault, capsys):
+    ledger, journal = metadata_session
+    with sqlite3.connect(journal.path) as db:
+        if fault == "invalid_session_id":
+            db.execute("UPDATE sessions SET session_id='private-session-details'")
+        elif fault == "non_boolean_execute":
+            db.execute("UPDATE sessions SET execute_requested=2")
+        elif fault == "text_execute":
+            db.execute("UPDATE sessions SET execute_requested='private-session-details'")
+        elif fault == "negative_watch":
+            db.execute("UPDATE sessions SET watch_minutes=-1")
+        elif fault == "excessive_watch":
+            db.execute("UPDATE sessions SET watch_minutes=61")
+        elif fault == "text_watch":
+            db.execute("UPDATE sessions SET watch_minutes='private-session-details'")
+        elif fault == "passive_watch":
+            db.execute("UPDATE sessions SET execute_requested=0, watch_minutes=1")
+        elif fault == "invalid_end_reason":
+            db.execute("UPDATE sessions SET end_reason='private-session-details'")
+        elif fault == "missing_end_reason":
+            db.execute("UPDATE sessions SET end_reason=NULL")
+        else:
+            db.execute("UPDATE sessions SET ended_at=NULL, end_reason='private-session-details'")
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False
+    assert "private-session-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 2, "report": {
+                    "verified_demo": False, "attempts": [],
+                    "reason": "durable DEMO ledger unavailable"}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("execute,minutes,completed,reason", [
+    (False, 0, True, "scan_complete"),
+    (True, 0, True, "scan_complete"),
+    (True, 60, True, "watch_expired"),
+    (True, 60, False, None),
+])
+def test_valid_session_metadata_remains_readable_and_unchanged(
+        tmp_path, execute, minutes, completed, reason):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=execute, watch_minutes=minutes)
+    journal.record(DemoAutoResult(False, False, False, "no signal"))
+    if completed:
+        journal.finish(reason)
+    before = journal.path.read_bytes()
+    session, = inspect_sessions(ledger)["sessions"]
+    assert session["execute_requested"] is execute
+    assert session["watch_minutes"] == minutes
+    assert session["end_recorded"] is completed and session["end_reason"] == reason
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
 def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     path = ledger.with_suffix(".scans.sqlite3")
@@ -309,7 +384,8 @@ def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tm
                    "execute_requested INTEGER NOT NULL, watch_minutes INTEGER NOT NULL)")
         db.execute("CREATE TABLE scan_events (event_id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, "
                    "recorded_at TEXT NOT NULL, result_json TEXT NOT NULL)")
-        db.execute("INSERT INTO sessions VALUES ('legacy', '2026-09-29T20:00:00+00:00', 0, 0)")
+        db.execute("INSERT INTO sessions VALUES (?, '2026-09-29T20:00:00+00:00', 0, 0)",
+                   ("a" * 32,))
     before = path.read_bytes()
     session, = inspect_sessions(ledger)["sessions"]
     assert not session["end_recorded"] and session["end_reason"] is None

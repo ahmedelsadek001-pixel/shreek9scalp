@@ -6,9 +6,17 @@ from contextlib import closing
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import re
 import sqlite3
 
 from execution.strategy_diagnostics import bounded_diagnostics
+
+
+_SESSION_ID = re.compile(r"[0-9a-f]{32}\Z")
+_SESSION_END_REASONS = frozenset({
+    "scan_complete", "submission_attempted", "watch_expired", "stop_file",
+    "journal_error", "interrupted", "binding_error", "safety_refusal", "aborted",
+})
 
 
 def _utc_timestamp(value: str) -> datetime:
@@ -43,6 +51,15 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
         observed_at = datetime.now(timezone.utc)
         sessions = []
         for session_id, started_at, execute, minutes, ended_at, end_reason in rows:
+            completed = ended_at is not None
+            if (not isinstance(session_id, str) or _SESSION_ID.fullmatch(session_id) is None
+                    or type(execute) is not int or execute not in (0, 1)
+                    or type(minutes) is not int or not 0 <= minutes <= 60
+                    or (execute == 0 and minutes != 0)
+                    or (completed and (not isinstance(end_reason, str)
+                                       or end_reason not in _SESSION_END_REASONS))
+                    or (not completed and end_reason is not None)):
+                raise ValueError("invalid DEMO session metadata")
             started = _utc_timestamp(started_at)
             ended = _utc_timestamp(ended_at) if ended_at is not None else None
             if started > observed_at or (ended is not None and not started <= ended <= observed_at):
@@ -82,7 +99,7 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
                     diagnostics = {"recorded_at": row[0],
                                    "counters": bounded_diagnostics(json.loads(row[1]))}
             sessions.append({"session_id": session_id, "started_at": started_at,
-                             "execute_requested": bool(execute), "watch_minutes": minutes,
+                             "execute_requested": execute == 1, "watch_minutes": minutes,
                              "ended_at": ended_at, "end_reason": end_reason,
                              "end_recorded": ended_at is not None,
                              **counts, "last_scan_at": last_at, "last_result": last_result,

@@ -147,7 +147,9 @@ compares them in UTC and blocks malformed timestamps, future observations,
 session ends before their starts, and scans outside the session interval or
 moving backwards in event order. Equal scan times and sessions without an end
 record remain readable. A blocked chronology requires inspection of the local
-journal and host clock; the report does not rewrite either.
+journal and host clock; the report does not rewrite either. Session identity,
+opt-in state, watch duration and paired end markers are also validated before
+output, so malformed metadata cannot become a clean handover.
 
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
