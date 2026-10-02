@@ -190,7 +190,8 @@ def test_offline_report_bounds_sessions_and_preserves_uncertain_submission(tmp_p
     older.finish("scan_complete")
     latest = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
     latest.record(DemoAutoResult(False, False, False, "no signal"))
-    latest.record(DemoAutoResult(True, True, False, "submission uncertain; do not retry"))
+    latest.record(DemoAutoResult(True, True, False, "submission uncertain; do not retry",
+                                 "a" * 40))
     latest.finish("submission_attempted")
     path = ledger.with_suffix(".scans.sqlite3")
     before = path.read_bytes()
@@ -376,6 +377,90 @@ def test_valid_session_metadata_remains_readable_and_unchanged(
     assert journal.path.read_bytes() == before and not ledger.exists()
 
 
+@pytest.mark.parametrize("fault", [
+    "accepted_without_sent", "sent_without_signal", "signal_id_without_signal",
+    "missing_signal_id", "object_signal_id", "non_hex_signal_id",
+    "order_without_acceptance", "missing_accepted_order", "object_order",
+    "nonpositive_order", "empty_reason", "overlong_reason", "control_reason",
+])
+def test_invalid_scan_outcome_blocks_report_without_disclosure(metadata_session, fault, capsys):
+    ledger, journal = metadata_session
+    signal_id = "a" * 40
+    with sqlite3.connect(journal.path) as db:
+        event_id, raw = db.execute(
+            "SELECT event_id, result_json FROM scan_events ORDER BY event_id LIMIT 1"
+        ).fetchone()
+        result = json.loads(raw)
+        if fault == "accepted_without_sent":
+            result.update(signal_detected=True, sent=False, accepted=True,
+                          signal_id=signal_id, broker_order_id=123)
+        elif fault == "sent_without_signal":
+            result.update(signal_detected=False, sent=True)
+        elif fault == "signal_id_without_signal":
+            result["signal_id"] = signal_id
+        elif fault == "missing_signal_id":
+            result["signal_detected"] = True
+        elif fault == "object_signal_id":
+            result.update(signal_detected=True,
+                          signal_id={"private": "private-result-details"})
+        elif fault == "non_hex_signal_id":
+            result.update(signal_detected=True, signal_id="not-a-strategy-signal")
+        elif fault == "order_without_acceptance":
+            result["broker_order_id"] = 123
+        elif fault in ("missing_accepted_order", "object_order", "nonpositive_order"):
+            order = {"missing_accepted_order": None,
+                     "object_order": {"private": "private-result-details"},
+                     "nonpositive_order": 0}[fault]
+            result.update(signal_detected=True, sent=True, accepted=True,
+                          signal_id=signal_id, broker_order_id=order)
+        elif fault == "empty_reason":
+            result["reason"] = ""
+        elif fault == "overlong_reason":
+            result["reason"] = "private-result-details" * 10
+        else:
+            result["reason"] = "private-result-details\nsecond-line"
+        db.execute("UPDATE scan_events SET result_json=? WHERE event_id=?",
+                   (json.dumps(result), event_id))
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False
+    assert "private-result-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 2, "report": {
+                    "verified_demo": False, "attempts": [],
+                    "reason": "durable DEMO ledger unavailable"}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("result", [
+    DemoAutoResult(False, False, False, "no unique current closed-bar strategy signal"),
+    DemoAutoResult(True, False, False, "automatic DEMO execution disabled", "a" * 40),
+    DemoAutoResult(True, True, False, "DEMO submission uncertain; do not retry", "a" * 40),
+    DemoAutoResult(True, True, True, "DEMO broker acknowledged; reconcile independently",
+                   "a" * 40, 123),
+])
+def test_valid_scan_outcome_shapes_remain_readable_and_unchanged(tmp_path, result):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=0)
+    journal.record(result)
+    journal.finish("submission_attempted" if result.sent else "scan_complete")
+    before = journal.path.read_bytes()
+    session, = inspect_sessions(ledger)["sessions"]
+    expected = asdict(result)
+    expected.pop("strategy_diagnostics")
+    assert session["last_result"] == expected
+    assert session["signals"] == int(result.signal_detected)
+    assert session["submission_observations"] == int(result.sent)
+    assert session["accepted_observations"] == int(result.accepted)
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
 def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     path = ledger.with_suffix(".scans.sqlite3")
@@ -419,7 +504,7 @@ def test_session_end_write_failure_stops_and_preserves_accepted_result(monkeypat
     ledger = tmp_path / "demo.sqlite3"
     monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: object())
     monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", lambda *a, **k:
-                        DemoAutoResult(True, True, True, "accepted"))
+                        DemoAutoResult(True, True, True, "accepted", "a" * 40, 123))
     def fail(*args):
         raise sqlite3.OperationalError("disk unavailable")
     monkeypatch.setattr(DemoSessionJournal, "finish", fail)
@@ -440,7 +525,9 @@ def test_runner_records_scan_and_submission_ends(monkeypatch, tmp_path, sent, ac
     ledger = tmp_path / "demo.sqlite3"
     monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: object())
     monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", lambda *a, **k:
-                        DemoAutoResult(sent, sent, accepted, "observed"))
+                        DemoAutoResult(sent, sent, accepted, "observed",
+                                       "a" * 40 if sent else None,
+                                       123 if accepted else None))
     assert mt5_demo_auto_cli.main(["--ledger", str(ledger)]) == (0 if accepted else 2)
     session, = inspect_sessions(ledger)["sessions"]
     assert session["end_reason"] == expected and session["end_recorded"]

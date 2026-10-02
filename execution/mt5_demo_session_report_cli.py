@@ -13,10 +13,35 @@ from execution.strategy_diagnostics import bounded_diagnostics
 
 
 _SESSION_ID = re.compile(r"[0-9a-f]{32}\Z")
+_SIGNAL_ID = re.compile(r"[0-9a-f]{40}\Z")
 _SESSION_END_REASONS = frozenset({
     "scan_complete", "submission_attempted", "watch_expired", "stop_file",
     "journal_error", "interrupted", "binding_error", "safety_refusal", "aborted",
 })
+
+
+def _valid_scan_result(result: object) -> bool:
+    if (not isinstance(result, dict)
+            or set(result) != {"signal_detected", "sent", "accepted", "reason",
+                               "signal_id", "broker_order_id"}
+            or any(type(result[key]) is not bool
+                   for key in ("signal_detected", "sent", "accepted"))):
+        return False
+    signal, sent, accepted = (result[key]
+                              for key in ("signal_detected", "sent", "accepted"))
+    reason = result["reason"]
+    signal_id = result["signal_id"]
+    broker_order_id = result["broker_order_id"]
+    return (
+        accepted <= sent <= signal
+        and isinstance(reason, str) and 1 <= len(reason) <= 160
+        and reason.isascii() and reason.isprintable()
+        and ((not signal and signal_id is None)
+             or (signal and isinstance(signal_id, str)
+                 and _SIGNAL_ID.fullmatch(signal_id) is not None))
+        and ((not accepted and broker_order_id is None)
+             or (accepted and type(broker_order_id) is int and broker_order_id > 0))
+    )
 
 
 def _utc_timestamp(value: str) -> datetime:
@@ -76,11 +101,7 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
                     raise ValueError("invalid DEMO scan chronology")
                 previous = recorded
                 result = json.loads(raw)
-                if (not isinstance(result, dict)
-                        or set(result) != {"signal_detected", "sent", "accepted", "reason",
-                                           "signal_id", "broker_order_id"}
-                        or any(type(result[key]) is not bool for key in ("signal_detected", "sent", "accepted"))
-                        or not isinstance(result["reason"], str)):
+                if not _valid_scan_result(result):
                     raise ValueError("invalid scan observation")
                 counts["scans"] += 1
                 counts["signals"] += int(result["signal_detected"])

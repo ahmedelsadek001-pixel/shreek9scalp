@@ -149,7 +149,10 @@ moving backwards in event order. Equal scan times and sessions without an end
 record remain readable. A blocked chronology requires inspection of the local
 journal and host clock; the report does not rewrite either. Session identity,
 opt-in state, watch duration and paired end markers are also validated before
-output, so malformed metadata cannot become a clean handover.
+output, so malformed metadata cannot become a clean handover. Scan outcomes
+must also preserve `accepted <= sent <= signal_detected`, use a bounded
+single-line reason, bind strategy signals to their generated hash, and attach
+a positive broker order ID only to accepted observations.
 
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
