@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
-from execution.idempotency import SubmissionRecord,SubmissionState
+from execution.idempotency import SubmissionRecord,SubmissionState,validate_intent_fingerprint
 
 @dataclass(frozen=True)
 class JournalSnapshot:
@@ -11,7 +11,13 @@ class JournalSnapshot:
     checksum: str
 
 def _payload(records):
-    return [{"order_id":r.order_id,"state":r.state.value,"attempts":r.attempts} for r in sorted(records,key=lambda x:x.order_id)]
+    payload=[]
+    for r in sorted(records,key=lambda x:x.order_id):
+        item={"order_id":r.order_id,"state":r.state.value,"attempts":r.attempts}
+        if r.intent_fingerprint is not None:
+            item["intent_fingerprint"]=r.intent_fingerprint
+        payload.append(item)
+    return payload
 
 def build_snapshot(records:tuple[SubmissionRecord,...])->JournalSnapshot:
     if not isinstance(records,tuple): raise TypeError("records must be tuple")
@@ -24,6 +30,7 @@ def build_snapshot(records:tuple[SubmissionRecord,...])->JournalSnapshot:
             raise ValueError("invalid journal submission state")
         if r.order_id in seen or type(r.attempts) is not int or r.attempts<1:
             raise ValueError("invalid or duplicate journal record")
+        validate_intent_fingerprint(r.intent_fingerprint)
         seen.add(r.order_id)
     raw=json.dumps(_payload(records),sort_keys=True,separators=(",",":"))
     return JournalSnapshot(records,sha256(raw.encode()).hexdigest())
@@ -44,6 +51,12 @@ def deserialize_snapshot(raw:str)->JournalSnapshot:
     if not isinstance(data,dict) or set(data)!={"records","checksum"} or not isinstance(data["records"],list) or not isinstance(data["checksum"],str):
         raise ValueError("malformed execution journal")
     try:
-        records=tuple(SubmissionRecord(x["order_id"],SubmissionState(x["state"]),x["attempts"]) for x in data["records"])
+        records=[]
+        for x in data["records"]:
+            if not isinstance(x,dict): raise ValueError("journal record must be an object")
+            if "intent_fingerprint" in x and x["intent_fingerprint"] is None:
+                raise ValueError("explicit intent fingerprint must not be null")
+            records.append(SubmissionRecord(x["order_id"],SubmissionState(x["state"]),x["attempts"],x.get("intent_fingerprint")))
+        records=tuple(records)
     except (KeyError,TypeError,ValueError) as exc: raise ValueError("malformed execution journal record") from exc
     snapshot=JournalSnapshot(records,data["checksum"]); validate_snapshot(snapshot); return snapshot

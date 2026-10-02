@@ -95,7 +95,10 @@ def test_normalized_input_identity_remains_usable_and_nonretryable():
     ledger.begin(_intent(" A "))
     ledger.mark_transport_failure(" A ")
     ledger.reconcile_unknown(" A ", broker_order_exists=True)
-    assert ledger.records() == (SubmissionRecord("A", SubmissionState.ACCEPTED, 1),)
+    record, = ledger.records()
+    assert (record.order_id, record.state, record.attempts) == ("A", SubmissionState.ACCEPTED, 1)
+    assert record.intent_fingerprint is not None and len(record.intent_fingerprint) == 64
+    assert ledger.get_for_intent(_intent(" A ")) == record
     assert ledger.get(" A ") == ledger.get("A")
     with pytest.raises(ValueError, match="cannot be resubmitted"):
         ledger.begin(_intent(" A "))

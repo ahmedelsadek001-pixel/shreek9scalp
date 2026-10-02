@@ -19,6 +19,15 @@
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
+- A reservation durably binds its original intent identity, symbol, typed
+  direction, exact volume and expected price. Lifecycle outcome, fill and
+  presence decisions reject a substituted intent before changing state,
+  including after journal restoration and regardless of fill tolerances.
+  Legacy journals retain their original bytes/checksums but have no intent
+  binding; intent-scoped lifecycle decisions remain blocked for those records.
+  This consistency fingerprint and journal checksum do not authenticate broker
+  evidence or authorize execution. Low-level identity-only ledger transitions
+  still require explicit, independently verified outcome/presence evidence.
 - Every stored ledger key must equal its record's canonical order identity.
   Reads, reservations, transitions and journal/recovery snapshots reject a
   mismatched or aliased identity before it can hide a prior transport attempt.

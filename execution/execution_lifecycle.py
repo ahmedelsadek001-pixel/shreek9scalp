@@ -35,7 +35,7 @@ class ExecutionLifecycleCoordinator:
     def apply_outcome(self,intent:OrderIntent,outcome:BrokerOutcomeDecision)->LifecycleDecision:
         if not isinstance(intent,OrderIntent): raise ValueError("intent must be OrderIntent")
         self._validate_outcome(outcome)
-        current=self.ledger.get(intent.order_id)
+        current=self.ledger.get_for_intent(intent)
         if current is None or current.state is not SubmissionState.IN_FLIGHT:
             raise ValueError("intent has no in-flight submission")
         if outcome.outcome is BrokerOutcome.ACCEPTED:
@@ -50,7 +50,7 @@ class ExecutionLifecycleCoordinator:
 
     def reconcile(self,intent:OrderIntent,report:ExecutionReport,*,price_tolerance:float=0.0,volume_tolerance:float=0.0)->ReconciliationResult:
         if not isinstance(intent,OrderIntent): raise ValueError("intent must be OrderIntent")
-        current=self.ledger.get(intent.order_id)
+        current=self.ledger.get_for_intent(intent)
         if current is None or current.state not in (SubmissionState.ACCEPTED,SubmissionState.UNKNOWN):
             raise ValueError("intent is not eligible for reconciliation")
         result=reconcile_execution(intent,report,price_tolerance=price_tolerance,volume_tolerance=volume_tolerance)
@@ -64,7 +64,7 @@ class ExecutionLifecycleCoordinator:
         """Resolve UNKNOWN only from an explicit exact-identity broker query."""
         if not isinstance(intent,OrderIntent): raise ValueError("intent must be OrderIntent")
         if type(broker_order_exists) is not bool: raise ValueError("broker_order_exists must be bool")
-        current=self.ledger.get(intent.order_id)
+        current=self.ledger.get_for_intent(intent)
         if current is None or current.state is not SubmissionState.UNKNOWN:
             raise ValueError("intent is not awaiting broker presence reconciliation")
         record=self.ledger.reconcile_unknown(intent.order_id,broker_order_exists=broker_order_exists)
