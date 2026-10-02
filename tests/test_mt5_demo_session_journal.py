@@ -2,6 +2,7 @@ import json
 from hashlib import sha256
 import sqlite3
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -12,6 +13,7 @@ from execution.mt5_demo_session_report_cli import inspect_sessions, main as repo
 from execution.mt5_demo_ledger_preflight import ledger_session_blockers
 from test_mt5_demo_transport import CONFIG, FakeMT5, ORDER
 from execution.mt5_demo_transport import submit_demo_order
+from execution.mt5_demo_handover import assess_handover
 
 
 def _env(monkeypatch):
@@ -200,6 +202,103 @@ def test_offline_report_bounds_sessions_and_preserves_uncertain_submission(tmp_p
             session["accepted_observations"]) == (2, 1, 1, 0)
     assert session["last_result"]["sent"] and not session["last_result"]["accepted"]
     assert path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.fixture
+def timed_session(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    for _ in range(2):
+        journal.record(DemoAutoResult(False, False, False, "no signal"))
+    journal.finish("watch_expired")
+    start = datetime.now(timezone.utc) - timedelta(minutes=5)
+    with sqlite3.connect(journal.path) as db:
+        db.execute("UPDATE sessions SET started_at=?, ended_at=?",
+                   (start.isoformat(), (start + timedelta(seconds=30)).isoformat()))
+        events = db.execute("SELECT event_id FROM scan_events ORDER BY event_id").fetchall()
+        for index, (event_id,) in enumerate(events, 1):
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=?",
+                       ((start + timedelta(seconds=10 * index)).isoformat(), event_id))
+    return ledger, journal, start
+
+
+@pytest.mark.parametrize("fault", [
+    "end_before_start", "scan_before_start", "scan_after_end", "scan_time_reversed",
+    "future_session", "future_end", "future_active_scan", "naive_start", "naive_end",
+    "naive_scan", "invalid_start", "invalid_scan", "unrepresentable_utc",
+])
+def test_inconsistent_session_chronology_blocks_report_and_handover(timed_session, fault, capsys):
+    ledger, journal, start = timed_session
+    with sqlite3.connect(journal.path) as db:
+        if fault == "end_before_start":
+            db.execute("UPDATE sessions SET ended_at=?", ((start - timedelta(seconds=1)).isoformat(),))
+        elif fault in ("scan_before_start", "scan_after_end", "scan_time_reversed"):
+            event, seconds = {"scan_before_start": (1, -1), "scan_after_end": (2, 31),
+                              "scan_time_reversed": (1, 25)}[fault]
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=?",
+                       ((start + timedelta(seconds=seconds)).isoformat(), event))
+        elif fault == "future_session":
+            future = datetime.now(timezone.utc) + timedelta(days=1)
+            db.execute("UPDATE sessions SET started_at=?, ended_at=?",
+                       (future.isoformat(), (future + timedelta(seconds=30)).isoformat()))
+            db.execute("UPDATE scan_events SET recorded_at=?", ((future + timedelta(seconds=10)).isoformat(),))
+        elif fault == "future_end":
+            db.execute("UPDATE sessions SET ended_at=?",
+                       ((datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),))
+        elif fault == "future_active_scan":
+            db.execute("UPDATE sessions SET ended_at=NULL, end_reason=NULL")
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=2",
+                       ((datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),))
+        elif fault in ("naive_start", "naive_end"):
+            column = "started_at" if fault == "naive_start" else "ended_at"
+            db.execute(f"UPDATE sessions SET {column}=?", (start.replace(tzinfo=None).isoformat(),))
+        elif fault == "naive_scan":
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=1",
+                       ((start + timedelta(seconds=10)).replace(tzinfo=None).isoformat(),))
+        elif fault == "invalid_start":
+            db.execute("UPDATE sessions SET started_at='private-timestamp-details'")
+        elif fault == "invalid_scan":
+            db.execute("UPDATE scan_events SET recorded_at='private-timestamp-details' WHERE event_id=1")
+        else:
+            db.execute("UPDATE sessions SET started_at='0001-01-01T00:00:00+14:00'")
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False
+    assert "private-timestamp-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 0, "report": {"verified_demo": True, "attempts": []}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("same_scan_instant", [False, True])
+def test_valid_session_chronology_normalizes_offsets_without_changing_journal(
+        timed_session, completed, same_scan_instant):
+    ledger, journal, start = timed_session
+    first = start + timedelta(seconds=10)
+    second = first if same_scan_instant else start + timedelta(seconds=20)
+    with sqlite3.connect(journal.path) as db:
+        db.execute("UPDATE sessions SET started_at=?, ended_at=?, end_reason=?",
+                   (start.astimezone(timezone(timedelta(hours=3))).isoformat(),
+                    (start + timedelta(seconds=30)).astimezone(timezone(timedelta(hours=5, minutes=30))).isoformat()
+                    if completed else None, "watch_expired" if completed else None))
+        db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=1",
+                   (first.astimezone(timezone(timedelta(hours=-8))).isoformat(),))
+        db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=2",
+                   (second.isoformat().replace("+00:00", "Z"),))
+    before = journal.path.read_bytes()
+    report = inspect_sessions(ledger)
+    session, = report["sessions"]
+    assert report["journal_readable"] is True
+    assert session["scans"] == 2 and session["end_recorded"] is completed
+    assert session["submission_observations"] == session["accepted_observations"] == 0
+    assert journal.path.read_bytes() == before and not ledger.exists()
 
 
 def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tmp_path):

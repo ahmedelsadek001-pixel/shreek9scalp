@@ -142,6 +142,13 @@ still be running, the process may have been killed, or the session may predate
 end tracking. It does not prove a crash. Submission counts are local
 observations, not independently verified fills or profitability evidence.
 
+Session and scan timestamps must include a timezone. The read-only report
+compares them in UTC and blocks malformed timestamps, future observations,
+session ends before their starts, and scans outside the session interval or
+moving backwards in event order. Equal scan times and sessions without an end
+record remain readable. A blocked chronology requires inspection of the local
+journal and host clock; the report does not rewrite either.
+
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
 

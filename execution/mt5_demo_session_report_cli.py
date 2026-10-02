@@ -3,11 +3,24 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sqlite3
 
 from execution.strategy_diagnostics import bounded_diagnostics
+
+
+def _utc_timestamp(value: str) -> datetime:
+    try:
+        if type(value) is not str:
+            raise ValueError
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00" if value.endswith("Z") else value)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            raise ValueError
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError("invalid DEMO session timestamp") from None
 
 
 def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
@@ -27,13 +40,24 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
         has_diagnostics = db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='strategy_scan_diagnostics'"
         ).fetchone() is not None
+        observed_at = datetime.now(timezone.utc)
         sessions = []
         for session_id, started_at, execute, minutes, ended_at, end_reason in rows:
+            started = _utc_timestamp(started_at)
+            ended = _utc_timestamp(ended_at) if ended_at is not None else None
+            if started > observed_at or (ended is not None and not started <= ended <= observed_at):
+                raise ValueError("invalid DEMO session chronology")
+            previous = started
+            ceiling = ended if ended is not None else observed_at
             counts = {"scans": 0, "signals": 0, "submission_observations": 0, "accepted_observations": 0}
             last_at = last_result = None
             for recorded_at, raw in db.execute(
                     "SELECT recorded_at, result_json FROM scan_events WHERE session_id=? ORDER BY event_id",
                     (session_id,)):
+                recorded = _utc_timestamp(recorded_at)
+                if not previous <= recorded <= ceiling:
+                    raise ValueError("invalid DEMO scan chronology")
+                previous = recorded
                 result = json.loads(raw)
                 if (not isinstance(result, dict)
                         or set(result) != {"signal_detected", "sent", "accepted", "reason",
