@@ -204,6 +204,10 @@ report before closing volume or net amounts are calculated, even when the
 repeated rows differ. Distinct deal tickets may share one broker order; valid
 split fills and partial closes remain observable. Deal ticket uniqueness is
 defined in the [MetaQuotes deal properties](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties).
+This uniqueness check also spans all ledger attempts in one report: reusing
+an opening or exit deal ticket under a different position or order blocks the
+entire report. Consistent copies between the order and position queries for
+one attempt are still compared as the same deal, without counting it twice.
 Failure to close the history inspection session overrides every result,
 including earlier refusals or an empty ledger. The report returns
 `verified_demo=false`, no attempts and `DEMO history shutdown failed` without

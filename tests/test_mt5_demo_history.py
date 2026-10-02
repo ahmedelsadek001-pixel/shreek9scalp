@@ -314,6 +314,38 @@ def test_distinct_ledger_order_bindings_preserve_independent_results(tmp_path, s
 
 
 @pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("collision", ["opening", "closing", "cross_entry"])
+def test_deal_ticket_cannot_be_reused_by_independent_ledger_positions(tmp_path, side, collision):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    second_opening = replace(opened, ticket=458, order=9003, position_id=772)
+    second_close = replace(closed, ticket=459, order=9004, position_id=772)
+    if collision == "opening":
+        second_opening = replace(second_opening, ticket=opened.ticket)
+    else:
+        second_close = replace(second_close, ticket=closed.ticket if collision == "closing"
+                               else opened.ticket)
+    _copy_history_attempt(ledger, second_opening.order, second_opening.ticket)
+    histories = {opened.order: (opened, closed), second_opening.order: (second_opening, second_close)}
+
+    def history(*, ticket=None, position=None):
+        if ticket is not None:
+            return (histories[ticket][0],)
+        return tuple(reversed(histories[opened.order if position == opened.position_id
+                                      else second_opening.order]))
+
+    api.history_deals_get = history
+    before = ledger.read_bytes()
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "broker deal ticket reused across DEMO ledger attempts"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+    assert ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
 @pytest.mark.parametrize("entry", [
     pytest.param(2, id="reversal"),
     pytest.param(3, id="close_by"),

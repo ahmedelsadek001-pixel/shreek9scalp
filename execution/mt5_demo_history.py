@@ -103,6 +103,7 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
         fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
         observed_order_ids: set[int] = set()
+        observed_deal_tickets: set[int] = set()
         for (account_hash, intent_id, status, order_id, deal_id, symbol, side,
              volume, reserved_at, source_kind, bound_offset) in rows:
             if (account_hash != fingerprint or status not in ("UNKNOWN", "ACCEPTED")
@@ -176,6 +177,9 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                 tickets = [d["ticket"] for d in deals]
                 if len(set(tickets)) != len(tickets):
                     return refused("duplicate broker deal ticket in position history")
+                if observed_deal_tickets.intersection(tickets):
+                    return refused("broker deal ticket reused across DEMO ledger attempts")
+                observed_deal_tickets.update(tickets)
                 opening_time = min(datetime.fromisoformat(d["time_utc"]) for d in opening_info)
                 if any(not opening_time <= datetime.fromisoformat(d["time_utc"]) <=
                        datetime.now(timezone.utc) + timedelta(seconds=1) for d in deals):
