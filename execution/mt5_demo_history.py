@@ -164,6 +164,9 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                          and getattr(d, "symbol", None) == symbol]
                 if any(d is None for d in deals):
                     return refused("broker deal metadata incomplete")
+                if any(d["entry"] not in (api.DEAL_ENTRY_IN, api.DEAL_ENTRY_OUT)
+                       for d in deals):
+                    return refused("unsupported broker position transition; reconcile broker history")
                 # Split fills may share an order, but every deal ticket is unique.
                 tickets = [d["ticket"] for d in deals]
                 if len(set(tickets)) != len(tickets):

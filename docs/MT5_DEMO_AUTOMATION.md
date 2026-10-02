@@ -190,6 +190,10 @@ fills may be returned in a different order without blocking the report.
 An exit deal must have the direction opposite to the bound opening. Same-side
 or unsupported exit types, or missing/ambiguous direction constants, block
 the report before closing volume or net amounts are calculated.
+Only ordinary `DEAL_ENTRY_IN` and `DEAL_ENTRY_OUT` transitions are accounted for.
+A reversal (`DEAL_ENTRY_INOUT`), close-by (`DEAL_ENTRY_OUT_BY`) or unknown entry
+blocks the entire report and requires independent broker reconciliation before
+reporting a partial/full close or a net amount.
 Repeated deal tickets in the bound position's reported deals block the entire
 report before closing volume or net amounts are calculated, even when the
 repeated rows differ. Distinct deal tickets may share one broker order; valid

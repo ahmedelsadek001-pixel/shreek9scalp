@@ -185,6 +185,55 @@ def _history_fixture_for_side(tmp_path, side):
 
 
 @pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("entry", [
+    pytest.param(2, id="reversal"),
+    pytest.param(3, id="close_by"),
+    pytest.param(99, id="unknown"),
+])
+@pytest.mark.parametrize("ordinary_close", [False, True])
+def test_unsupported_position_transition_blocks_the_entire_history_report(
+        tmp_path, side, entry, ordinary_close):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    transition = replace(closed, ticket=458, order=9003, entry=entry, profit=7.0,
+                         time_msc=closed.time_msc + 1)
+    related = (opened, closed, transition) if ordinary_close else (opened, transition)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else related)
+    sends_before, stops_before = len(api.sends), api.stops
+    ledger_before = ledger.read_bytes()
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "unsupported broker position transition; reconcile broker history"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+    assert ledger.read_bytes() == ledger_before
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("fully_closed", [False, True])
+def test_ordinary_position_transitions_preserve_partial_and_full_reports(
+        tmp_path, side, fully_closed):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    if not fully_closed:
+        closed = replace(closed, volume=.004, profit=.76, commission=-.04)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else (opened, closed))
+    sends_before = len(api.sends)
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo
+    item = report.attempts[0]
+    assert item["status"] == ("closed_observed" if fully_closed else "open_or_partial")
+    assert [deal["entry"] for deal in item["broker_deals"]] == [0, 1]
+    if fully_closed:
+        assert item["realized_net_usd"] == pytest.approx(1.70)
+    else:
+        assert "realized_net_usd" not in item
+    assert item["manual_intervention"] is True
+    assert len(api.sends) == sends_before
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
 @pytest.mark.parametrize("closing_kind", ["same_side", "other_type", "opposite"])
 def test_closing_deal_direction_must_be_opposite_to_bound_opening(tmp_path, side, closing_kind):
     api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
