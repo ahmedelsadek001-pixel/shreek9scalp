@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from dataclasses import replace
 from datetime import datetime, timezone
 import sqlite3
+from types import SimpleNamespace
 import pytest
 
 from execution.mt5_demo_history import inspect_demo_history
@@ -157,6 +158,74 @@ def test_consistent_split_opening_copies_can_be_reordered_between_queries(tmp_pa
     assert item["status"] == "closed_observed"
     assert item["observed_broker_deal_utc_offset_seconds"] == history_offset
     assert item["realized_net_usd"] == pytest.approx(1.70)
+    assert len(api.sends) == sends_before
+
+
+def _history_fixture_for_side(tmp_path, side):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    order = ORDER if side == "BUY" else replace(ORDER, side="SELL", stop_loss=4002, take_profit=3998)
+
+    def check(request):
+        assert request["type"] == (api.ORDER_TYPE_BUY if side == "BUY" else api.ORDER_TYPE_SELL)
+        assert request["sl"] == order.stop_loss and request["tp"] == order.take_profit
+        return SimpleNamespace(retcode=0)
+
+    api.order_check = check
+    assert submit_demo_order(api, CONFIG, order, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) - 2000
+    opening_type = api.DEAL_TYPE_BUY if side == "BUY" else api.DEAL_TYPE_SELL
+    closing_type = api.DEAL_TYPE_SELL if side == "BUY" else api.DEAL_TYPE_BUY
+    opened = Deal(456, 9001, 771, 0, opening_type, .01, 4000.1, 0, -.10, 0, 0, timestamp)
+    closed = Deal(457, 9002, 771, 1, closing_type, .01, 4002 if side == "BUY" else 3998.2,
+                  1.90, -.10, 0, 0, timestamp + 1000, magic=0)
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    return api, ledger, opened, closed
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("closing_kind", ["same_side", "other_type", "opposite"])
+def test_closing_deal_direction_must_be_opposite_to_bound_opening(tmp_path, side, closing_kind):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    if closing_kind == "same_side":
+        closed = replace(closed, type=opened.type)
+    elif closing_kind == "other_type":
+        closed = replace(closed, type=99)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else (opened, closed))
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, CONFIG, ledger)
+    if closing_kind == "opposite":
+        assert report.verified_demo
+        assert report.attempts[0]["status"] == "closed_observed"
+        assert report.attempts[0]["realized_net_usd"] == pytest.approx(1.70)
+        assert report.attempts[0]["manual_intervention"] is True
+    else:
+        assert report.verified_demo is False
+        assert report.attempts == ()
+        assert report.reason == "broker closing direction contradicts DEMO ledger"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("constant", ["missing", "aliased"])
+def test_ambiguous_closing_type_constant_cannot_validate_history(tmp_path, side, constant):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    name = "DEAL_TYPE_SELL" if side == "BUY" else "DEAL_TYPE_BUY"
+    if constant == "missing":
+        setattr(api, name, None)
+    else:
+        setattr(api, name, opened.type)
+        closed = replace(closed, type=opened.type)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else (opened, closed))
+    sends_before = len(api.sends)
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "broker closing direction contradicts DEMO ledger"
     assert len(api.sends) == sends_before
 
 

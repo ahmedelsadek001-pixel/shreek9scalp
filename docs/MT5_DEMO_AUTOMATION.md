@@ -187,6 +187,9 @@ Opening deals must also agree between the order and position history queries:
 a matching ticket with a different symbol, strategy identifier, timestamp,
 volume, price or financial amount blocks the entire report. Consistent split
 fills may be returned in a different order without blocking the report.
+An exit deal must have the direction opposite to the bound opening. Same-side
+or unsupported exit types, or missing/ambiguous direction constants, block
+the report before closing volume or net amounts are calculated.
 Repeated deal tickets in the bound position's reported deals block the entire
 report before closing volume or net amounts are calculated, even when the
 repeated rows differ. Distinct deal tickets may share one broker order; valid

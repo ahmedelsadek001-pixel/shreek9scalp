@@ -177,6 +177,11 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                 closes = [d for d in related if getattr(d, "position_id", None) == position_id
                           and getattr(d, "symbol", None) == symbol
                           and getattr(d, "entry", None) == api.DEAL_ENTRY_OUT]
+                closing_type = (getattr(api, "DEAL_TYPE_SELL", None) if side == "BUY"
+                                else getattr(api, "DEAL_TYPE_BUY", None))
+                if closes and (type(closing_type) is not int or closing_type == expected_type
+                               or any(getattr(d, "type", None) != closing_type for d in closes)):
+                    return refused("broker closing direction contradicts DEMO ledger")
                 closed_volume = sum(getattr(d, "volume", 0) for d in closes)
                 if not isfinite(closed_volume) or closed_volume > volume + 1e-9:
                     return refused("broker closing volume contradicts DEMO ledger")
