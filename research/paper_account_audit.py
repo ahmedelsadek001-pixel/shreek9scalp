@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import io
@@ -183,7 +183,8 @@ def audit_paper_account(manifest_path: str | Path, intents_path: str | Path, fil
             if abs(expected_net - net) > Decimal("0.01"):
                 raise ValueError("net P&L does not reconcile to price, volume and contract")
             slip = abs(entry - requested)
-            delay = int((filled - sent).total_seconds())
+            whole_seconds, subsecond = divmod(filled - sent, timedelta(seconds=1))
+            delay = whole_seconds + (1 if subsecond else 0)
             peak_slip = max(peak_slip, slip)
             peak_delay = max(peak_delay, delay)
             days.add(filled.date())
