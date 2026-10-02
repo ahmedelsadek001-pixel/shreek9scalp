@@ -7,7 +7,8 @@ from execution.operational_guard import OperationalPolicy, OperationalSnapshot
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.quote_safety import evaluate_quote_safety,QuoteSafetyDecision
 from execution.reconciliation import OrderIntent
-from execution.recovery import RecoveryDecision,RecoveryState
+from execution.recovery import ShadowRecovery
+from execution.shadow import ShadowExecution
 from execution.idempotency import IdempotencyLedger
 
 def gate(symbol="XAUUSD"):
@@ -17,7 +18,7 @@ def gate(symbol="XAUUSD"):
         operational_snapshot=OperationalSnapshot(now,now,now,True,True),
         broker_policy=BrokerSafetyPolicy(frozenset({symbol}),1.0,.01,1.0,.5),
         symbol=symbol,spread=.2,volume=.03,slippage=.1,
-        recovery=RecoveryDecision(RecoveryState.CONNECTED,True,"ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=False,
     )
 def intent(): return OrderIntent("Q-1","XAUUSD",Direction.BUY,0.03,2500.0)

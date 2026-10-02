@@ -50,6 +50,12 @@ class ShadowExecution:
     def __init__(self) -> None:
         self._submissions: dict[str, ShadowSubmission] = {}
         self._reports: dict[str, ExecutionReport] = {}
+        self._revision = 0
+
+    @property
+    def state_revision(self) -> int:
+        """Return the monotonic revision used to expire recovery approvals."""
+        return self._revision
 
     def submit_intent(self, intent: OrderIntent) -> ShadowSubmission:
         if not isinstance(intent, OrderIntent):
@@ -60,6 +66,7 @@ class ShadowExecution:
             raise ValueError("duplicate order identity")
         stored = ShadowSubmission(_snapshot_intent(intent))
         self._submissions[intent.order_id] = stored
+        self._revision += 1
         return _public_submission(stored)
 
     def observe(self, report: ExecutionReport) -> ReconciliationResult:
@@ -72,6 +79,7 @@ class ShadowExecution:
         result = reconcile_execution(self._submissions[report.order_id].intent, report)
         if result.matched:
             self._reports[report.order_id] = _snapshot_report(report)
+            self._revision += 1
         return result
 
     def pending_order_ids(self) -> tuple[str, ...]:

@@ -16,6 +16,12 @@
   Matching `RANGE` or `UNKNOWN` labels cannot prove a fill, resolve an unknown
   submission or remove a pending shadow order from the recovery gate.
 - Disconnect/recovery state machine.
+- Recovery approvals are issued only by their owning state machine and are
+  bound to its latest decision plus the current shadow revision. Fabricated,
+  copied, edited or superseded approvals—and an environment gate retained
+  after a shadow submission or reconciliation change—fail before transport.
+  This is an in-process freshness control, not broker evidence or live
+  authority.
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.

@@ -6,13 +6,18 @@ from execution.execution_journal import build_snapshot
 from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.quote_safety import QuoteSafetyDecision
 from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult, reconcile_execution
-from execution.recovery import RecoveryDecision, RecoveryState
+from execution.recovery import ShadowRecovery
 from execution.safety_gate import (
     ExecutionSafetyEvidence,
     derive_execution_safety_evidence,
     evaluate_execution_safety,
     require_execution_safety,
 )
+from execution.shadow import ShadowExecution
+
+
+def _ready_recovery():
+    return ShadowRecovery(ShadowExecution()).admission()
 
 
 def _complete() -> ExecutionSafetyEvidence:
@@ -76,7 +81,7 @@ def test_runtime_artifacts_derive_complete_safety_evidence():
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=journal,
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=_ready_recovery(),
         reconciliation_results=(reconciliation,),
         live_execution_enabled=False,
     )
@@ -90,7 +95,7 @@ def test_runtime_artifacts_fail_closed_on_journal_mismatch_or_live_enabled():
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=object(),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=_ready_recovery(),
         reconciliation_results=(ReconciliationResult(True, ()),),
         live_execution_enabled=True,
     )
@@ -113,7 +118,7 @@ def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=journal,
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=_ready_recovery(),
         reconciliation_results=(ReconciliationResult(True, ()),),
         live_execution_enabled=False,
     )
@@ -136,7 +141,7 @@ def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields)
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=journal,
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=_ready_recovery(),
         reconciliation_results=(ReconciliationResult(True, ()),),
         live_execution_enabled=False,
     )

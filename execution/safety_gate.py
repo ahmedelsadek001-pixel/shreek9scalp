@@ -12,7 +12,7 @@ from execution.execution_journal import JournalSnapshot, validate_snapshot
 from execution.idempotency import IdempotencyLedger
 from execution.quote_safety import QuoteSafetyDecision
 from execution.reconciliation import ReconciliationResult
-from execution.recovery import RecoveryDecision, RecoveryState
+from execution.recovery import RecoveryDecision, RecoveryState, is_recovery_issued
 
 
 @dataclass(frozen=True)
@@ -118,6 +118,7 @@ def derive_execution_safety_evidence(
 
     recovery_ok = (
         isinstance(recovery, RecoveryDecision)
+        and is_recovery_issued(recovery)
         and recovery.state is RecoveryState.CONNECTED
         and type(recovery.can_submit) is bool
         and recovery.can_submit is True

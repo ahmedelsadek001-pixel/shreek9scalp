@@ -39,7 +39,7 @@ def _ready_gate(
         operational_snapshot=OperationalSnapshot(now, now, now, True, True),
         broker_policy=BrokerSafetyPolicy(frozenset({"XAUUSD", "EURUSD"}), 1.0, 0.01, 1.0, 0.5),
         symbol=symbol, spread=0.2, volume=volume, slippage=0.1,
-        recovery=recovery or RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=recovery or ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=False,
     )
 
@@ -63,7 +63,11 @@ def _safe_quote(intent: OrderIntent | None = None):
 def test_rejected_gate_never_invokes_executor() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed"))
-    result = adapter.execute(evaluate_execution_gate(operational=(True, ()), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=True))
+    result = adapter.execute(evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
+        kill_switch_active=True,
+    ))
     assert result.executed is False
     assert result.result is None
     assert result.reasons == ("kill switch active",)
@@ -84,7 +88,7 @@ def test_caller_supplied_positive_layers_cannot_invoke_transport() -> None:
     calls = []
     decision = evaluate_execution_gate(
         operational=(True, ()), broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=False,
     )
     assert decision.allowed
@@ -121,7 +125,7 @@ def test_cloned_rejected_gate_cannot_bypass_kill_switch() -> None:
     calls = []
     rejected = evaluate_execution_gate(
         operational=(True, ()), broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=True,
     )
     cloned = replace(rejected, allowed=True, reasons=())
@@ -137,7 +141,7 @@ def test_cloned_rejected_gate_cannot_bypass_kill_switch() -> None:
 def test_in_place_modified_gate_is_rejected() -> None:
     decision = evaluate_execution_gate(
         operational=(True, ()), broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=True,
     )
     object.__setattr__(decision, "allowed", True)
@@ -161,7 +165,11 @@ def test_malformed_gate_is_fail_closed() -> None:
 def test_internally_inconsistent_allowed_gate_is_fail_closed() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed"))
-    decision = evaluate_execution_gate(operational=(True, ("unexpected reason",)), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=False)
+    decision = evaluate_execution_gate(
+        operational=(True, ("unexpected reason",)), broker=(True, ()),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
+        kill_switch_active=False,
+    )
     result = adapter.execute(decision)
     assert result.executed is False
     assert result.result is None
@@ -267,7 +275,11 @@ def test_intent_aware_execution_rejects_invalid_economics_and_direction(changes)
 def test_intent_aware_rejected_gate_never_reaches_transport() -> None:
     calls: list[OrderIntent] = []
     adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent))
-    rejected = evaluate_execution_gate(operational=(True, ()), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=True)
+    rejected = evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
+        kill_switch_active=True,
+    )
     result = adapter.execute_intent(rejected, _intent())
     assert result.executed is False
     assert result.reasons == ("kill switch active",)

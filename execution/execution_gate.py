@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 
 from execution.broker_safety import BrokerSafetyPolicy, authorize_environment
 from execution.operational_guard import OperationalPolicy, OperationalSnapshot, evaluate_operational_readiness
-from execution.recovery import RecoveryDecision, RecoveryState
+from execution.recovery import RecoveryDecision, RecoveryState, is_recovery_issued
 from execution.decision_provenance import IssuedDecisionRegistry
 
 
@@ -26,28 +26,38 @@ class ExecutionGateDecision:
     _capability: object | None = field(default=None, repr=False, compare=False)
     admitted_symbol: str | None = None
     admitted_volume: float | None = None
+    _recovery: RecoveryDecision | None = field(
+        default=None, repr=False, compare=False)
 
 
 def _issue_decision(
     allowed: bool, reasons: tuple[str, ...], *,
     symbol: str | None = None, volume: float | None = None,
+    recovery: RecoveryDecision | None = None,
 ) -> ExecutionGateDecision:
     """Issue an admission decision with an internal capability for execution."""
     decision = ExecutionGateDecision(
         allowed, reasons, _EXECUTION_ADMISSION_CAPABILITY, symbol, volume,
+        recovery,
     )
-    _ISSUED_DECISIONS.issue(decision, (allowed, reasons, symbol, volume))
+    _ISSUED_DECISIONS.issue(
+        decision, (allowed, reasons, symbol, volume, id(recovery)))
     return decision
 
 
 def is_gate_issued(decision: ExecutionGateDecision) -> bool:
-    """Return whether the decision originated from this gate implementation."""
-    return (isinstance(decision, ExecutionGateDecision)
-            and decision._capability is _EXECUTION_ADMISSION_CAPABILITY
-            and _ISSUED_DECISIONS.is_issued(decision, (
+    """Return whether an issued decision remains valid for consumption."""
+    if (not isinstance(decision, ExecutionGateDecision)
+            or decision._capability is not _EXECUTION_ADMISSION_CAPABILITY
+            or not _ISSUED_DECISIONS.is_issued(decision, (
                 decision.allowed, decision.reasons,
                 decision.admitted_symbol, decision.admitted_volume,
-            )))
+                id(decision._recovery),
+            ))):
+        return False
+    return (not decision.allowed
+            or (decision._recovery is not None
+                and is_recovery_issued(decision._recovery)))
 
 
 def evaluate_execution_gate(
@@ -60,8 +70,9 @@ def evaluate_execution_gate(
     """Combine independent safety decisions with a mandatory kill switch.
 
     Any malformed decision or non-boolean kill-switch value fails closed.
-    This function combines diagnostics supplied by a caller. A positive
-    result is not transport admission: it has no checked symbol or volume.
+    Operational and broker tuples are caller-supplied diagnostics, while the
+    recovery decision must be issued and current. A positive result is not
+    transport admission: it has no checked symbol or volume.
     """
     reasons: list[str] = []
     for name, decision in (("operational", operational), ("broker", broker)):
@@ -84,15 +95,22 @@ def evaluate_execution_gate(
                 reasons.append(f"{name}: rejected without reason")
     if not isinstance(recovery, RecoveryDecision):
         reasons.append("recovery decision malformed")
-    elif type(recovery.can_submit) is not bool or not isinstance(recovery.reason, str):
+    elif (not isinstance(recovery.state, RecoveryState)
+            or type(recovery.can_submit) is not bool
+            or not isinstance(recovery.reason, str)):
         reasons.append("recovery decision malformed")
+    elif not is_recovery_issued(recovery):
+        reasons.append("recovery decision not issued or no longer current")
     elif not recovery.can_submit or recovery.state is not RecoveryState.CONNECTED:
         reasons.append("recovery: execution channel is not ready")
     if type(kill_switch_active) is not bool:
         reasons.append("kill switch state malformed")
     elif kill_switch_active:
         reasons.append("kill switch active")
-    return _issue_decision(not reasons, tuple(reasons))
+    return _issue_decision(
+        not reasons, tuple(reasons),
+        recovery=recovery if isinstance(recovery, RecoveryDecision) else None,
+    )
 
 
 def evaluate_environment_gate(
@@ -131,4 +149,5 @@ def evaluate_environment_gate(
     # the checked symbol and volume so an unrelated intent cannot reuse it.
     return _issue_decision(
         combined.allowed, combined.reasons, symbol=symbol, volume=volume,
+        recovery=recovery if isinstance(recovery, RecoveryDecision) else None,
     )
