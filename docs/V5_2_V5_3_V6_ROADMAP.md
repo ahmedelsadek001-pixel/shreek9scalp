@@ -12,6 +12,9 @@
 ## V5.3 Execution Safety
 - Paper trading and shadow execution.
 - Order reconciliation.
+- Reconciliation accepts only typed `BUY`/`SELL` execution directions.
+  Matching `RANGE` or `UNKNOWN` labels cannot prove a fill, resolve an unknown
+  submission or remove a pending shadow order from the recovery gate.
 - Disconnect/recovery state machine.
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.

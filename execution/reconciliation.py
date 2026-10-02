@@ -89,7 +89,12 @@ def reconcile_execution(
     elif report.symbol != intent.symbol:
         reasons.append("symbol mismatch")
 
-    if not isinstance(intent.direction, Direction) or not isinstance(report.direction, Direction):
+    if (
+        not isinstance(intent.direction, Direction)
+        or intent.direction not in (Direction.BUY, Direction.SELL)
+        or not isinstance(report.direction, Direction)
+        or report.direction not in (Direction.BUY, Direction.SELL)
+    ):
         reasons.append("invalid direction")
     elif report.direction is not intent.direction:
         reasons.append("direction mismatch")
