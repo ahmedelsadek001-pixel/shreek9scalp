@@ -57,6 +57,8 @@ class EvidenceRecord:
                 or self.recorded_at.tzinfo is None
                 or self.recorded_at.utcoffset() is None):
             raise ValueError("recorded_at must be timezone-aware")
+        if self.recorded_at.astimezone(timezone.utc) > datetime.now(timezone.utc):
+            raise ValueError("recorded_at cannot be in the future")
         normalized_sha = _validate_commit_sha(self.commit_sha)
         if self.commit_sha != normalized_sha:
             raise ValueError("evidence commit_sha must be normalized hexadecimal")

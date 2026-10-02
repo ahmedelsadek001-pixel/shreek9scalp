@@ -1,5 +1,6 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 
 import pytest
 
@@ -31,6 +32,20 @@ def test_v6_release_ready_with_complete_provenance():
     decision = evaluate_v6_release(full_bundle(), expected_commit_sha=_COMMIT)
     assert decision.release_ready is True
     assert decision.failures == ()
+
+
+def test_future_operator_approval_refuses_v6_even_with_matching_bundle_digest():
+    original = full_bundle()
+    future = replace(original.records[-1], recorded_at=datetime.now(timezone.utc) + timedelta(days=1))
+    records = original.records[:-1] + (future,)
+    digest = sha256(ReleaseEvidenceBundle._canonical(records).encode("utf-8")).hexdigest()
+    bundle = ReleaseEvidenceBundle(records, digest)
+    decision = evaluate_v6_release(bundle, expected_commit_sha=_COMMIT)
+    assert decision.release_ready is False
+    assert decision.live.authorized is False
+    assert decision.failures == ("evidence bundle integrity validation failed",)
+    with pytest.raises(RuntimeError, match="integrity validation failed"):
+        require_v6_release(bundle, expected_commit_sha=_COMMIT)
 
 
 def test_v6_release_fails_closed_on_failed_evidence():
