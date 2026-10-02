@@ -16,6 +16,10 @@
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
+- Persisted execution records represent prior reservations. `NEW` is invalid
+  in a journal, restored ledger or restart snapshot, even with a matching
+  checksum. A fresh identity starts `IN_FLIGHT`; an existing identity cannot
+  become retryable by resetting its state to `NEW`.
 - Every guarded intent submission requires a quote-freshness and deviation
   decision issued by the quote gate for that intent's exact symbol, side and
   expected price, plus

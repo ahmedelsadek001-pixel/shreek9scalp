@@ -45,3 +45,14 @@ def test_finish_without_inflight_fails_closed():
 def test_finish_rejects_non_terminal_state(state):
     ledger=IdempotencyLedger(); ledger.begin(_intent())
     with pytest.raises(ValueError): ledger.finish("ORD-001",state)
+
+
+def test_reserved_identity_cannot_be_reused_if_state_is_corrupted_to_new():
+    ledger = IdempotencyLedger()
+    intent = _intent()
+    record = ledger.begin(intent)
+    object.__setattr__(record, "state", SubmissionState.NEW)
+    with pytest.raises(ValueError, match="cannot be resubmitted"):
+        ledger.begin(intent)
+    assert ledger.get(intent.order_id) is record
+    assert record.attempts == 1

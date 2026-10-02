@@ -45,7 +45,7 @@ class IdempotencyLedger:
                 raise TypeError("records must contain SubmissionRecord values")
             if not isinstance(record.order_id, str) or not record.order_id.strip():
                 raise ValueError("restored order identity is required")
-            if not isinstance(record.state, SubmissionState):
+            if not isinstance(record.state, SubmissionState) or record.state is SubmissionState.NEW:
                 raise ValueError("restored submission state is invalid")
             if type(record.attempts) is not int or record.attempts < 1:
                 raise ValueError("restored attempts must be a positive integer")
@@ -68,7 +68,8 @@ class IdempotencyLedger:
         order_id = self._identity(intent)
         current = self._records.get(order_id)
         if current is not None:
-            if current.state in (SubmissionState.IN_FLIGHT, SubmissionState.ACCEPTED, SubmissionState.UNKNOWN):
+            if current.state in (SubmissionState.NEW, SubmissionState.IN_FLIGHT,
+                                 SubmissionState.ACCEPTED, SubmissionState.UNKNOWN):
                 raise ValueError(f"order {order_id} cannot be resubmitted from {current.state.value}")
             if current.state is SubmissionState.REJECTED:
                 raise ValueError(f"order {order_id} requires a new identity after rejection")

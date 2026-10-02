@@ -1,5 +1,6 @@
 from core.enums import Direction
-from execution.idempotency import IdempotencyLedger
+import pytest
+from execution.idempotency import IdempotencyLedger, SubmissionState
 from execution.reconciliation import OrderIntent
 from execution.restart_recovery import RecoverySnapshot,snapshot_unresolved,validate_restart
 
@@ -64,3 +65,11 @@ def test_snapshot_unresolved_rejects_corrupt_submission_record():
         assert "malformed submission record" in str(exc)
     else:
         raise AssertionError("corrupt submission record must fail closed")
+
+
+def test_restart_snapshot_refuses_new_state_in_a_previously_reserved_record():
+    ledger = IdempotencyLedger()
+    record = ledger.begin(_i("A"))
+    object.__setattr__(record, "state", SubmissionState.NEW)
+    with pytest.raises(ValueError, match="malformed submission state"):
+        snapshot_unresolved(ledger)

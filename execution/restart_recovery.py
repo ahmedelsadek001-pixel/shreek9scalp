@@ -25,7 +25,7 @@ def snapshot_unresolved(ledger: IdempotencyLedger) -> RecoverySnapshot:
         if not isinstance(record, SubmissionRecord):
             raise ValueError("ledger contains malformed submission record")
         state = getattr(record, "state", None)
-        if not isinstance(state, SubmissionState):
+        if not isinstance(state, SubmissionState) or state is SubmissionState.NEW:
             raise ValueError("ledger contains malformed submission state")
         if state in (SubmissionState.IN_FLIGHT, SubmissionState.UNKNOWN):
             unresolved.append(key)

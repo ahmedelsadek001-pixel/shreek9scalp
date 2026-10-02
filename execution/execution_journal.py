@@ -20,7 +20,7 @@ def build_snapshot(records:tuple[SubmissionRecord,...])->JournalSnapshot:
         if not isinstance(r,SubmissionRecord): raise TypeError("invalid journal record")
         if type(r.order_id) is not str or not r.order_id.strip() or r.order_id != r.order_id.strip():
             raise ValueError("invalid journal order identity")
-        if not isinstance(r.state,SubmissionState):
+        if not isinstance(r.state,SubmissionState) or r.state is SubmissionState.NEW:
             raise ValueError("invalid journal submission state")
         if r.order_id in seen or type(r.attempts) is not int or r.attempts<1:
             raise ValueError("invalid or duplicate journal record")
