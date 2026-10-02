@@ -183,6 +183,10 @@ The history report checks opening deal timestamps against the local reservation
 and reports the observed deal clock offset separately from the stored tick/bar
 offset. An unbound clock or a future/chronologically inconsistent deal blocks
 the report. This read-only check cannot authenticate a broker export by itself.
+Opening deals must also agree between the order and position history queries:
+a matching ticket with a different symbol, strategy identifier, timestamp,
+volume, price or financial amount blocks the entire report. Consistent split
+fills may be returned in a different order without blocking the report.
 Repeated deal tickets in the bound position's reported deals block the entire
 report before closing volume or net amounts are calculated, even when the
 repeated rows differ. Distinct deal tickets may share one broker order; valid

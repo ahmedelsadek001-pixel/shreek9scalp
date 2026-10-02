@@ -107,6 +107,59 @@ def test_unbound_history_clock_or_future_close_refuses_attribution(tmp_path):
     assert "future fill" in inspect_demo_history(api, CONFIG, ledger).reason
 
 
+@pytest.mark.parametrize("field,value", [
+    ("order", 9003), ("type", 1), ("volume", .02), ("price", 4000.2),
+    ("profit", 5), ("commission", -.20), ("swap", -.30), ("fee", -.01),
+    ("symbol", "OTHER.s"), ("magic", 0), ("time_msc", 1),
+])
+def test_opening_metadata_must_agree_between_order_and_position_queries(tmp_path, field, value):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    assert submit_demo_order(api, CONFIG, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) - 2000
+    opened = Deal(456, 9001, 771, 0, 0, .01, 4000.1, 0, -.10, 0, 0, timestamp)
+    inconsistent = replace(opened, **{field: timestamp + value if field == "time_msc" else value})
+    closed = Deal(457, 9002, 771, 1, 1, .01, 4002, 1.90, -.10, 0, 0,
+                  timestamp + 1000, magic=0)
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else (inconsistent, closed))
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "broker position opening history contradicts DEMO ledger"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+
+
+@pytest.mark.parametrize("history_offset", [0, 10800])
+def test_consistent_split_opening_copies_can_be_reordered_between_queries(tmp_path, history_offset):
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert submit_demo_order(api, config, ORDER, ledger).accepted
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000) - 2000 + history_offset * 1000
+    first = Deal(456, 9001, 771, 0, 0, .004, 4000.1, 0, -.04, 0, 0, timestamp)
+    second = Deal(458, 9001, 771, 0, 0, .006, 4000.1, 0, -.06, 0, 0, timestamp + 1)
+    closed = Deal(459, 9002, 771, 1, 1, .01, 4002, 1.90, -.10, 0, 0,
+                  timestamp + 1000, magic=0)
+    api.DEAL_ENTRY_IN = 0
+    api.DEAL_ENTRY_OUT = 1
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (first, second) if ticket is not None else (closed, replace(second), replace(first)))
+    sends_before = len(api.sends)
+    report = inspect_demo_history(api, config, ledger)
+    assert report.verified_demo
+    item = report.attempts[0]
+    assert item["status"] == "closed_observed"
+    assert item["observed_broker_deal_utc_offset_seconds"] == history_offset
+    assert item["realized_net_usd"] == pytest.approx(1.70)
+    assert len(api.sends) == sends_before
+
+
 def test_extra_or_duplicate_opening_deals_refuse_attribution(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     api = FakeMT5()

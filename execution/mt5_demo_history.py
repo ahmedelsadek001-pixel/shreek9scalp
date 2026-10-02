@@ -147,11 +147,18 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                 related = api.history_deals_get(position=position_id)
                 if related is None:
                     return refused("broker position history lookup failed")
-                related_openings = [getattr(d, "ticket", None) for d in related
+                related_openings = [d for d in related
                                     if getattr(d, "position_id", None) == position_id
                                     and getattr(d, "entry", None) == api.DEAL_ENTRY_IN]
+                related_tickets = [getattr(d, "ticket", None) for d in related_openings]
                 if (len(related_openings) != len(opening_tickets)
-                        or set(related_openings) != set(opening_tickets)):
+                        or set(related_tickets) != set(opening_tickets)):
+                    return refused("broker position opening history contradicts DEMO ledger")
+                expected_openings = {d["ticket"]: d for d in opening_info}
+                if any(getattr(d, "symbol", None) != symbol
+                       or getattr(d, "magic", None) != 521000
+                       or _deal_info(d, observed_offset) != expected_openings[d.ticket]
+                       for d in related_openings):
                     return refused("broker position opening history contradicts DEMO ledger")
                 deals = [_deal_info(d, observed_offset) for d in related if getattr(d, "position_id", None) == position_id
                          and getattr(d, "symbol", None) == symbol]
