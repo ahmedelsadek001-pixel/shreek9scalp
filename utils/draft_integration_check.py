@@ -43,10 +43,8 @@ def check_draft_integration(repo: Path, base: str, heads: Sequence[str],
     report.update(base_sha=base, head_shas=list(heads))
     heads = tuple(heads)
     env = {key: value for key, value in os.environ.items()
-           if not key.startswith("GIT_CONFIG_") and key not in {
-               "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
-               "GIT_ALTERNATE_OBJECT_DIRECTORIES", "PYTHONPATH", "PYTEST_ADDOPTS",
-               "PYTEST_PLUGINS"}}
+           if not key.startswith("GIT_") and key not in {
+               "PYTHONPATH", "PYTEST_ADDOPTS", "PYTEST_PLUGINS"}}
     env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                GIT_TERMINAL_PROMPT="0")
 

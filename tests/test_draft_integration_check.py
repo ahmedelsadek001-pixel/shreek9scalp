@@ -79,6 +79,37 @@ def test_conflicting_drafts_block_before_tests(drafts):
     assert git(repo, "status", "--porcelain") == ""
 
 
+@pytest.mark.parametrize("passing_candidate", [False, True])
+def test_inherited_common_directory_does_not_change_source(drafts, monkeypatch, passing_candidate):
+    repo, base, left, right, _ = drafts
+    config = (repo / ".git/config").read_bytes()
+    before = git(repo, "worktree", "list", "--porcelain")
+    (repo / "left_value.py").write_text("VALUE = 777\n")
+    with monkeypatch.context() as inherited:
+        inherited.setenv("GIT_COMMON_DIR", str(repo / ".git"))
+        heads = [left, right] if passing_candidate else [left]
+        report = checker.check_draft_integration(repo, base, heads)
+    assert (repo / ".git/config").read_bytes() == config
+    assert git(repo, "worktree", "list", "--porcelain") == before
+    assert git(repo, "rev-parse", "HEAD") == base
+    assert (repo / "left_value.py").read_text() == "VALUE = 777\n"
+    assert report["pytest_exit_code"] == (0 if passing_candidate else 1)
+    assert report["state"] == ("software_checks_passed" if passing_candidate else "blocked")
+    assert report["release_authorized"] is False
+
+
+def test_inherited_git_trace_does_not_write_outside_verification_clone(drafts, monkeypatch):
+    repo, base, left, right, _ = drafts
+    trace = repo / "caller-trace.log"
+    with monkeypatch.context() as inherited:
+        inherited.setenv("GIT_TRACE", str(trace))
+        report = checker.check_draft_integration(repo, base, [left, right])
+    assert not trace.exists()
+    assert report["state"] == "software_checks_passed"
+    assert report["pytest_exit_code"] == 0
+    assert git(repo, "status", "--porcelain") == ""
+
+
 def test_clone_is_independent_of_borrowed_object_storage(drafts, monkeypatch):
     repo, base, left, right, _ = drafts
     borrowed = repo.parent / "borrowed checkout"

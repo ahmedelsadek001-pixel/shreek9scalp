@@ -42,8 +42,11 @@ clone and are removed after the run. A local mirror preserves remote-tracking
 references, and its detached worktree holds the candidate. It uses copies rather than object
 hardlinks and dissociates borrowed object stores; Git hooks and signing are
 disabled for verification operations. Git network transports are disabled.
-Caller Git configuration overrides and Python search/test-selection overrides
-are excluded from the verification environment.
+All inherited `GIT_*` overrides are excluded from subprocesses before the
+checker supplies its controlled configuration. In particular, `GIT_COMMON_DIR`
+must not redirect clone operations to the caller's repository metadata, and
+`GIT_TRACE` must not write diagnostics outside the disposable clone. Python
+search/test-selection overrides are also excluded.
 
 The tool performs no fetch, push, package installation, broker command or
 release authorization. Unit tests must use mocks/offline data under AGENTS.md.
@@ -53,3 +56,4 @@ broker evidence, recovery, security review and human approval remain separate
 release requirements.
 
 Git reference: [local clone and object-copy options](https://git-scm.com/docs/git-clone).
+See also [Git environment variables](https://git-scm.com/docs/git#_environment_variables).
