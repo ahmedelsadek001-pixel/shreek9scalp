@@ -461,6 +461,92 @@ def test_valid_scan_outcome_shapes_remain_readable_and_unchanged(tmp_path, resul
     assert journal.path.read_bytes() == before and not ledger.exists()
 
 
+@pytest.mark.parametrize("fault", [
+    "hidden_submission", "escaped_sent", "same_sent", "hidden_reason",
+    "hidden_signal_id", "diagnostic_counter", "nested_diagnostic_counter",
+])
+def test_duplicate_json_fields_block_session_report_and_handover(tmp_path, fault, capsys):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=1)
+    journal.record(DemoAutoResult(False, False, False, "no signal",
+                                  strategy_diagnostics=_diagnostics()))
+    journal.finish("watch_expired")
+    with sqlite3.connect(journal.path) as db:
+        event_id, raw = db.execute("SELECT event_id, result_json FROM scan_events").fetchone()
+        if fault == "hidden_submission":
+            earlier = dict(signal_detected=True, sent=True, accepted=True,
+                           reason="accepted", signal_id="a" * 40, broker_order_id=123)
+            ambiguous = json.dumps(earlier)[:-1] + "," + raw[1:]
+        elif fault == "escaped_sent":
+            ambiguous = raw[:-1] + ',"\\u0073ent":true,"sent":false}'
+        elif fault == "same_sent":
+            ambiguous = raw[:-1] + ',"sent":false}'
+        elif fault == "hidden_reason":
+            ambiguous = raw[:-1] + ',"reason":"private-json-details","reason":"no signal"}'
+        elif fault == "hidden_signal_id":
+            ambiguous = raw[:-1] + ',"signal_id":{"private":"private-json-details"},"signal_id":null}'
+        else:
+            diagnostic = db.execute(
+                "SELECT diagnostics_json FROM strategy_scan_diagnostics WHERE event_id=?", (event_id,)
+            ).fetchone()[0]
+            if fault == "diagnostic_counter":
+                ambiguous_diagnostic = diagnostic[:-1] + ',"candidates":4}'
+            else:
+                ambiguous_diagnostic = diagnostic.replace(
+                    '"consolidation_range": 4', '"consolidation_range": 0,"consolidation_range":4')
+            assert ambiguous_diagnostic != diagnostic
+            db.execute("UPDATE strategy_scan_diagnostics SET diagnostics_json=? WHERE event_id=?",
+                       (ambiguous_diagnostic, event_id))
+            ambiguous = raw
+        db.execute("UPDATE scan_events SET result_json=? WHERE event_id=?", (ambiguous, event_id))
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False and report["broker_history_verified"] is False
+    assert "private-json-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 2, "report": {
+                    "verified_demo": False, "attempts": [],
+                    "reason": "durable DEMO ledger unavailable"}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("with_diagnostics", [False, True])
+def test_unique_json_fields_remain_readable_in_any_key_order(tmp_path, with_diagnostics):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=1)
+    journal.record(DemoAutoResult(False, False, False, "no signal",
+                                  strategy_diagnostics=_diagnostics() if with_diagnostics else None))
+    journal.finish("watch_expired")
+    with sqlite3.connect(journal.path) as db:
+        event_id, raw = db.execute("SELECT event_id, result_json FROM scan_events").fetchone()
+        result = json.loads(raw)
+        db.execute("UPDATE scan_events SET result_json=? WHERE event_id=?",
+                   (json.dumps(dict(reversed(list(result.items())))), event_id))
+        if with_diagnostics:
+            diagnostic = db.execute(
+                "SELECT diagnostics_json FROM strategy_scan_diagnostics WHERE event_id=?", (event_id,)
+            ).fetchone()[0]
+            counters = json.loads(diagnostic)
+            db.execute("UPDATE strategy_scan_diagnostics SET diagnostics_json=? WHERE event_id=?",
+                       (json.dumps(dict(reversed(list(counters.items())))), event_id))
+    before = journal.path.read_bytes()
+    report = inspect_sessions(ledger)
+    session, = report["sessions"]
+    assert report["journal_readable"] is True and session["last_result"] == result
+    assert session["submission_observations"] == session["accepted_observations"] == 0
+    if with_diagnostics:
+        assert session["last_strategy_diagnostics"]["counters"] == _diagnostics()
+    else:
+        assert session["last_strategy_diagnostics"] is None
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
 def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     path = ledger.with_suffix(".scans.sqlite3")

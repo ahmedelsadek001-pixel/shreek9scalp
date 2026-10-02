@@ -20,6 +20,15 @@ _SESSION_END_REASONS = frozenset({
 })
 
 
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate DEMO observation field")
+        result[key] = value
+    return result
+
+
 def _valid_scan_result(result: object) -> bool:
     if (not isinstance(result, dict)
             or set(result) != {"signal_detected", "sent", "accepted", "reason",
@@ -100,7 +109,7 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
                 if not previous <= recorded <= ceiling:
                     raise ValueError("invalid DEMO scan chronology")
                 previous = recorded
-                result = json.loads(raw)
+                result = json.loads(raw, object_pairs_hook=_unique_json_object)
                 if not _valid_scan_result(result):
                     raise ValueError("invalid scan observation")
                 counts["scans"] += 1
@@ -118,7 +127,8 @@ def inspect_sessions(ledger: Path, limit: int = 5) -> dict:
                 ).fetchone()
                 if row is not None:
                     diagnostics = {"recorded_at": row[0],
-                                   "counters": bounded_diagnostics(json.loads(row[1]))}
+                                   "counters": bounded_diagnostics(json.loads(
+                                       row[1], object_pairs_hook=_unique_json_object))}
             sessions.append({"session_id": session_id, "started_at": started_at,
                              "execute_requested": execute == 1, "watch_minutes": minutes,
                              "ended_at": ended_at, "end_reason": end_reason,

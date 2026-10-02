@@ -152,7 +152,9 @@ opt-in state, watch duration and paired end markers are also validated before
 output, so malformed metadata cannot become a clean handover. Scan outcomes
 must also preserve `accepted <= sent <= signal_detected`, use a bounded
 single-line reason, bind strategy signals to their generated hash, and attach
-a positive broker order ID only to accepted observations.
+a positive broker order ID only to accepted observations. Duplicate JSON keys
+in scan results or retained diagnostics, including nested counters and escaped
+key spellings, block the report instead of replacing an earlier observation.
 
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
