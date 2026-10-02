@@ -79,6 +79,37 @@ def test_conflicting_drafts_block_before_tests(drafts):
     assert git(repo, "status", "--porcelain") == ""
 
 
+@pytest.mark.parametrize("passing_original", [False, True])
+def test_replacement_refs_cannot_substitute_a_different_draft_tree(drafts, passing_original):
+    repo, base, left, _, _ = drafts
+    git(repo, "checkout", "--quiet", "-b", "passing-object", base)
+    (repo / "left_value.py").write_text("VALUE = 1\n")
+    (repo / "right_value.py").write_text("VALUE = 2\n")
+    passing = commit(repo, "passing original object")
+    git(repo, "checkout", "--quiet", "development")
+    head, replacement = (passing, left) if passing_original else (left, passing)
+    git(repo, "replace", head, replacement)
+    expected_tree = git(repo, "--no-replace-objects", "rev-parse", head + "^{tree}")
+    assert expected_tree != git(repo, "--no-replace-objects", "rev-parse", replacement + "^{tree}")
+    (repo / "left_value.py").write_text("VALUE = 777\n")
+    (repo / "keep.txt").write_text("uncommitted user work\n")
+    before = git(repo, "status", "--porcelain")
+    refs = git(repo, "show-ref")
+    config = (repo / ".git/config").read_bytes()
+    report = checker.check_draft_integration(repo, base, [head])
+    assert report["head_shas"] == [head]
+    assert report["tree_sha"] == expected_tree
+    assert report["pytest_exit_code"] == (0 if passing_original else 1)
+    assert report["state"] == ("software_checks_passed" if passing_original else "blocked")
+    assert report["release_authorized"] is False
+    assert git(repo, "rev-parse", "HEAD") == base
+    assert git(repo, "status", "--porcelain") == before
+    assert git(repo, "show-ref") == refs
+    assert (repo / ".git/config").read_bytes() == config
+    assert (repo / "left_value.py").read_text() == "VALUE = 777\n"
+    assert (repo / "keep.txt").read_text() == "uncommitted user work\n"
+
+
 @pytest.mark.parametrize("passing_candidate", [False, True])
 def test_inherited_common_directory_does_not_change_source(drafts, monkeypatch, passing_candidate):
     repo, base, left, right, _ = drafts

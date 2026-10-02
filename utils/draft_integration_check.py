@@ -46,7 +46,7 @@ def check_draft_integration(repo: Path, base: str, heads: Sequence[str],
            if not key.startswith("GIT_") and key not in {
                "PYTHONPATH", "PYTEST_ADDOPTS", "PYTEST_PLUGINS"}}
     env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
-               GIT_TERMINAL_PROMPT="0")
+               GIT_TERMINAL_PROMPT="0", GIT_NO_REPLACE_OBJECTS="1")
 
     def run(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
         return subprocess.run(args, cwd=cwd, env=env, capture_output=True,

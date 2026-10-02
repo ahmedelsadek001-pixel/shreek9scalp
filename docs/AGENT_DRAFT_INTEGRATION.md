@@ -48,6 +48,11 @@ must not redirect clone operations to the caller's repository metadata, and
 `GIT_TRACE` must not write diagnostics outside the disposable clone. Python
 search/test-selection overrides are also excluded.
 
+The checker sets `GIT_NO_REPLACE_OBJECTS=1` for every subprocess. A mirror can
+copy `refs/replace/*`, which otherwise lets Git substitute different content or
+ancestry under a requested commit SHA. Verification reads the original objects,
+including when committed tests invoke Git; source replacement refs are preserved.
+
 The tool performs no fetch, push, package installation, broker command or
 release authorization. Unit tests must use mocks/offline data under AGENTS.md.
 Running a repository's tests executes its committed test code; review the
@@ -57,3 +62,4 @@ release requirements.
 
 Git reference: [local clone and object-copy options](https://git-scm.com/docs/git-clone).
 See also [Git environment variables](https://git-scm.com/docs/git#_environment_variables).
+Replacement behavior: [git replace](https://git-scm.com/docs/git-replace).
