@@ -101,6 +101,7 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
             return refused("DEMO account changed or disconnected")
         fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
+        observed_order_ids: set[int] = set()
         for (account_hash, intent_id, status, order_id, deal_id, symbol, side,
              volume, reserved_at, source_kind, bound_offset) in rows:
             if (account_hash != fingerprint or status not in ("UNKNOWN", "ACCEPTED")
@@ -115,6 +116,9 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                     or side not in ("BUY", "SELL") or type(volume) not in (int, float)
                     or not isfinite(volume) or volume <= 0):
                 return refused("DEMO ledger identity malformed")
+            if order_id in observed_order_ids:
+                return refused("duplicate broker order binding in DEMO ledger")
+            observed_order_ids.add(order_id)
             opening = api.history_deals_get(ticket=order_id)
             if opening is None:
                 return refused("broker history lookup failed")

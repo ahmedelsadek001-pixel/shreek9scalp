@@ -184,6 +184,66 @@ def _history_fixture_for_side(tmp_path, side):
     return api, ledger, opened, closed
 
 
+def _copy_history_attempt(ledger, broker_order_id, broker_deal_id):
+    with sqlite3.connect(ledger) as db:
+        db.execute(
+            "INSERT INTO attempts SELECT account_hash, ?, status, ?, ?, broker_price, "
+            "symbol, side, volume, stop_loss, take_profit, reserved_at, ?, "
+            "server_utc_offset_seconds FROM attempts",
+            ("second-test-intent", broker_order_id, broker_deal_id, "strategy_experiment"))
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("deal_acknowledged", [False, True])
+def test_duplicate_ledger_order_binding_cannot_repeat_a_broker_result(
+        tmp_path, side, deal_acknowledged):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    _copy_history_attempt(ledger, opened.order, opened.ticket if deal_acknowledged else None)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (opened,) if ticket is not None else (opened, closed))
+    before = ledger.read_bytes()
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "duplicate broker order binding in DEMO ledger"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+    assert ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("fully_closed", [False, True])
+def test_distinct_ledger_order_bindings_preserve_independent_results(tmp_path, side, fully_closed):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    second_opening = replace(opened, ticket=458, order=9003, position_id=772)
+    second_close = replace(closed, ticket=459, order=9004, position_id=772)
+    _copy_history_attempt(ledger, second_opening.order, second_opening.ticket)
+    histories = {opened.order: (opened, closed), second_opening.order: (second_opening, second_close)}
+
+    def history(*, ticket=None, position=None):
+        if ticket is not None:
+            return (histories[ticket][0],)
+        deals = histories[opened.order if position == opened.position_id else second_opening.order]
+        return deals if fully_closed else deals[:1]
+
+    api.history_deals_get = history
+    before = ledger.read_bytes()
+    sends_before = len(api.sends)
+    report = inspect_demo_history(api, CONFIG, ledger)
+    assert report.verified_demo
+    assert len(report.attempts) == 2
+    assert {item["broker_order_id"] for item in report.attempts} == {opened.order, second_opening.order}
+    for item in report.attempts:
+        assert item["status"] == ("closed_observed" if fully_closed else "open_or_partial")
+        if fully_closed:
+            assert item["realized_net_usd"] == pytest.approx(1.70)
+        else:
+            assert "realized_net_usd" not in item
+    assert len(api.sends) == sends_before
+    assert ledger.read_bytes() == before
+
+
 @pytest.mark.parametrize("side", ["BUY", "SELL"])
 @pytest.mark.parametrize("entry", [
     pytest.param(2, id="reversal"),
