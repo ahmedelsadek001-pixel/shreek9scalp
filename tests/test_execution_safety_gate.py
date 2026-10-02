@@ -3,7 +3,7 @@ import pytest
 from core.enums import Direction
 from execution.broker_outcome import BrokerOutcomeDecision, BrokerOutcome
 from execution.execution_journal import build_snapshot
-from execution.idempotency import IdempotencyLedger, SubmissionState
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.quote_safety import QuoteSafetyDecision
 from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult, reconcile_execution
 from execution.recovery import RecoveryDecision, RecoveryState
@@ -108,6 +108,29 @@ def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
     ledger.finish("A", SubmissionState.ACCEPTED)
     journal = build_snapshot(ledger.records())
     ledger._records[storage_key] = ledger._records.pop("A")
+    evidence = derive_execution_safety_evidence(
+        quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
+        outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
+        ledger=ledger,
+        journal=journal,
+        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        reconciliation_results=(ReconciliationResult(True, ()),),
+        live_execution_enabled=False,
+    )
+    assert evidence.idempotency_validated is False
+    assert evidence.journal_integrity_validated is False
+    assert evaluate_execution_safety(evidence).ready is False
+
+
+@pytest.mark.parametrize("invalid_fields", [{"state": "accepted"}, {"attempts": 0}])
+def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields):
+    ledger = IdempotencyLedger()
+    ledger.begin(OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0))
+    ledger.finish("A", SubmissionState.ACCEPTED)
+    journal = build_snapshot(ledger.records())
+    values = dict(order_id="A", state=SubmissionState.ACCEPTED, attempts=1)
+    values.update(invalid_fields)
+    ledger._records["A"] = SubmissionRecord(**values)
     evidence = derive_execution_safety_evidence(
         quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),

@@ -21,6 +21,10 @@
   mismatched or aliased identity before it can hide a prior transport attempt.
   Identity checks inspect the whole ledger; ordinary input whitespace remains
   normalized at the external API boundary.
+- Ledger reads and transitions also require a valid non-`NEW` submission state
+  and a positive integer attempt count. Malformed states and zero, negative,
+  boolean or fractional counters cannot authorize submission or produce a
+  resolved restart snapshot.
 - Persisted execution records represent prior reservations. `NEW` is invalid
   in a journal, restored ledger or restart snapshot, even with a matching
   checksum. A fresh identity starts `IN_FLIGHT`; an existing identity cannot

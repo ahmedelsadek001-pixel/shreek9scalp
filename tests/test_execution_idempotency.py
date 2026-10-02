@@ -52,9 +52,11 @@ def test_reserved_identity_cannot_be_reused_if_state_is_corrupted_to_new():
     intent = _intent()
     record = ledger.begin(intent)
     object.__setattr__(record, "state", SubmissionState.NEW)
-    with pytest.raises(ValueError, match="cannot be resubmitted"):
+    with pytest.raises(ValueError, match="malformed submission state"):
         ledger.begin(intent)
-    assert ledger.get(intent.order_id) is record
+    with pytest.raises(ValueError, match="malformed submission state"):
+        ledger.get(intent.order_id)
+    assert ledger._records[intent.order_id] is record
     assert record.attempts == 1
 
 
@@ -97,3 +99,31 @@ def test_normalized_input_identity_remains_usable_and_nonretryable():
     assert ledger.get(" A ") == ledger.get("A")
     with pytest.raises(ValueError, match="cannot be resubmitted"):
         ledger.begin(_intent(" A "))
+
+
+@pytest.mark.parametrize("invalid_fields", [
+    {"state": "unknown"}, {"state": None}, {"state": SubmissionState.NEW},
+    {"attempts": 0}, {"attempts": True}, {"attempts": 1.5},
+])
+@pytest.mark.parametrize("operation", ["records", "get", "begin", "finish", "reconcile"])
+def test_malformed_record_blocks_ledger_reads_and_transitions(invalid_fields, operation):
+    ledger = IdempotencyLedger()
+    record = ledger.begin(_intent("A"))
+    if operation == "reconcile":
+        record = ledger.mark_transport_failure("A")
+    values = dict(order_id=record.order_id, state=record.state, attempts=record.attempts)
+    values.update(invalid_fields)
+    ledger._records["A"] = SubmissionRecord(**values)
+    before = dict(ledger._records)
+    with pytest.raises(ValueError, match="malformed"):
+        if operation == "records":
+            ledger.records()
+        elif operation == "get":
+            ledger.get("A")
+        elif operation == "begin":
+            ledger.begin(_intent("B"))
+        elif operation == "finish":
+            ledger.finish("A", SubmissionState.ACCEPTED)
+        else:
+            ledger.reconcile_unknown("A", broker_order_exists=False)
+    assert ledger._records == before

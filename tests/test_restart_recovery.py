@@ -91,3 +91,15 @@ def test_recovery_cannot_report_an_identity_different_from_its_record(corruption
     with pytest.raises(ValueError, match="order identity"):
         snapshot_unresolved(ledger)
     assert ledger._records == before
+
+
+@pytest.mark.parametrize("attempts", [0, -1, True, 1.5])
+def test_terminal_record_with_invalid_attempts_cannot_allow_restart(attempts):
+    ledger = IdempotencyLedger()
+    ledger.begin(_i("A"))
+    ledger.finish("A", SubmissionState.ACCEPTED)
+    ledger._records["A"] = SubmissionRecord("A", SubmissionState.ACCEPTED, attempts)
+    before = dict(ledger._records)
+    with pytest.raises(ValueError, match="malformed submission attempts"):
+        snapshot_unresolved(ledger)
+    assert ledger._records == before

@@ -45,3 +45,24 @@ def test_terminal_records_remain_restorable_and_nonretryable(state):
         restored.begin(_i("A"))
     assert restored.records() == before
     assert serialize_snapshot(build_snapshot(restored.records())) == raw
+
+
+@pytest.mark.parametrize("state", [
+    SubmissionState.IN_FLIGHT, SubmissionState.UNKNOWN,
+    SubmissionState.ACCEPTED, SubmissionState.REJECTED,
+])
+def test_valid_prior_attempt_count_survives_restoration_and_transitions(state):
+    ledger = IdempotencyLedger.restore((SubmissionRecord("A", state, 2),))
+    assert ledger.get(" A ").attempts == 2
+    with pytest.raises(ValueError):
+        ledger.begin(_i("A"))
+    if state is SubmissionState.IN_FLIGHT:
+        ledger.finish("A", SubmissionState.ACCEPTED)
+    elif state is SubmissionState.UNKNOWN:
+        ledger.reconcile_unknown("A", broker_order_exists=False)
+    ledger.begin(_i("B"))
+    restored = IdempotencyLedger.restore(deserialize_snapshot(
+        serialize_snapshot(build_snapshot(ledger.records()))).records)
+    assert restored.records() == ledger.records()
+    assert restored.get("A").attempts == 2
+    assert restored.get("B").attempts == 1

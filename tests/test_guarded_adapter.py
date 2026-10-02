@@ -16,7 +16,7 @@ from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.reconciliation import ExecutionReport, OrderIntent
 from execution.recovery import RecoveryDecision, RecoveryState, ShadowRecovery
 from execution.quote_safety import evaluate_quote_safety
-from execution.idempotency import IdempotencyLedger, SubmissionState
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.shadow import ShadowExecution
 from core.enums import Direction
 from security.release_security_gate import scan_source
@@ -211,6 +211,31 @@ def test_misplaced_prior_identity_blocks_replay_before_offline_executor(state):
     assert not result.executed
     assert result.result is None
     assert "order identity" in " ".join(result.reasons)
+    assert calls == []
+    assert ledger._records == before
+
+
+@pytest.mark.parametrize("invalid_fields", [
+    {"state": "unknown"}, {"state": None}, {"state": 7},
+    {"attempts": 0}, {"attempts": True}, {"attempts": 1.5},
+])
+def test_malformed_ledger_record_never_reaches_offline_executor(invalid_fields):
+    intent = _intent()
+    ledger = IdempotencyLedger()
+    ledger.begin(intent)
+    record = ledger.mark_transport_failure(intent.order_id)
+    values = dict(order_id=record.order_id, state=record.state, attempts=record.attempts)
+    values.update(invalid_fields)
+    ledger._records[intent.order_id] = SubmissionRecord(**values)
+    if "attempts" in invalid_fields:
+        intent = replace(intent, order_id="ORD-002")
+    before = dict(ledger._records)
+    calls = []
+    adapter = GuardedExecutionAdapter(lambda received: calls.append(received), ledger)
+    result = adapter.execute_intent(_ready_gate(), intent, _safe_quote(intent))
+    assert not result.executed
+    assert result.result is None
+    assert "malformed" in " ".join(result.reasons)
     assert calls == []
     assert ledger._records == before
 
