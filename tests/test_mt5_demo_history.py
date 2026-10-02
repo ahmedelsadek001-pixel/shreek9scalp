@@ -193,6 +193,75 @@ def _copy_history_attempt(ledger, broker_order_id, broker_deal_id):
             ("second-test-intent", broker_order_id, broker_deal_id, "strategy_experiment"))
 
 
+def _split_history_fixture(tmp_path, side, history_offset):
+    api, ledger, opened, closed = _history_fixture_for_side(tmp_path, side)
+    config = replace(CONFIG, server_utc_offset_seconds=history_offset)
+    with sqlite3.connect(ledger) as db:
+        db.execute("UPDATE attempts SET server_utc_offset_seconds=?", (history_offset,))
+    opened = replace(opened, time_msc=opened.time_msc + history_offset * 1000)
+    closed = replace(closed, time_msc=closed.time_msc + history_offset * 1000)
+    return api, ledger, config, opened, closed
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("history_offset", [0, 10800])
+@pytest.mark.parametrize("closed_volume", [.006, .01], ids=["partial", "full"])
+def test_close_cannot_consume_a_later_opening_fill(tmp_path, side, history_offset, closed_volume):
+    api, ledger, config, opened, closed = _split_history_fixture(tmp_path, side, history_offset)
+    first = replace(opened, volume=.004, commission=-.04)
+    second = replace(opened, ticket=458, volume=.006, commission=-.06,
+                     time_msc=opened.time_msc + 1500)
+    closed = replace(closed, volume=closed_volume)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (first, second) if ticket is not None else (second, closed, first))
+    before = ledger.read_bytes()
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, config, ledger)
+    assert report.verified_demo is False
+    assert report.attempts == ()
+    assert report.reason == "broker closing chronology contradicts DEMO ledger"
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+    assert ledger.read_bytes() == before
+
+
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+@pytest.mark.parametrize("history_offset", [0, 10800])
+@pytest.mark.parametrize("shape", ["interleaved_partial", "interleaved_full", "same_millisecond"])
+def test_valid_split_fill_chronology_preserves_observations(tmp_path, side, history_offset, shape):
+    api, ledger, config, opened, closed = _split_history_fixture(tmp_path, side, history_offset)
+    first = replace(opened, volume=.004, commission=-.04)
+    second = replace(opened, ticket=458, volume=.006, commission=-.06,
+                     time_msc=opened.time_msc + 1000)
+    if shape == "same_millisecond":
+        related = (first, closed, second)
+    else:
+        early_close = replace(closed, volume=.003,
+                              profit=.76, commission=-.04, time_msc=opened.time_msc + 500)
+        related = (first, early_close, second)
+        if shape == "interleaved_full":
+            related += (replace(closed, ticket=459, order=9003, volume=.007, profit=1.14,
+                                commission=-.06, time_msc=opened.time_msc + 1500),)
+    api.history_deals_get = lambda *, ticket=None, position=None: (
+        (second, first) if ticket is not None else tuple(reversed(related)))
+    before = ledger.read_bytes()
+    sends_before, stops_before = len(api.sends), api.stops
+    report = inspect_demo_history(api, config, ledger)
+    assert report.verified_demo
+    assert len(report.attempts) == 1
+    item = report.attempts[0]
+    assert item["observed_broker_deal_utc_offset_seconds"] == history_offset
+    if shape == "interleaved_partial":
+        assert item["status"] == "open_or_partial"
+        assert "realized_net_usd" not in item
+    else:
+        assert item["status"] == "closed_observed"
+        assert item["realized_net_usd"] == pytest.approx(1.70)
+    assert len(api.sends) == sends_before
+    assert api.stops == stops_before + 1
+    assert ledger.read_bytes() == before
+
+
 @pytest.mark.parametrize("side", ["BUY", "SELL"])
 @pytest.mark.parametrize("deal_acknowledged", [False, True])
 def test_duplicate_ledger_order_binding_cannot_repeat_a_broker_result(

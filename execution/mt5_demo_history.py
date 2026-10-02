@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from itertools import groupby
 from math import isfinite
 from pathlib import Path
 import sqlite3
@@ -192,6 +193,14 @@ def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) ->
                 closed_volume = sum(getattr(d, "volume", 0) for d in closes)
                 if not isfinite(closed_volume) or closed_volume > volume + 1e-9:
                     return refused("broker closing volume contradicts DEMO ledger")
+                available_volume = 0.0
+                # Millisecond timestamps cannot order deals within one instant.
+                # Earlier exits must never borrow volume from a later fill.
+                for _, group in groupby(item["broker_deals"], key=lambda d: d["time_utc"]):
+                    available_volume += sum(d["volume"] if d["entry"] == api.DEAL_ENTRY_IN
+                                            else -d["volume"] for d in group)
+                    if not isfinite(available_volume) or available_volume < -1e-9:
+                        return refused("broker closing chronology contradicts DEMO ledger")
                 item["status"] = ("closed_observed" if abs(closed_volume - volume) < 1e-9
                                   else "open_or_partial")
                 item["manual_intervention"] = any(getattr(d, "magic", None) != 521000 for d in closes)

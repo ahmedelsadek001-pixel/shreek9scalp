@@ -187,6 +187,11 @@ Opening deals must also agree between the order and position history queries:
 a matching ticket with a different symbol, strategy identifier, timestamp,
 volume, price or financial amount blocks the entire report. Consistent split
 fills may be returned in a different order without blocking the report.
+At each normalized broker timestamp, cumulative exits must not exceed the
+opening volume observed by then. An exit that depends on a later opening fill
+blocks the entire report before a partial/full status or net amount is reported.
+Deals sharing a millisecond are checked together because their order is unknown;
+consistent interleaved partial closes and reordered split fills remain supported.
 An exit deal must have the direction opposite to the bound opening. Same-side
 or unsupported exit types, or missing/ambiguous direction constants, block
 the report before closing volume or net amounts are calculated.
