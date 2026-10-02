@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from execution.mt5_demo_clock import fresh_demo_quote_age_ms
+from execution.mt5_demo_clock import (configured_demo_server_utc_offset_seconds,
+                                      fresh_demo_quote_age_ms)
 from test_mt5_demo_transport import CONFIG
 
 
@@ -34,3 +35,16 @@ def test_invalid_broker_tick_timestamp_never_looks_fresh(raw):
     now = datetime.now(timezone.utc)
     config = replace(CONFIG, server_utc_offset_seconds=10800)
     assert fresh_demo_quote_age_ms(SimpleNamespace(time_msc=raw), config, now) is None
+
+
+def test_oversized_broker_timestamp_fails_closed_without_integer_conversion():
+    now = datetime.now(timezone.utc)
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert fresh_demo_quote_age_ms(SimpleNamespace(time_msc=10 ** 10000), config, now) is None
+
+
+@pytest.mark.parametrize("raw", ["010800", "+10800", " 10800", "3600", ""])
+def test_offset_environment_requires_exact_operator_binding(monkeypatch, raw):
+    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", raw)
+    with pytest.raises(ValueError):
+        configured_demo_server_utc_offset_seconds()

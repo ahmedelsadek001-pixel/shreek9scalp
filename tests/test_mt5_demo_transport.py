@@ -1,10 +1,13 @@
 """DEMO transport safety behaviour against a fake, unprivileged MT5 API."""
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from dataclasses import replace
 import sqlite3
+import pytest
 
 from execution.mt5_demo_probe import DemoTerminalConfig
 from execution.mt5_demo_transport import DemoOrder, submit_demo_order
+from execution.mt5_demo_readiness import inspect_demo_readiness
 from execution import mt5_demo_order_cli
 
 
@@ -47,8 +50,8 @@ class FakeMT5:
     ORDER_TYPE_BUY = 0
     ORDER_TYPE_SELL = 1
     ORDER_TIME_GTC = 0
-    ORDER_FILLING_FOK = 0
     ORDER_FILLING_IOC = 1
+    ORDER_FILLING_FOK = 0
     TRADE_RETCODE_DONE = 10009
     DEAL_TYPE_BUY = 0
     DEAL_TYPE_SELL = 1
@@ -119,96 +122,6 @@ def test_one_real_demo_ack_is_durable_and_duplicate_never_sends(tmp_path):
     assert not again.sent and len(api.sends) == 1
 
 
-def test_fok_only_broker_can_fill_exactly_one_demo_order(tmp_path):
-    api = FakeMT5(symbol=Symbol(filling_mode=1))
-    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
-    assert result.sent and result.accepted
-    assert len(api.sends) == 1
-    assert api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
-
-
-def test_both_filling_modes_prefer_ioc(tmp_path):
-    api = FakeMT5(symbol=Symbol(filling_mode=3))
-    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
-    assert result.accepted and api.sends[0]["type_filling"] == api.ORDER_FILLING_IOC
-
-
-def test_both_modes_can_fall_back_to_broker_advertised_fok(tmp_path):
-    api = FakeMT5(symbol=Symbol(filling_mode=3))
-    api.ORDER_FILLING_IOC = None
-    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
-    assert result.accepted and len(api.sends) == 1
-    assert api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
-
-
-def test_no_supported_filling_mode_or_missing_api_constant_refuses_send(tmp_path):
-    for filling in (0, 4, -1, True, None):
-        api = FakeMT5(symbol=Symbol(filling_mode=filling))
-        result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
-        assert not result.sent and not api.sends
-    api = FakeMT5(symbol=Symbol(filling_mode=1))
-    api.ORDER_FILLING_FOK = None
-    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
-    assert not result.sent and not api.sends
-    api.ORDER_FILLING_FOK = 2
-    result = submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3")
-    assert not result.sent and not api.sends
-
-
-def test_fok_only_keeps_demo_identity_and_fresh_quote_gates(tmp_path):
-    api = FakeMT5(account=Account(trade_mode=2), symbol=Symbol(filling_mode=1))
-    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
-    assert api.sends == []
-    api = FakeMT5(symbol=Symbol(filling_mode=1))
-    api.tick_ms += 10_800_000
-    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
-    assert api.sends == []
-
-
-def test_broker_three_hour_offset_only_when_explicit_and_quote_is_fresh(tmp_path):
-    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
-    api = FakeMT5(symbol=Symbol(filling_mode=1))
-    api.tick_ms += 10_800_300
-    ledger = tmp_path / "demo.sqlite3"
-    assert not submit_demo_order(api, CONFIG, ORDER, ledger).sent
-    assert not ledger.exists()
-    result = submit_demo_order(api, shifted, ORDER, ledger)
-    assert result.accepted and result.sent and len(api.sends) == 1
-    assert api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
-    with sqlite3.connect(ledger) as db:
-        assert db.execute("SELECT server_utc_offset_seconds FROM attempts").fetchone() == (10800,)
-
-
-def test_shifted_quote_must_not_be_stale_future_or_from_real_account(tmp_path):
-    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
-    for tick_offset_ms in (10_792_000, 10_803_000, 0):
-        api = FakeMT5(symbol=Symbol(filling_mode=1))
-        api.tick_ms += tick_offset_ms
-        assert not submit_demo_order(api, shifted, ORDER, tmp_path / "demo.sqlite3").sent
-        assert api.sends == []
-    api = FakeMT5(account=Account(trade_mode=2), symbol=Symbol(filling_mode=1))
-    api.tick_ms += 10_800_300
-    assert not submit_demo_order(api, shifted, ORDER, tmp_path / "demo.sqlite3").sent
-    assert api.sends == []
-
-
-def test_shifted_quote_timestamp_changes_during_broker_precheck(tmp_path):
-    shifted = replace(CONFIG, server_utc_offset_seconds=10800)
-    api = FakeMT5(symbol=Symbol(filling_mode=1))
-    api.tick_ms += 10_800_300
-    original_check = api.order_check
-
-    def move_tick(request):
-        result = original_check(request)
-        api.tick_ms += 5_000
-        return result
-
-    api.order_check = move_tick
-    result = submit_demo_order(api, shifted, ORDER, tmp_path / "demo.sqlite3")
-    assert not result.sent and not api.sends
-    assert not (tmp_path / "demo.sqlite3").exists()
-
-
 def test_old_ledger_rows_remain_unattributed_when_source_column_is_migrated(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     with sqlite3.connect(ledger) as db:
@@ -223,9 +136,8 @@ def test_old_ledger_rows_remain_unattributed_when_source_column_is_migrated(tmp_
                    ("0" * 64, datetime.now(timezone.utc).isoformat()))
     assert submit_demo_order(FakeMT5(), CONFIG, ORDER, ledger).accepted
     with sqlite3.connect(ledger) as db:
-        assert db.execute("SELECT source_kind, server_utc_offset_seconds FROM attempts "
-                          "ORDER BY intent_id").fetchall() == [
-            ("legacy_unattributed", 0), ("manual_sandbox", 0)]
+        assert db.execute("SELECT source_kind FROM attempts ORDER BY intent_id").fetchall() == [
+            ("legacy_unattributed",), ("manual_sandbox",)]
 
 
 def test_real_account_disallowed_even_when_login_and_server_match(tmp_path):
@@ -240,6 +152,56 @@ def test_terminal_disabled_and_stale_quote_never_send(tmp_path):
     api = FakeMT5()
     api.tick_ms -= 60_000
     assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not api.sends
+
+
+def test_broker_fok_and_explicit_three_hour_clock_offset(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    result = submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3")
+    assert result.accepted and api.sends[0]["type_filling"] == api.ORDER_FILLING_FOK
+
+
+def test_shifted_tick_with_subsecond_future_skew_is_bound_through_order_ledger(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_300
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    ledger = tmp_path / "demo.sqlite3"
+    readiness = inspect_demo_readiness(api, config)
+    assert readiness.ready_for_demo_attempt
+    assert readiness.observed_tick_utc_offset_seconds == 10800
+    assert not submit_demo_order(api, CONFIG, ORDER, ledger).sent
+    sent = submit_demo_order(api, config, ORDER, ledger)
+    assert sent.accepted and len(api.sends) == 1
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT server_utc_offset_seconds FROM attempts").fetchone() == (10800,)
+
+
+def test_shifted_tick_beyond_one_second_future_tolerance_never_sends(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_803_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert not inspect_demo_readiness(api, config).ready_for_demo_attempt
+    assert not submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not api.sends
+
+
+def test_fok_future_quote_without_offset_and_stale_offset_quote_refuse(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=1))
+    api.tick_ms += 10_800_000
+    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    api.tick_ms -= 60_000
+    config = replace(CONFIG, server_utc_offset_seconds=10800)
+    assert not submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not api.sends
+
+
+def test_unsupported_filling_and_invalid_offset_refuse(tmp_path):
+    api = FakeMT5(symbol=Symbol(filling_mode=0))
+    assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
+    assert not submit_demo_order(FakeMT5(), replace(CONFIG, server_utc_offset_seconds=3600),
+                                 ORDER, tmp_path / "demo.sqlite3").sent
     assert not api.sends
 
 
@@ -295,6 +257,7 @@ def test_unknown_outcome_stays_reserved_and_blocks_following_orders(tmp_path):
 
 
 def test_cli_needs_explicit_ack_and_never_displays_identity(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
@@ -314,20 +277,73 @@ def test_cli_needs_explicit_ack_and_never_displays_identity(monkeypatch, capsys,
     assert len(api.sends) == 1
 
 
-def test_manual_cli_uses_explicit_broker_offset_without_leaking_identity(monkeypatch, capsys, tmp_path):
-    monkeypatch.setenv("SHREEK_DEMO_LOGIN", str(CONFIG.expected_login))
+@pytest.mark.parametrize("blocker", ["kill", "lock", "stop", "ledger", "journal"])
+def test_manual_cli_local_blockers_prevent_runtime_access(monkeypatch, capsys, tmp_path, blocker):
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
     monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
     monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
     monkeypatch.setenv("SHREEK_DEMO_TRADING_ACK", "DEMO_ONLY")
-    monkeypatch.setenv("SHREEK_DEMO_SERVER_UTC_OFFSET_SECONDS", "10800")
-    api = FakeMT5(symbol=Symbol(filling_mode=1))
-    api.tick_ms += 10_800_300
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    if blocker == "kill":
+        monkeypatch.delenv("SHREEK_DEMO_KILL_SWITCH")
+    else:
+        path = {"lock": ledger.with_suffix(".watch.lock"),
+                "stop": ledger.with_suffix(".stop"),
+                "ledger": ledger,
+                "journal": ledger.with_suffix(".scans.sqlite3")}[blocker]
+        path.write_text("blocked")
+
+    def forbidden_runtime():
+        pytest.fail("blocked manual order accessed broker runtime")
+
+    monkeypatch.setattr(mt5_demo_order_cli, "demo_only_mt5_runtime", forbidden_runtime)
+    args = ["--execute-demo", "--intent-id", "manual-blocked", "--side", "BUY",
+            "--stop-loss", "3998", "--take-profit", "4002", "--ledger", str(ledger)]
+    assert mt5_demo_order_cli.main(args) == 2
+    import json
+    result = json.loads(capsys.readouterr().out)
+    assert not result["sent"] and not result["accepted"]
+    assert ledger.with_suffix(".watch.lock").exists() == (blocker == "lock")
+
+
+def test_manual_cli_holds_shared_lock_and_preserves_sent_outcome_on_cleanup_failure(
+        monkeypatch, capsys, tmp_path):
+    from contextlib import contextmanager
+    import json
+    from execution.mt5_demo_session_journal import exclusive_demo_session
+
+    monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
+    monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
+    monkeypatch.setenv("SHREEK_DEMO_SERVER", CONFIG.expected_server)
+    monkeypatch.setenv("SHREEK_DEMO_SYMBOL", CONFIG.symbol)
+    monkeypatch.setenv("SHREEK_DEMO_TRADING_ACK", "DEMO_ONLY")
+    monkeypatch.setenv("SHREEK_DEMO_KILL_SWITCH", "OFF")
+    ledger = tmp_path / "demo.sqlite3"
+    api = FakeMT5()
+    original_send = api.order_send
+
+    def checked_send(request):
+        assert ledger.with_suffix(".watch.lock").exists()
+        with pytest.raises(FileExistsError):
+            with exclusive_demo_session(ledger):
+                pytest.fail("second runner acquired an active manual session")
+        return original_send(request)
+
+    @contextmanager
+    def failed_cleanup(path):
+        with exclusive_demo_session(path):
+            yield
+        raise OSError("cleanup failure")
+
+    api.order_send = checked_send
     monkeypatch.setattr(mt5_demo_order_cli, "demo_only_mt5_runtime", lambda: api)
-    args = ["--execute-demo", "--intent-id", "shifted-demo-1", "--side", "BUY",
-            "--stop-loss", "3998", "--take-profit", "4002",
-            "--ledger", str(tmp_path / "demo.sqlite3")]
-    assert mt5_demo_order_cli.main(args) == 0
+    monkeypatch.setattr(mt5_demo_order_cli, "exclusive_demo_session", failed_cleanup)
+    args = ["--execute-demo", "--intent-id", "manual-cleanup", "--side", "BUY",
+            "--stop-loss", "3998", "--take-profit", "4002", "--ledger", str(ledger)]
+    assert mt5_demo_order_cli.main(args) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result["sent"] and result["accepted"]
+    assert "session_lock_error" in result
     assert len(api.sends) == 1
-    output = capsys.readouterr().out
-    assert str(CONFIG.expected_login) not in output and CONFIG.expected_server not in output

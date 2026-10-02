@@ -5,7 +5,7 @@ Its result expires immediately and the transport independently rechecks all gate
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from math import isfinite
 from typing import Any
@@ -20,7 +20,32 @@ class DemoReadiness:
     blockers: tuple[str, ...]
     symbol: str | None = None
     order_transport_enabled: bool = False
-    server_utc_offset_seconds: int = 0
+    observed_filling_policy: str | None = None
+    observed_tick_utc_offset_seconds: int | None = None
+
+
+def _tick_offset_candidate(tick: Any, config: DemoTerminalConfig, clock: datetime) -> int | None:
+    """Report a fresh supported offset for diagnosis, never grant authority."""
+    matches = [offset for offset in (0, 10800)
+               if fresh_demo_quote_age_ms(
+                   tick, replace(config, server_utc_offset_seconds=offset), clock) is not None]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _filling_policy(symbol: Any) -> str | None:
+    flags = getattr(symbol, "filling_mode", None)
+    if type(flags) is not int or flags < 0:
+        return None
+    return {1: "FOK", 2: "IOC", 3: "FOK+IOC"}.get(flags & 3)
+
+
+def _can_fill(api: Any, symbol: Any) -> bool:
+    flags = getattr(symbol, "filling_mode", None)
+    return (type(flags) is int and flags >= 0 and (
+        (bool(flags & 2) and type(getattr(api, "ORDER_FILLING_IOC", None)) is int
+         and api.ORDER_FILLING_IOC == 1)
+        or (bool(flags & 1) and type(getattr(api, "ORDER_FILLING_FOK", None)) is int
+            and api.ORDER_FILLING_FOK == 0)))
 
 
 def _number(value: Any) -> bool:
@@ -63,7 +88,6 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                 if not _number(getattr(account, "equity", None)) or account.equity <= 0:
                     blockers.append("DEMO equity unavailable")
                 symbol = api.symbol_info(config.symbol)
-                filling_modes = getattr(symbol, "filling_mode", None)
                 if (symbol is None or getattr(symbol, "visible", None) is not True
                         or getattr(symbol, "currency_profit", None) != "USD"
                         or getattr(symbol, "trade_mode", None) != api.SYMBOL_TRADE_MODE_FULL
@@ -75,8 +99,7 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or symbol.volume_min <= 0 or symbol.volume_min > 0.01
                         or symbol.volume_step <= 0
                         or abs(round(0.01 / symbol.volume_step) * symbol.volume_step - 0.01) > 1e-9
-                        or type(filling_modes) is not int or filling_modes < 0
-                        or not (filling_modes & 3)):
+                        or not _can_fill(api, symbol)):
                     blockers.append("DEMO symbol or 0.01-lot FOK/IOC contract unavailable")
                 chart_bid = getattr(api, "SYMBOL_CHART_MODE_BID", 0)
                 if (symbol is None or type(chart_bid) is not int or chart_bid != 0
@@ -102,7 +125,8 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                         or getattr(last_account, "trade_expert", None) is not True):
                     blockers.append("DEMO identity changed during inspection")
                 report = DemoReadiness(not blockers, tuple(blockers), config.symbol,
-                                       False, config.server_utc_offset_seconds)
+                                       observed_filling_policy=_filling_policy(symbol),
+                                       observed_tick_utc_offset_seconds=_tick_offset_candidate(tick, config, clock))
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError):
         report = refused("DEMO inspection failed")
     finally:

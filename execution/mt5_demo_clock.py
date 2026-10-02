@@ -22,12 +22,18 @@ def fresh_demo_quote_age_ms(tick: Any, config: DemoTerminalConfig,
     """Return a bounded quote age, after the explicit server-to-UTC mapping."""
     time_msc = getattr(tick, "time_msc", None)
     offset = getattr(config, "server_utc_offset_seconds", None)
-    if (type(time_msc) not in (int, float) or not isfinite(time_msc)
+    if (type(time_msc) not in (int, float)
             or type(offset) is not int or offset not in (0, 10800)
             or not isinstance(now, datetime) or now.tzinfo is None
             or now.utcoffset() is None):
         return None
-    age = now.timestamp() * 1000 + offset * 1000 - time_msc
+    try:
+        timestamp = float(time_msc)
+    except (OverflowError, ValueError):
+        return None
+    if not isfinite(timestamp):
+        return None
+    age = now.timestamp() * 1000 + offset * 1000 - timestamp
     # Explicitly shifted broker timestamps may lead an NTP-synced PC by less
     # than a second. Never allow a whole-second future skew or an old quote.
     future_tolerance_ms = 1000 if offset else 0

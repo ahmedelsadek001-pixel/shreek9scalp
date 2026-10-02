@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 
 from execution.mt5_demo_signal_audit_cli import audit_m5_bars, main
+from execution.mt5_demo_auto import CONTEXT_BARS
 from research.breakout_retest import ResearchBar
 
 
@@ -43,6 +44,21 @@ def test_live_context_gap_blocks_historical_signal_but_old_gap_does_not():
     assert report["eligible_windows"] == report["confirmed_signal_bars"] == 0
     bars = _bars()
     bars[20] = replace(bars[20], timestamp=bars[20].timestamp + timedelta(minutes=1))
+    assert audit_m5_bars(bars)["confirmed_signal_bars"] == 1
+
+
+def test_audit_keeps_complete_strategy_context_when_latest_33_bars_are_clean():
+    bars = _bars()
+    assert CONTEXT_BARS == 39
+    for i, bar in enumerate(bars[:-35]):
+        bars[i] = replace(bar, timestamp=bar.timestamp - timedelta(minutes=5))
+    report = audit_m5_bars(bars)
+    assert report["skipped_gap_windows"] == 1
+    assert report["eligible_windows"] == report["confirmed_signal_bars"] == 0
+
+    bars = _bars()
+    for i, bar in enumerate(bars[:-CONTEXT_BARS]):
+        bars[i] = replace(bar, timestamp=bar.timestamp - timedelta(minutes=5))
     assert audit_m5_bars(bars)["confirmed_signal_bars"] == 1
 
 

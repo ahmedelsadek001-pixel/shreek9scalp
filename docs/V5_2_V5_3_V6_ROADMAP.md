@@ -17,7 +17,8 @@
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
 - Every guarded intent submission requires a quote-freshness and deviation
-  decision issued by the quote gate for that intent's expected price, plus
+  decision issued by the quote gate for that intent's exact symbol, side and
+  expected price, plus
   an explicit idempotency ledger. A fabricated, missing, or mismatched quote
   and a missing ledger are rejected before transport. Legacy unscoped
   `execute()` calls are blocked, including with an otherwise allowed gate.
