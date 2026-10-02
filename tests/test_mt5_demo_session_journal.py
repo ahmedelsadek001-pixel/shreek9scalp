@@ -2,6 +2,7 @@ import json
 from hashlib import sha256
 import sqlite3
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -12,6 +13,7 @@ from execution.mt5_demo_session_report_cli import inspect_sessions, main as repo
 from execution.mt5_demo_ledger_preflight import ledger_session_blockers
 from test_mt5_demo_transport import CONFIG, FakeMT5, ORDER
 from execution.mt5_demo_transport import submit_demo_order
+from execution.mt5_demo_handover import assess_handover
 
 
 def _env(monkeypatch):
@@ -188,7 +190,8 @@ def test_offline_report_bounds_sessions_and_preserves_uncertain_submission(tmp_p
     older.finish("scan_complete")
     latest = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
     latest.record(DemoAutoResult(False, False, False, "no signal"))
-    latest.record(DemoAutoResult(True, True, False, "submission uncertain; do not retry"))
+    latest.record(DemoAutoResult(True, True, False, "submission uncertain; do not retry",
+                                 "a" * 40))
     latest.finish("submission_attempted")
     path = ledger.with_suffix(".scans.sqlite3")
     before = path.read_bytes()
@@ -202,6 +205,348 @@ def test_offline_report_bounds_sessions_and_preserves_uncertain_submission(tmp_p
     assert path.read_bytes() == before and not ledger.exists()
 
 
+@pytest.fixture
+def timed_session(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    for _ in range(2):
+        journal.record(DemoAutoResult(False, False, False, "no signal"))
+    journal.finish("watch_expired")
+    start = datetime.now(timezone.utc) - timedelta(minutes=5)
+    with sqlite3.connect(journal.path) as db:
+        db.execute("UPDATE sessions SET started_at=?, ended_at=?",
+                   (start.isoformat(), (start + timedelta(seconds=30)).isoformat()))
+        events = db.execute("SELECT event_id FROM scan_events ORDER BY event_id").fetchall()
+        for index, (event_id,) in enumerate(events, 1):
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=?",
+                       ((start + timedelta(seconds=10 * index)).isoformat(), event_id))
+    return ledger, journal, start
+
+
+@pytest.mark.parametrize("fault", [
+    "end_before_start", "scan_before_start", "scan_after_end", "scan_time_reversed",
+    "future_session", "future_end", "future_active_scan", "naive_start", "naive_end",
+    "naive_scan", "invalid_start", "invalid_scan", "unrepresentable_utc",
+])
+def test_inconsistent_session_chronology_blocks_report_and_handover(timed_session, fault, capsys):
+    ledger, journal, start = timed_session
+    with sqlite3.connect(journal.path) as db:
+        if fault == "end_before_start":
+            db.execute("UPDATE sessions SET ended_at=?", ((start - timedelta(seconds=1)).isoformat(),))
+        elif fault in ("scan_before_start", "scan_after_end", "scan_time_reversed"):
+            event, seconds = {"scan_before_start": (1, -1), "scan_after_end": (2, 31),
+                              "scan_time_reversed": (1, 25)}[fault]
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=?",
+                       ((start + timedelta(seconds=seconds)).isoformat(), event))
+        elif fault == "future_session":
+            future = datetime.now(timezone.utc) + timedelta(days=1)
+            db.execute("UPDATE sessions SET started_at=?, ended_at=?",
+                       (future.isoformat(), (future + timedelta(seconds=30)).isoformat()))
+            db.execute("UPDATE scan_events SET recorded_at=?", ((future + timedelta(seconds=10)).isoformat(),))
+        elif fault == "future_end":
+            db.execute("UPDATE sessions SET ended_at=?",
+                       ((datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),))
+        elif fault == "future_active_scan":
+            db.execute("UPDATE sessions SET ended_at=NULL, end_reason=NULL")
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=2",
+                       ((datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),))
+        elif fault in ("naive_start", "naive_end"):
+            column = "started_at" if fault == "naive_start" else "ended_at"
+            db.execute(f"UPDATE sessions SET {column}=?", (start.replace(tzinfo=None).isoformat(),))
+        elif fault == "naive_scan":
+            db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=1",
+                       ((start + timedelta(seconds=10)).replace(tzinfo=None).isoformat(),))
+        elif fault == "invalid_start":
+            db.execute("UPDATE sessions SET started_at='private-timestamp-details'")
+        elif fault == "invalid_scan":
+            db.execute("UPDATE scan_events SET recorded_at='private-timestamp-details' WHERE event_id=1")
+        else:
+            db.execute("UPDATE sessions SET started_at='0001-01-01T00:00:00+14:00'")
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False
+    assert "private-timestamp-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 0, "report": {"verified_demo": True, "attempts": []}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("completed", [False, True])
+@pytest.mark.parametrize("same_scan_instant", [False, True])
+def test_valid_session_chronology_normalizes_offsets_without_changing_journal(
+        timed_session, completed, same_scan_instant):
+    ledger, journal, start = timed_session
+    first = start + timedelta(seconds=10)
+    second = first if same_scan_instant else start + timedelta(seconds=20)
+    with sqlite3.connect(journal.path) as db:
+        db.execute("UPDATE sessions SET started_at=?, ended_at=?, end_reason=?",
+                   (start.astimezone(timezone(timedelta(hours=3))).isoformat(),
+                    (start + timedelta(seconds=30)).astimezone(timezone(timedelta(hours=5, minutes=30))).isoformat()
+                    if completed else None, "watch_expired" if completed else None))
+        db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=1",
+                   (first.astimezone(timezone(timedelta(hours=-8))).isoformat(),))
+        db.execute("UPDATE scan_events SET recorded_at=? WHERE event_id=2",
+                   (second.isoformat().replace("+00:00", "Z"),))
+    before = journal.path.read_bytes()
+    report = inspect_sessions(ledger)
+    session, = report["sessions"]
+    assert report["journal_readable"] is True
+    assert session["scans"] == 2 and session["end_recorded"] is completed
+    assert session["submission_observations"] == session["accepted_observations"] == 0
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.fixture
+def metadata_session(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    journal.record(DemoAutoResult(False, False, False, "no signal"))
+    journal.finish("watch_expired")
+    return ledger, journal
+
+
+@pytest.mark.parametrize("fault", [
+    "invalid_session_id", "non_boolean_execute", "text_execute", "negative_watch",
+    "excessive_watch", "text_watch", "passive_watch", "invalid_end_reason",
+    "missing_end_reason", "dangling_end_reason",
+])
+def test_invalid_session_metadata_blocks_report_without_disclosure(metadata_session, fault, capsys):
+    ledger, journal = metadata_session
+    with sqlite3.connect(journal.path) as db:
+        if fault == "invalid_session_id":
+            db.execute("UPDATE sessions SET session_id='private-session-details'")
+        elif fault == "non_boolean_execute":
+            db.execute("UPDATE sessions SET execute_requested=2")
+        elif fault == "text_execute":
+            db.execute("UPDATE sessions SET execute_requested='private-session-details'")
+        elif fault == "negative_watch":
+            db.execute("UPDATE sessions SET watch_minutes=-1")
+        elif fault == "excessive_watch":
+            db.execute("UPDATE sessions SET watch_minutes=61")
+        elif fault == "text_watch":
+            db.execute("UPDATE sessions SET watch_minutes='private-session-details'")
+        elif fault == "passive_watch":
+            db.execute("UPDATE sessions SET execute_requested=0, watch_minutes=1")
+        elif fault == "invalid_end_reason":
+            db.execute("UPDATE sessions SET end_reason='private-session-details'")
+        elif fault == "missing_end_reason":
+            db.execute("UPDATE sessions SET end_reason=NULL")
+        else:
+            db.execute("UPDATE sessions SET ended_at=NULL, end_reason='private-session-details'")
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False
+    assert "private-session-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 2, "report": {
+                    "verified_demo": False, "attempts": [],
+                    "reason": "durable DEMO ledger unavailable"}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("execute,minutes,completed,reason", [
+    (False, 0, True, "scan_complete"),
+    (True, 0, True, "scan_complete"),
+    (True, 60, True, "watch_expired"),
+    (True, 60, False, None),
+])
+def test_valid_session_metadata_remains_readable_and_unchanged(
+        tmp_path, execute, minutes, completed, reason):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=execute, watch_minutes=minutes)
+    journal.record(DemoAutoResult(False, False, False, "no signal"))
+    if completed:
+        journal.finish(reason)
+    before = journal.path.read_bytes()
+    session, = inspect_sessions(ledger)["sessions"]
+    assert session["execute_requested"] is execute
+    assert session["watch_minutes"] == minutes
+    assert session["end_recorded"] is completed and session["end_reason"] == reason
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("fault", [
+    "accepted_without_sent", "sent_without_signal", "signal_id_without_signal",
+    "missing_signal_id", "object_signal_id", "non_hex_signal_id",
+    "order_without_acceptance", "missing_accepted_order", "object_order",
+    "nonpositive_order", "empty_reason", "overlong_reason", "control_reason",
+])
+def test_invalid_scan_outcome_blocks_report_without_disclosure(metadata_session, fault, capsys):
+    ledger, journal = metadata_session
+    signal_id = "a" * 40
+    with sqlite3.connect(journal.path) as db:
+        event_id, raw = db.execute(
+            "SELECT event_id, result_json FROM scan_events ORDER BY event_id LIMIT 1"
+        ).fetchone()
+        result = json.loads(raw)
+        if fault == "accepted_without_sent":
+            result.update(signal_detected=True, sent=False, accepted=True,
+                          signal_id=signal_id, broker_order_id=123)
+        elif fault == "sent_without_signal":
+            result.update(signal_detected=False, sent=True)
+        elif fault == "signal_id_without_signal":
+            result["signal_id"] = signal_id
+        elif fault == "missing_signal_id":
+            result["signal_detected"] = True
+        elif fault == "object_signal_id":
+            result.update(signal_detected=True,
+                          signal_id={"private": "private-result-details"})
+        elif fault == "non_hex_signal_id":
+            result.update(signal_detected=True, signal_id="not-a-strategy-signal")
+        elif fault == "order_without_acceptance":
+            result["broker_order_id"] = 123
+        elif fault in ("missing_accepted_order", "object_order", "nonpositive_order"):
+            order = {"missing_accepted_order": None,
+                     "object_order": {"private": "private-result-details"},
+                     "nonpositive_order": 0}[fault]
+            result.update(signal_detected=True, sent=True, accepted=True,
+                          signal_id=signal_id, broker_order_id=order)
+        elif fault == "empty_reason":
+            result["reason"] = ""
+        elif fault == "overlong_reason":
+            result["reason"] = "private-result-details" * 10
+        else:
+            result["reason"] = "private-result-details\nsecond-line"
+        db.execute("UPDATE scan_events SET result_json=? WHERE event_id=?",
+                   (json.dumps(result), event_id))
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False
+    assert "private-result-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 2, "report": {
+                    "verified_demo": False, "attempts": [],
+                    "reason": "durable DEMO ledger unavailable"}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("result", [
+    DemoAutoResult(False, False, False, "no unique current closed-bar strategy signal"),
+    DemoAutoResult(True, False, False, "automatic DEMO execution disabled", "a" * 40),
+    DemoAutoResult(True, True, False, "DEMO submission uncertain; do not retry", "a" * 40),
+    DemoAutoResult(True, True, True, "DEMO broker acknowledged; reconcile independently",
+                   "a" * 40, 123),
+])
+def test_valid_scan_outcome_shapes_remain_readable_and_unchanged(tmp_path, result):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=0)
+    journal.record(result)
+    journal.finish("submission_attempted" if result.sent else "scan_complete")
+    before = journal.path.read_bytes()
+    session, = inspect_sessions(ledger)["sessions"]
+    expected = asdict(result)
+    expected.pop("strategy_diagnostics")
+    assert session["last_result"] == expected
+    assert session["signals"] == int(result.signal_detected)
+    assert session["submission_observations"] == int(result.sent)
+    assert session["accepted_observations"] == int(result.accepted)
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("fault", [
+    "hidden_submission", "escaped_sent", "same_sent", "hidden_reason",
+    "hidden_signal_id", "diagnostic_counter", "nested_diagnostic_counter",
+])
+def test_duplicate_json_fields_block_session_report_and_handover(tmp_path, fault, capsys):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=1)
+    journal.record(DemoAutoResult(False, False, False, "no signal",
+                                  strategy_diagnostics=_diagnostics()))
+    journal.finish("watch_expired")
+    with sqlite3.connect(journal.path) as db:
+        event_id, raw = db.execute("SELECT event_id, result_json FROM scan_events").fetchone()
+        if fault == "hidden_submission":
+            earlier = dict(signal_detected=True, sent=True, accepted=True,
+                           reason="accepted", signal_id="a" * 40, broker_order_id=123)
+            ambiguous = json.dumps(earlier)[:-1] + "," + raw[1:]
+        elif fault == "escaped_sent":
+            ambiguous = raw[:-1] + ',"\\u0073ent":true,"sent":false}'
+        elif fault == "same_sent":
+            ambiguous = raw[:-1] + ',"sent":false}'
+        elif fault == "hidden_reason":
+            ambiguous = raw[:-1] + ',"reason":"private-json-details","reason":"no signal"}'
+        elif fault == "hidden_signal_id":
+            ambiguous = raw[:-1] + ',"signal_id":{"private":"private-json-details"},"signal_id":null}'
+        else:
+            diagnostic = db.execute(
+                "SELECT diagnostics_json FROM strategy_scan_diagnostics WHERE event_id=?", (event_id,)
+            ).fetchone()[0]
+            if fault == "diagnostic_counter":
+                ambiguous_diagnostic = diagnostic[:-1] + ',"candidates":4}'
+            else:
+                ambiguous_diagnostic = diagnostic.replace(
+                    '"consolidation_range": 4', '"consolidation_range": 0,"consolidation_range":4')
+            assert ambiguous_diagnostic != diagnostic
+            db.execute("UPDATE strategy_scan_diagnostics SET diagnostics_json=? WHERE event_id=?",
+                       (ambiguous_diagnostic, event_id))
+            ambiguous = raw
+        db.execute("UPDATE scan_events SET result_json=? WHERE event_id=?", (ambiguous, event_id))
+    before = journal.path.read_bytes()
+    with pytest.raises(ValueError):
+        inspect_sessions(ledger)
+    assert report_main(["--ledger", str(ledger)]) == 2
+    printed = capsys.readouterr().out
+    report = json.loads(printed)
+    assert report["journal_readable"] is False and report["broker_history_verified"] is False
+    assert "private-json-details" not in printed
+    envelope = {"independent_broker_export_verified": False,
+                "local_sessions": {"exit_code": 2, "report": report},
+                "broker_history": {"exit_code": 2, "report": {
+                    "verified_demo": False, "attempts": [],
+                    "reason": "durable DEMO ledger unavailable"}}}
+    assert assess_handover(envelope)["state"] == "blocked"
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
+@pytest.mark.parametrize("with_diagnostics", [False, True])
+def test_unique_json_fields_remain_readable_in_any_key_order(tmp_path, with_diagnostics):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=1)
+    journal.record(DemoAutoResult(False, False, False, "no signal",
+                                  strategy_diagnostics=_diagnostics() if with_diagnostics else None))
+    journal.finish("watch_expired")
+    with sqlite3.connect(journal.path) as db:
+        event_id, raw = db.execute("SELECT event_id, result_json FROM scan_events").fetchone()
+        result = json.loads(raw)
+        db.execute("UPDATE scan_events SET result_json=? WHERE event_id=?",
+                   (json.dumps(dict(reversed(list(result.items())))), event_id))
+        if with_diagnostics:
+            diagnostic = db.execute(
+                "SELECT diagnostics_json FROM strategy_scan_diagnostics WHERE event_id=?", (event_id,)
+            ).fetchone()[0]
+            counters = json.loads(diagnostic)
+            db.execute("UPDATE strategy_scan_diagnostics SET diagnostics_json=? WHERE event_id=?",
+                       (json.dumps(dict(reversed(list(counters.items())))), event_id))
+    before = journal.path.read_bytes()
+    report = inspect_sessions(ledger)
+    session, = report["sessions"]
+    assert report["journal_readable"] is True and session["last_result"] == result
+    assert session["submission_observations"] == session["accepted_observations"] == 0
+    if with_diagnostics:
+        assert session["last_strategy_diagnostics"]["counters"] == _diagnostics()
+    else:
+        assert session["last_strategy_diagnostics"] is None
+    assert journal.path.read_bytes() == before and not ledger.exists()
+
+
 def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     path = ledger.with_suffix(".scans.sqlite3")
@@ -210,7 +555,8 @@ def test_legacy_journal_is_readable_and_migrates_without_claiming_session_end(tm
                    "execute_requested INTEGER NOT NULL, watch_minutes INTEGER NOT NULL)")
         db.execute("CREATE TABLE scan_events (event_id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, "
                    "recorded_at TEXT NOT NULL, result_json TEXT NOT NULL)")
-        db.execute("INSERT INTO sessions VALUES ('legacy', '2026-09-29T20:00:00+00:00', 0, 0)")
+        db.execute("INSERT INTO sessions VALUES (?, '2026-09-29T20:00:00+00:00', 0, 0)",
+                   ("a" * 32,))
     before = path.read_bytes()
     session, = inspect_sessions(ledger)["sessions"]
     assert not session["end_recorded"] and session["end_reason"] is None
@@ -244,7 +590,7 @@ def test_session_end_write_failure_stops_and_preserves_accepted_result(monkeypat
     ledger = tmp_path / "demo.sqlite3"
     monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: object())
     monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", lambda *a, **k:
-                        DemoAutoResult(True, True, True, "accepted"))
+                        DemoAutoResult(True, True, True, "accepted", "a" * 40, 123))
     def fail(*args):
         raise sqlite3.OperationalError("disk unavailable")
     monkeypatch.setattr(DemoSessionJournal, "finish", fail)
@@ -265,7 +611,9 @@ def test_runner_records_scan_and_submission_ends(monkeypatch, tmp_path, sent, ac
     ledger = tmp_path / "demo.sqlite3"
     monkeypatch.setattr(mt5_demo_auto_cli, "demo_only_mt5_runtime", lambda: object())
     monkeypatch.setattr(mt5_demo_auto_cli, "scan_and_submit_demo", lambda *a, **k:
-                        DemoAutoResult(sent, sent, accepted, "observed"))
+                        DemoAutoResult(sent, sent, accepted, "observed",
+                                       "a" * 40 if sent else None,
+                                       123 if accepted else None))
     assert mt5_demo_auto_cli.main(["--ledger", str(ledger)]) == (0 if accepted else 2)
     session, = inspect_sessions(ledger)["sessions"]
     assert session["end_reason"] == expected and session["end_recorded"]
@@ -298,3 +646,52 @@ def test_watch_expiry_records_end_and_does_not_sleep(monkeypatch, tmp_path):
     monkeypatch.setattr(mt5_demo_auto_cli.time, "sleep", unexpected)
     assert mt5_demo_auto_cli.main(["--ledger", str(ledger), "--execute-demo-auto", "--watch-minutes", "1"]) == 2
     assert inspect_sessions(ledger)["sessions"][0]["end_reason"] == "watch_expired"
+
+
+def _diagnostics():
+    return dict(schema="shreek.strategy-diagnostics.v1", candidates=4,
+                valid_breakouts=0, returned_signals=0,
+                rejected={"consolidation_range": 4})
+
+
+def test_strategy_diagnostics_survive_later_stale_scan_and_remain_read_only(tmp_path):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    diagnostic = _diagnostics()
+    diagnostic["unknown_private_field"] = "must not persist"
+    journal.record(DemoAutoResult(False, False, False, "no unique current closed-bar strategy signal",
+                                  strategy_diagnostics=diagnostic))
+    journal.record(DemoAutoResult(False, False, False,
+                                  "last completed M5 candle is stale or not yet closed"))
+    before = journal.path.read_bytes()
+    report = inspect_sessions(ledger)["sessions"][0]
+    assert report["last_strategy_diagnostics"]["counters"] == _diagnostics()
+    assert report["scans"] == 2 and report["submission_observations"] == 0
+    assert "strategy_diagnostics" not in report["last_result"]
+    assert "must not persist" not in json.dumps(report)
+    assert journal.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("field,value", [("candidates", True), ("valid_breakouts", -1),
+                                         ("returned_signals", 5),
+                                         ("rejected", {"account_secret": 1})])
+def test_invalid_diagnostics_do_not_write_partial_scan(tmp_path, field, value):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    diagnostic = _diagnostics()
+    diagnostic[field] = value
+    with pytest.raises(ValueError):
+        journal.record(DemoAutoResult(False, False, False, "no signal",
+                                      strategy_diagnostics=diagnostic))
+    assert inspect_sessions(ledger)["sessions"][0]["scans"] == 0
+
+
+def test_corrupt_strategy_diagnostics_block_report(tmp_path, capsys):
+    ledger = tmp_path / "demo.sqlite3"
+    journal = DemoSessionJournal(ledger, execute=True, watch_minutes=60)
+    journal.record(DemoAutoResult(False, False, False, "no signal",
+                                  strategy_diagnostics=_diagnostics()))
+    with sqlite3.connect(journal.path) as db:
+        db.execute("UPDATE strategy_scan_diagnostics SET diagnostics_json='{}'")
+    assert report_main(["--ledger", str(ledger)]) == 2
+    assert not json.loads(capsys.readouterr().out)["journal_readable"]

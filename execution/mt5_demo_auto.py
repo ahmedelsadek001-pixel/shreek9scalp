@@ -43,6 +43,7 @@ class DemoAutoResult:
     reason: str
     signal_id: str | None = None
     broker_order_id: int | None = None
+    strategy_diagnostics: dict | None = None
 
 
 class _DemoSessionShutdownError(RuntimeError):
@@ -110,10 +111,14 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 or symbol_info.chart_mode != chart_mode_bid):
             return refused("automatic DEMO requires Bid-based broker candles")
         bars = _closed_m5_bars(api, config, clock)
+        diagnostics: dict = {}
         signals = detect_breakout_retest(bars, PIP_SIZE, STRATEGY_CONFIG,
-                                         min_signal_index=len(bars) - 1)
+                                         min_signal_index=len(bars) - 1,
+                                         diagnostics=diagnostics)
         if len(signals) != 1 or signals[0].signal_time != bars[-1].timestamp:
-            return refused("no unique current closed-bar strategy signal")
+            return DemoAutoResult(False, False, False,
+                                  "no unique current closed-bar strategy signal",
+                                  strategy_diagnostics=diagnostics)
         signal = signals[0]
         if signal.direction not in (Direction.BUY, Direction.SELL):
             return refused("automatic DEMO signal direction invalid")

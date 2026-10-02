@@ -1,7 +1,9 @@
 import csv
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 import json
+
+import pytest
 
 from research.paper_account_audit import audit_paper_account, FILL_COLUMNS, FILL_COLUMNS_V2, INTENT_COLUMNS
 from core.release_evidence import build_paper_account_evidence
@@ -39,6 +41,65 @@ def _bundle(tmp_path, *, mode="DEMO", count=2):
 
 def _audit(paths):
     return audit_paper_account(*paths, min_trades=2, min_days=2)
+
+
+def _set_fill_delay(paths, seconds, microseconds):
+    with paths[1].open(encoding="utf-8") as stream:
+        sent_times = {row["intent_id"]: datetime.fromisoformat(row["sent_at"])
+                      for row in csv.DictReader(stream)}
+    with paths[2].open(encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    for row in rows:
+        row["filled_at"] = (sent_times[row["intent_id"]]
+                            + timedelta(seconds=seconds, microseconds=microseconds)).isoformat()
+    _write_csv(paths[2], FILL_COLUMNS, rows)
+    manifest = json.loads(paths[0].read_text(encoding="utf-8"))
+    manifest["fills_sha256"] = sha256(paths[2].read_bytes()).hexdigest()
+    paths[0].write_text(json.dumps(manifest), encoding="utf-8")
+
+
+@pytest.mark.parametrize("limit,seconds,microseconds", [
+    (0, 0, 1), (0, 0, 999999), (30, 30, 1), (30, 30, 999999),
+])
+def test_fractional_delay_above_integer_limit_is_rejected(tmp_path, limit, seconds, microseconds):
+    paths = _bundle(tmp_path)
+    _set_fill_delay(paths, seconds, microseconds)
+    report = audit_paper_account(*paths, min_trades=2, min_days=2, max_fill_delay_seconds=limit)
+    assert not report.structurally_reconciled
+    assert not report.eligible_for_external_review
+    assert not report.paper_trading_validated
+    assert report.failures == ("fill delay above policy",)
+    assert report.worst_fill_delay_seconds == limit + 1
+
+
+@pytest.mark.parametrize("limit,seconds,microseconds,reported_delay", [
+    (0, 0, 0, 0), (30, 30, 0, 30), (30, 29, 999999, 30), (30, 0, 1, 1),
+])
+def test_delay_at_or_below_limit_remains_eligible(tmp_path, limit, seconds, microseconds, reported_delay):
+    paths = _bundle(tmp_path)
+    _set_fill_delay(paths, seconds, microseconds)
+    report = audit_paper_account(*paths, min_trades=2, min_days=2, max_fill_delay_seconds=limit)
+    assert report.structurally_reconciled and report.eligible_for_external_review
+    assert report.failures == ()
+    assert not report.paper_trading_validated
+    assert report.worst_fill_delay_seconds == reported_delay
+    assert report.net_pnl == "1.86"
+
+
+def test_cli_refuses_subsecond_breach_with_full_default_sample(tmp_path, monkeypatch, capsys):
+    from research.audit_paper_account import main
+
+    paths = _bundle(tmp_path, count=30)
+    _set_fill_delay(paths, 30, 1)
+    monkeypatch.setattr("sys.argv", ["audit_paper_account", "--manifest", str(paths[0]),
+                                   "--intents", str(paths[1]), "--fills", str(paths[2])])
+    assert main() == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["fill_count"] == 30 and report["trading_days"] == 30
+    assert report["failures"] == ["fill delay above policy"]
+    assert report["worst_fill_delay_seconds"] == 31
+    assert not report["eligible_for_external_review"]
+    assert not report["paper_trading_validated"]
 
 
 def test_reconciled_demo_requires_external_provenance_even_when_structurally_sound(tmp_path):

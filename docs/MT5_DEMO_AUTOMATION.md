@@ -142,6 +142,20 @@ still be running, the process may have been killed, or the session may predate
 end tracking. It does not prove a crash. Submission counts are local
 observations, not independently verified fills or profitability evidence.
 
+Session and scan timestamps must include a timezone. The read-only report
+compares them in UTC and blocks malformed timestamps, future observations,
+session ends before their starts, and scans outside the session interval or
+moving backwards in event order. Equal scan times and sessions without an end
+record remain readable. A blocked chronology requires inspection of the local
+journal and host clock; the report does not rewrite either. Session identity,
+opt-in state, watch duration and paired end markers are also validated before
+output, so malformed metadata cannot become a clean handover. Scan outcomes
+must also preserve `accepted <= sent <= signal_detected`, use a bounded
+single-line reason, bind strategy signals to their generated hash, and attach
+a positive broker order ID only to accepted observations. Duplicate JSON keys
+in scan results or retained diagnostics, including nested counters and escaped
+key spellings, block the report instead of replacing an earlier observation.
+
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
 
@@ -172,3 +186,27 @@ independent out-of-sample and broker export audits pass.
 MetaQuotes references: [closed-bar indices](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py),
 [DEMO account mode](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),
 [DEMO order result](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py).
+
+### Strategy diagnostics during no-signal scans
+
+A fresh, valid scan with no unique current signal now includes
+`strategy_diagnostics` in console JSON. `rejected` counts the first failed
+breakout filter per candidate (range, body, tick volume or outside close),
+and retest failures per evaluated confirmation bar. Counts describe multiple
+historical candidates, not a single current trade or a probability of success.
+`latest_valid_breakout`, when present, contains the most recent qualifying
+breakout's level, direction, time and measured values. A qualifying breakout
+alone does not authorize execution. The detector uses the same conditions
+and returns the same signals with or without diagnostics.
+
+The journal now also persists a bounded projection of diagnostic counters
+in a separate table, atomically with the corresponding scan. The existing
+six-field outcome schema stays compatible with older report readers.
+`--report-local` includes `last_strategy_diagnostics` with its own observation
+time, so later stale scans cannot hide the last actual strategy evaluation.
+Older journals without the table return null. Only known reasons and bounded
+integer counters are persisted; breakout measurements remain console-only.
+Malformed diagnostics block reporting and cannot certify a session. Stale bars and connection failures do not receive strategy
+diagnostics because they never reach the detector. This feature does not
+change strategy thresholds, the M5 freshness window, risk limits or DEMO-only
+submission gates, and does not establish profitable or live-ready trading.
