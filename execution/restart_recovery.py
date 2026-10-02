@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
+from execution.idempotency import IdempotencyLedger, SubmissionState
 
 
 @dataclass(frozen=True)
@@ -14,21 +14,15 @@ class RecoverySnapshot:
 def snapshot_unresolved(ledger: IdempotencyLedger) -> RecoverySnapshot:
     if not isinstance(ledger, IdempotencyLedger):
         raise TypeError("ledger must be IdempotencyLedger")
-    records = getattr(ledger, "_records", None)
-    if not isinstance(records, dict):
-        raise ValueError("ledger storage unavailable")
+    records = ledger.records()
 
     unresolved: list[str] = []
-    for key, record in records.items():
-        if type(key) is not str or not key.strip():
-            raise ValueError("ledger contains malformed order identity")
-        if not isinstance(record, SubmissionRecord):
-            raise ValueError("ledger contains malformed submission record")
+    for record in records:
         state = getattr(record, "state", None)
         if not isinstance(state, SubmissionState) or state is SubmissionState.NEW:
             raise ValueError("ledger contains malformed submission state")
         if state in (SubmissionState.IN_FLIGHT, SubmissionState.UNKNOWN):
-            unresolved.append(key)
+            unresolved.append(record.order_id)
 
     if len(unresolved) != len(set(unresolved)):
         raise ValueError("ledger contains duplicate order identities")

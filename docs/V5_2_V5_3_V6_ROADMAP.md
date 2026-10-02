@@ -16,6 +16,11 @@
 - Execution-quality and slippage analytics.
 - Broker safety policy validation.
 - Duplicate-order protection and fail-closed submission boundaries.
+- Every stored ledger key must equal its record's canonical order identity.
+  Reads, reservations, transitions and journal/recovery snapshots reject a
+  mismatched or aliased identity before it can hide a prior transport attempt.
+  Identity checks inspect the whole ledger; ordinary input whitespace remains
+  normalized at the external API boundary.
 - Persisted execution records represent prior reservations. `NEW` is invalid
   in a journal, restored ledger or restart snapshot, even with a matching
   checksum. A fresh identity starts `IN_FLIGHT`; an existing identity cannot

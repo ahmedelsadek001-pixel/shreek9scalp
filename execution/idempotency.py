@@ -30,8 +30,22 @@ class IdempotencyLedger:
     def __init__(self) -> None:
         self._records: dict[str, SubmissionRecord] = {}
 
+    def _validate_identities(self) -> None:
+        """A misplaced reservation must never look like an unused identity."""
+        records = getattr(self, "_records", None)
+        if not isinstance(records, dict):
+            raise ValueError("ledger storage unavailable")
+        for key, record in records.items():
+            if type(key) is not str or not key.strip() or key != key.strip():
+                raise ValueError("ledger contains malformed order identity")
+            if not isinstance(record, SubmissionRecord):
+                raise ValueError("ledger contains malformed submission record")
+            if type(getattr(record, "order_id", None)) is not str or record.order_id != key:
+                raise ValueError("ledger contains mismatched order identity")
+
     def records(self) -> tuple[SubmissionRecord, ...]:
         """Return an immutable deterministic snapshot of ledger state."""
+        self._validate_identities()
         return tuple(self._records[key] for key in sorted(self._records))
 
     @classmethod
@@ -66,6 +80,7 @@ class IdempotencyLedger:
     def begin(self, intent: OrderIntent) -> SubmissionRecord:
         """Reserve one transport attempt or fail closed on unsafe replay."""
         order_id = self._identity(intent)
+        self._validate_identities()
         current = self._records.get(order_id)
         if current is not None:
             if current.state in (SubmissionState.NEW, SubmissionState.IN_FLIGHT,
@@ -83,6 +98,7 @@ class IdempotencyLedger:
             raise ValueError("order_id is required")
         if not isinstance(state, SubmissionState) or state in (SubmissionState.NEW, SubmissionState.IN_FLIGHT):
             raise ValueError("finish requires accepted, rejected, or unknown state")
+        self._validate_identities()
         current = self._records.get(order_id.strip())
         if current is None or current.state is not SubmissionState.IN_FLIGHT:
             raise ValueError("order has no in-flight submission")
@@ -97,6 +113,7 @@ class IdempotencyLedger:
     def get(self, order_id: str) -> SubmissionRecord | None:
         if not isinstance(order_id, str) or not order_id.strip():
             raise ValueError("order_id is required")
+        self._validate_identities()
         return self._records.get(order_id.strip())
 
     def reconcile_unknown(self, order_id: str, *, broker_order_exists: bool) -> SubmissionRecord:

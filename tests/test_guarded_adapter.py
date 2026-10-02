@@ -16,7 +16,7 @@ from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.reconciliation import ExecutionReport, OrderIntent
 from execution.recovery import RecoveryDecision, RecoveryState, ShadowRecovery
 from execution.quote_safety import evaluate_quote_safety
-from execution.idempotency import IdempotencyLedger
+from execution.idempotency import IdempotencyLedger, SubmissionState
 from execution.shadow import ShadowExecution
 from core.enums import Direction
 from security.release_security_gate import scan_source
@@ -193,6 +193,26 @@ def test_intent_aware_execution_passes_exact_identity_to_executor() -> None:
     assert result.result == "ORD-001"
     assert received == [intent]
     assert received[0] is intent
+
+
+@pytest.mark.parametrize("state", [
+    SubmissionState.ACCEPTED, SubmissionState.REJECTED, SubmissionState.UNKNOWN,
+])
+def test_misplaced_prior_identity_blocks_replay_before_offline_executor(state):
+    intent = _intent()
+    ledger = IdempotencyLedger()
+    ledger.begin(intent)
+    ledger.finish(intent.order_id, state)
+    ledger._records["WRONG-KEY"] = ledger._records.pop(intent.order_id)
+    before = dict(ledger._records)
+    calls = []
+    adapter = GuardedExecutionAdapter(lambda received: calls.append(received), ledger)
+    result = adapter.execute_intent(_ready_gate(), intent, _safe_quote(intent))
+    assert not result.executed
+    assert result.result is None
+    assert "order identity" in " ".join(result.reasons)
+    assert calls == []
+    assert ledger._records == before
 
 
 def test_intent_aware_execution_rejects_malformed_intent_without_transport() -> None:

@@ -1,7 +1,7 @@
 import pytest
 
 from core.enums import Direction
-from execution.idempotency import IdempotencyLedger, SubmissionState
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.reconciliation import OrderIntent
 
 
@@ -56,3 +56,44 @@ def test_reserved_identity_cannot_be_reused_if_state_is_corrupted_to_new():
         ledger.begin(intent)
     assert ledger.get(intent.order_id) is record
     assert record.attempts == 1
+
+
+@pytest.mark.parametrize("corruption", ["moved", "padded", "record", "alias"])
+@pytest.mark.parametrize("operation", ["records", "get", "begin", "finish", "reconcile"])
+def test_ledger_rejects_mismatched_storage_identity_without_mutation(corruption, operation):
+    ledger = IdempotencyLedger()
+    record = ledger.begin(_intent("A"))
+    if operation == "reconcile":
+        record = ledger.mark_transport_failure("A")
+    if corruption == "moved":
+        ledger._records = {"B": record}
+    elif corruption == "padded":
+        ledger._records = {" A ": record}
+    elif corruption == "record":
+        ledger._records = {"A": SubmissionRecord("B", record.state, record.attempts)}
+    else:
+        ledger._records["B"] = record
+    before = dict(ledger._records)
+    with pytest.raises(ValueError, match="order identity"):
+        if operation == "records":
+            ledger.records()
+        elif operation == "get":
+            ledger.get("A")
+        elif operation == "begin":
+            ledger.begin(_intent("C"))
+        elif operation == "finish":
+            ledger.finish("A", SubmissionState.ACCEPTED)
+        else:
+            ledger.reconcile_unknown("A", broker_order_exists=False)
+    assert ledger._records == before
+
+
+def test_normalized_input_identity_remains_usable_and_nonretryable():
+    ledger = IdempotencyLedger()
+    ledger.begin(_intent(" A "))
+    ledger.mark_transport_failure(" A ")
+    ledger.reconcile_unknown(" A ", broker_order_exists=True)
+    assert ledger.records() == (SubmissionRecord("A", SubmissionState.ACCEPTED, 1),)
+    assert ledger.get(" A ") == ledger.get("A")
+    with pytest.raises(ValueError, match="cannot be resubmitted"):
+        ledger.begin(_intent(" A "))

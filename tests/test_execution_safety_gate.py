@@ -99,3 +99,24 @@ def test_runtime_artifacts_fail_closed_on_journal_mismatch_or_live_enabled():
     assert "idempotency" in " ".join(decision.failures)
     assert "journal" in " ".join(decision.failures)
     assert "live execution" in " ".join(decision.failures)
+
+
+@pytest.mark.parametrize("storage_key", ["B", " A "])
+def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
+    ledger = IdempotencyLedger()
+    ledger.begin(OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0))
+    ledger.finish("A", SubmissionState.ACCEPTED)
+    journal = build_snapshot(ledger.records())
+    ledger._records[storage_key] = ledger._records.pop("A")
+    evidence = derive_execution_safety_evidence(
+        quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
+        outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
+        ledger=ledger,
+        journal=journal,
+        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        reconciliation_results=(ReconciliationResult(True, ()),),
+        live_execution_enabled=False,
+    )
+    assert evidence.idempotency_validated is False
+    assert evidence.journal_integrity_validated is False
+    assert evaluate_execution_safety(evidence).ready is False

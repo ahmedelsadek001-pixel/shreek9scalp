@@ -1,6 +1,6 @@
 from core.enums import Direction
 import pytest
-from execution.idempotency import IdempotencyLedger, SubmissionState
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.reconciliation import OrderIntent
 from execution.restart_recovery import RecoverySnapshot,snapshot_unresolved,validate_restart
 
@@ -73,3 +73,21 @@ def test_restart_snapshot_refuses_new_state_in_a_previously_reserved_record():
     object.__setattr__(record, "state", SubmissionState.NEW)
     with pytest.raises(ValueError, match="malformed submission state"):
         snapshot_unresolved(ledger)
+
+
+@pytest.mark.parametrize("corruption", ["moved", "padded", "record", "alias"])
+def test_recovery_cannot_report_an_identity_different_from_its_record(corruption):
+    ledger = IdempotencyLedger()
+    record = ledger.begin(_i("A"))
+    if corruption == "moved":
+        ledger._records = {"B": record}
+    elif corruption == "padded":
+        ledger._records = {" A ": record}
+    elif corruption == "record":
+        ledger._records = {"A": SubmissionRecord("B", record.state, record.attempts)}
+    else:
+        ledger._records["B"] = record
+    before = dict(ledger._records)
+    with pytest.raises(ValueError, match="order identity"):
+        snapshot_unresolved(ledger)
+    assert ledger._records == before
