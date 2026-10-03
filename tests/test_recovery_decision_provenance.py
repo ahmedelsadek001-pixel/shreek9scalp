@@ -10,7 +10,7 @@ from execution.execution_journal import build_snapshot
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.idempotency import IdempotencyLedger, SubmissionState
 from execution.operational_guard import OperationalPolicy, OperationalSnapshot
-from execution.quote_safety import QuoteSafetyDecision, evaluate_quote_safety
+from execution.quote_safety import evaluate_quote_safety
 from execution.reconciliation import ExecutionReport, OrderIntent, reconcile_execution
 from execution.recovery import (
     RecoveryDecision,
@@ -198,7 +198,7 @@ def test_forged_recovery_cannot_validate_runtime_safety_evidence():
     ledger.begin(intent)
     ledger.finish(intent.order_id, SubmissionState.ACCEPTED)
     evidence = derive_execution_safety_evidence(
-        quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
+        quote_decisions=(_safe_quote(intent),),
         outcome_decisions=(BrokerOutcomeDecision(
             BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,

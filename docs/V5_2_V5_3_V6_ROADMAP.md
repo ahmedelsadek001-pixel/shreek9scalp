@@ -66,6 +66,9 @@
 - Issued quote times are detached UTC snapshots. A caller-owned mutable,
   missing or failing timezone offset cannot later make an expired quote appear
   current or escape the quote gate; invalid timing evidence fails closed.
+- Derived V5.3 quote evidence accepts only the exact approval or rejection
+  objects issued by that gate. Manually constructed, copied or edited quote
+  decisions cannot satisfy the execution-safety evidence boundary.
 - Caller-supplied positive operational/broker tuples remain diagnostic only.
   Guarded submission requires a policy-evaluated environment decision for
   the same symbol and volume as the intent, and rechecks quote age at the

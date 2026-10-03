@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
 from execution.execution_journal import JournalSnapshot, validate_snapshot
 from execution.idempotency import IdempotencyLedger
-from execution.quote_safety import QuoteSafetyDecision
+from execution.quote_safety import QuoteSafetyDecision, is_quote_issued
 from execution.reconciliation import ReconciliationResult
 from execution.recovery import RecoveryDecision, RecoveryState, is_recovery_issued
 
@@ -78,6 +78,7 @@ def derive_execution_safety_evidence(
         and bool(quote_decisions)
         and all(
             isinstance(item, QuoteSafetyDecision)
+            and is_quote_issued(item)
             and type(item.allowed) is bool
             and isinstance(item.reason, str)
             and bool(item.reason.strip())

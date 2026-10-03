@@ -1,10 +1,12 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
 from core.enums import Direction
 from execution.broker_outcome import BrokerOutcomeDecision, BrokerOutcome
 from execution.execution_journal import build_snapshot
 from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
-from execution.quote_safety import QuoteSafetyDecision
+from execution.quote_safety import evaluate_quote_safety
 from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult, reconcile_execution
 from execution.recovery import ShadowRecovery
 from execution.safety_gate import (
@@ -14,6 +16,18 @@ from execution.safety_gate import (
     require_execution_safety,
 )
 from execution.shadow import ShadowExecution
+
+
+NOW = datetime(2026, 10, 3, 6, 0, tzinfo=timezone.utc)
+
+
+def _quote(*, stale=False):
+    return evaluate_quote_safety(
+        symbol="XAUUSD", direction=Direction.BUY,
+        quote_time=NOW - timedelta(seconds=3) if stale else NOW,
+        now=NOW, intended_price=2500.0, market_price=2500.0,
+        max_age_seconds=2, max_deviation_points=3, point_size=.01,
+    )
 
 
 def _ready_recovery():
@@ -77,7 +91,7 @@ def test_runtime_artifacts_derive_complete_safety_evidence():
         ExecutionReport("V53-1", "XAUUSD", Direction.BUY, 0.03, 2500.0),
     )
     evidence = derive_execution_safety_evidence(
-        quote_decisions=(QuoteSafetyDecision(True, "accepted"), QuoteSafetyDecision(False, "stale")),
+        quote_decisions=(_quote(), _quote(stale=True)),
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=journal,
@@ -91,7 +105,7 @@ def test_runtime_artifacts_derive_complete_safety_evidence():
 def test_runtime_artifacts_fail_closed_on_journal_mismatch_or_live_enabled():
     ledger = IdempotencyLedger()
     evidence = derive_execution_safety_evidence(
-        quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
+        quote_decisions=(_quote(),),
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=object(),
@@ -114,7 +128,7 @@ def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
     journal = build_snapshot(ledger.records())
     ledger._records[storage_key] = ledger._records.pop("A")
     evidence = derive_execution_safety_evidence(
-        quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
+        quote_decisions=(_quote(),),
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=journal,
@@ -137,7 +151,7 @@ def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields)
     values.update(invalid_fields)
     ledger._records["A"] = SubmissionRecord(**values)
     evidence = derive_execution_safety_evidence(
-        quote_decisions=(QuoteSafetyDecision(True, "accepted"),),
+        quote_decisions=(_quote(),),
         outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
         ledger=ledger,
         journal=journal,
