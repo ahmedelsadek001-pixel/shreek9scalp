@@ -7,7 +7,7 @@ from execution.broker_outcome import classify_broker_outcome
 from execution.execution_journal import build_snapshot
 from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.quote_safety import evaluate_quote_safety
-from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult, reconcile_execution
+from execution.reconciliation import ExecutionReport, OrderIntent, reconcile_execution
 from execution.recovery import ShadowRecovery
 from execution.safety_gate import (
     ExecutionSafetyEvidence,
@@ -39,6 +39,17 @@ def _outcome(intent=None):
         intent = OrderIntent("unused", "XAUUSD", Direction.BUY, .03, 2500.0)
     return classify_broker_outcome(
         intent=intent, acknowledged=True, accepted=True)
+
+
+def _reconciliation():
+    intent = OrderIntent("unused", "XAUUSD", Direction.BUY, .03, 2500.0)
+    return reconcile_execution(
+        intent,
+        ExecutionReport(
+            intent.order_id, intent.symbol, intent.direction,
+            intent.volume, intent.expected_price,
+        ),
+    )
 
 
 def _complete() -> ExecutionSafetyEvidence:
@@ -117,7 +128,7 @@ def test_runtime_artifacts_fail_closed_on_journal_mismatch_or_live_enabled():
         ledger=ledger,
         journal=object(),
         recovery=_ready_recovery(),
-        reconciliation_results=(ReconciliationResult(True, ()),),
+        reconciliation_results=(_reconciliation(),),
         live_execution_enabled=True,
     )
     decision = evaluate_execution_safety(evidence)
@@ -141,7 +152,7 @@ def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),
-        reconciliation_results=(ReconciliationResult(True, ()),),
+        reconciliation_results=(_reconciliation(),),
         live_execution_enabled=False,
     )
     assert evidence.idempotency_validated is False
@@ -165,7 +176,7 @@ def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields)
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),
-        reconciliation_results=(ReconciliationResult(True, ()),),
+        reconciliation_results=(_reconciliation(),),
         live_execution_enabled=False,
     )
     assert evidence.idempotency_validated is False

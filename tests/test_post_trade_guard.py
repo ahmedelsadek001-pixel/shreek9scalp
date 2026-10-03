@@ -1,11 +1,23 @@
+from core.enums import Direction
 from execution.post_trade_guard import evaluate_post_trade
 from execution.quality_gate import ExecutionQualityDecision
-from execution.reconciliation import ReconciliationResult
+from execution.reconciliation import (
+    ExecutionReport,
+    OrderIntent,
+    ReconciliationResult,
+    reconcile_execution,
+)
+
+
+def _reconciliation():
+    intent = OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0)
+    report = ExecutionReport("A", "XAUUSD", Direction.BUY, 0.03, 2500.0)
+    return reconcile_execution(intent, report)
 
 
 def test_post_trade_accepts_only_reconciled_quality_fill():
     decision = evaluate_post_trade(
-        reconciliation=ReconciliationResult(True, ()),
+        reconciliation=_reconciliation(),
         quality=ExecutionQualityDecision(True, ()),
     )
     assert decision.accepted is True
@@ -23,7 +35,7 @@ def test_post_trade_blocks_unreconciled_fill():
 
 def test_post_trade_blocks_bad_execution_quality():
     decision = evaluate_post_trade(
-        reconciliation=ReconciliationResult(True, ()),
+        reconciliation=_reconciliation(),
         quality=ExecutionQualityDecision(False, ("latency outside limit",)),
     )
     assert decision.accepted is False
@@ -60,7 +72,7 @@ def test_post_trade_blocks_internally_inconsistent_reconciliation():
 
 def test_post_trade_blocks_internally_inconsistent_quality():
     decision = evaluate_post_trade(
-        reconciliation=ReconciliationResult(True, ()),
+        reconciliation=_reconciliation(),
         quality=ExecutionQualityDecision(True, ("unexpected reason",)),
     )
 

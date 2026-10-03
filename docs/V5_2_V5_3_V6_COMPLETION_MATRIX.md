@@ -27,6 +27,10 @@ component can be implemented while its evidence gate remains open.
 4. Treat missing, stale, malformed, or conflicting evidence as a failed gate.
 5. Preserve chronological separation between training, validation, and test data.
 6. Keep research analytics free of broker transport and execution authority.
+7. Accept reconciliation evidence only from the reconciler that issued it and
+   only when its intent fingerprint exists in the validated ledger. Fabricated,
+   copied, edited, or differently bound matches fail closed. This in-process
+   correlation check does not authenticate broker evidence.
 
 ## Final V6.0 acceptance target
 

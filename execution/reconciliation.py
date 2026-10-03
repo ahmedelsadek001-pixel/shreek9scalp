@@ -5,10 +5,15 @@ report. It never sends, modifies, or closes broker orders.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isclose, isfinite
 
 from core.enums import Direction
+from execution.decision_provenance import IssuedDecisionRegistry
+
+
+_RECONCILIATION_CAPABILITY = object()
+_ISSUED_RECONCILIATIONS = IssuedDecisionRegistry()
 
 
 @dataclass(frozen=True)
@@ -33,6 +38,33 @@ class ExecutionReport:
 class ReconciliationResult:
     matched: bool
     reasons: tuple[str, ...]
+    intent_fingerprint: str | None = None
+    _capability: object | None = field(default=None, repr=False, compare=False)
+
+
+def _result_state(result: ReconciliationResult) -> tuple[object, ...]:
+    return result.matched, result.reasons, result.intent_fingerprint
+
+
+def _issue_result(
+    matched: bool,
+    reasons: tuple[str, ...],
+    intent_fingerprint: str | None,
+) -> ReconciliationResult:
+    result = ReconciliationResult(
+        matched, reasons, intent_fingerprint, _RECONCILIATION_CAPABILITY)
+    _ISSUED_RECONCILIATIONS.issue(result, _result_state(result))
+    return result
+
+
+def is_reconciliation_issued(result: ReconciliationResult) -> bool:
+    """Reject caller-created, copied, or edited reconciliation results."""
+    return (
+        isinstance(result, ReconciliationResult)
+        and result._capability is _RECONCILIATION_CAPABILITY
+        and _ISSUED_RECONCILIATIONS.is_issued(
+            result, _result_state(result))
+    )
 
 
 def _is_finite_number(value: object) -> bool:
@@ -74,6 +106,15 @@ def reconcile_execution(
         raise ValueError("volume_tolerance must be finite and non-negative")
 
     reasons: list[str] = []
+    intent_fingerprint = None
+    try:
+        # Import lazily because the ledger model itself imports OrderIntent.
+        from execution.idempotency import IdempotencyLedger
+
+        intent_fingerprint = IdempotencyLedger.fingerprint_intent(intent)
+    except (TypeError, ValueError, AttributeError, OverflowError):
+        # Malformed intent fields are reported below as a rejected result.
+        pass
 
     intent_order_id_valid = type(intent.order_id) is str and bool(intent.order_id.strip())
     report_order_id_valid = type(report.order_id) is str and bool(report.order_id.strip())
@@ -119,4 +160,4 @@ def reconcile_execution(
     elif not _within_tolerance(report.fill_price, intent.expected_price, price_tolerance):
         reasons.append("fill price outside tolerance")
 
-    return ReconciliationResult(not reasons, tuple(reasons))
+    return _issue_result(not reasons, tuple(reasons), intent_fingerprint)

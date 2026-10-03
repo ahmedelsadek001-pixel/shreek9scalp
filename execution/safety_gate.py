@@ -15,7 +15,10 @@ from execution.broker_outcome import (
 from execution.execution_journal import JournalSnapshot, validate_snapshot
 from execution.idempotency import IdempotencyLedger
 from execution.quote_safety import QuoteSafetyDecision, is_quote_issued
-from execution.reconciliation import ReconciliationResult
+from execution.reconciliation import (
+    ReconciliationResult,
+    is_reconciliation_issued,
+)
 from execution.recovery import RecoveryDecision, RecoveryState, is_recovery_issued
 
 
@@ -115,11 +118,11 @@ def derive_execution_safety_evidence(
         except (TypeError, ValueError, AttributeError):
             idempotency_ok = False
 
+    ledger_fingerprints = {
+        record.intent_fingerprint for record in ledger_records
+        if record.intent_fingerprint is not None
+    }
     if outcome_ok:
-        ledger_fingerprints = {
-            record.intent_fingerprint for record in ledger_records
-            if record.intent_fingerprint is not None
-        }
         outcome_ok = (
             idempotency_ok
             and all(
@@ -151,12 +154,22 @@ def derive_execution_safety_evidence(
         and bool(reconciliation_results)
         and all(
             isinstance(item, ReconciliationResult)
+            and is_reconciliation_issued(item)
             and type(item.matched) is bool
             and item.matched is True
-            and isinstance(item.reasons, tuple)
+            and item.reasons == ()
+            and type(item.intent_fingerprint) is str
             for item in reconciliation_results
         )
     )
+    if reconciliation_ok:
+        reconciliation_ok = (
+            idempotency_ok
+            and all(
+                item.intent_fingerprint in ledger_fingerprints
+                for item in reconciliation_results
+            )
+        )
 
     return ExecutionSafetyEvidence(
         quote_safety_validated=quote_ok,
