@@ -9,6 +9,15 @@ from dataclasses import dataclass
 from math import isfinite
 
 
+def _is_finite_number(value: object) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 @dataclass(frozen=True)
 class BrokerSafetyPolicy:
     allowed_symbols: frozenset[str]
@@ -31,7 +40,10 @@ class BrokerSafetyPolicy:
             raise ValueError(
                 "allowed_symbols must be an exact frozenset")
         values = (self.max_spread, self.min_volume, self.max_volume, self.max_slippage)
-        if any(not isfinite(float(value)) for value in values):
+        if any(type(value) not in (int, float) for value in values):
+            raise ValueError(
+                "broker safety limits must be built-in int or float numbers")
+        if not all(_is_finite_number(value) for value in values):
             raise ValueError("broker safety limits must be finite")
         if self.max_spread < 0 or self.min_volume <= 0 or self.max_volume < self.min_volume or self.max_slippage < 0:
             raise ValueError("broker safety limits are inconsistent")
@@ -49,6 +61,11 @@ def authorize_environment(
 ) -> tuple[bool, tuple[str, ...]]:
     """Return an authorization decision for a supplied environment snapshot."""
     policy.validate()
+    observations = (spread, volume, slippage)
+    if not all(_is_finite_number(value) for value in observations):
+        return False, (
+            "broker observations must be finite built-in numbers",
+        )
     reasons: list[str] = []
     if not connected:
         reasons.append("broker disconnected")

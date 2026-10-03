@@ -38,6 +38,9 @@ component can be implemented while its evidence gate remains open.
 9. Treat execution-quality limits as strict configuration: accept only finite,
    non-negative built-in integers or floats. Booleans, numeric text, coercible
    numeric objects, and unrepresentable values fail closed.
+10. Apply the same strict numeric schema to broker-safety limits and supplied
+    spread, volume, and slippage observations. Coercible or malformed values
+    cannot become broker authorization evidence.
 
 ## Final V6.0 acceptance target
 
