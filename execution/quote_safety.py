@@ -92,7 +92,7 @@ def evaluate_quote_safety(*, symbol:str, direction:Direction, quote_time:datetim
     if quote_utc is None or now_utc is None:
         return _issue_decision(False,"timestamps must be timezone-aware")
     values=(intended_price,market_price,max_age_seconds,max_deviation_points,point_size)
-    if any(isinstance(v,bool) or not isinstance(v,(int,float)) for v in values):
+    if any(type(v) not in (int,float) for v in values):
         return _issue_decision(False,"quote safety inputs must be numeric")
     vals=tuple(float(v) for v in values)
     if not all(isfinite(v) for v in vals):
