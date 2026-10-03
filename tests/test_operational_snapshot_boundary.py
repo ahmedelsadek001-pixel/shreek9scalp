@@ -1,4 +1,6 @@
 """Operational evidence must be evaluated from a stable snapshot."""
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone, tzinfo
 
 from core.enums import Direction
