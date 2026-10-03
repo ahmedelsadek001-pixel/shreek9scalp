@@ -1,4 +1,6 @@
 """Broker outcome decisions must originate from the classifier."""
+from __future__ import annotations
+
 from dataclasses import replace
 from datetime import datetime, timezone
 
