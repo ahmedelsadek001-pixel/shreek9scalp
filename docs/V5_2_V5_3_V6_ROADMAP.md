@@ -63,6 +63,9 @@
   or copying a fresh quote to change its intended price, fails before
   transport. This is an in-process consistency check, not independent broker
   verification or a live authorization credential.
+- Issued quote times are detached UTC snapshots. A caller-owned mutable,
+  missing or failing timezone offset cannot later make an expired quote appear
+  current or escape the quote gate; invalid timing evidence fails closed.
 - Caller-supplied positive operational/broker tuples remain diagnostic only.
   Guarded submission requires a policy-evaluated environment decision for
   the same symbol and volume as the intent, and rechecks quote age at the
