@@ -159,6 +159,7 @@ def derive_execution_safety_evidence(
             and item.matched is True
             and item.reasons == ()
             and type(item.intent_fingerprint) is str
+            and type(item.report_fingerprint) is str
             for item in reconciliation_results
         )
     )

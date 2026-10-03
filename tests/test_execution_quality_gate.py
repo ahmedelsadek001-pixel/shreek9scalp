@@ -1,6 +1,9 @@
 import pytest
+from dataclasses import replace
 
+from core.enums import Direction
 from execution.quality_gate import ExecutionQualityPolicy, evaluate_quality
+from execution.reconciliation import ExecutionReport, OrderIntent
 
 
 POLICY = ExecutionQualityPolicy(
@@ -10,11 +13,18 @@ POLICY = ExecutionQualityPolicy(
 )
 
 
+def _execution():
+    intent = OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 100.0)
+    report = ExecutionReport("A", "XAUUSD", Direction.BUY, 0.03, 100.1)
+    return intent, report
+
+
 def test_safe_execution_is_allowed():
+    intent, report = _execution()
     result = evaluate_quality(
         POLICY,
-        expected_price=100.0,
-        fill_price=100.1,
+        intent=intent,
+        report=report,
         spread=0.3,
         latency_ms=120.0,
     )
@@ -23,10 +33,11 @@ def test_safe_execution_is_allowed():
 
 
 def test_bad_execution_is_blocked():
+    intent, report = _execution()
     result = evaluate_quality(
         POLICY,
-        expected_price=100.0,
-        fill_price=100.3,
+        intent=intent,
+        report=replace(report, fill_price=100.3),
         spread=0.7,
         latency_ms=400.0,
     )
@@ -39,10 +50,11 @@ def test_bad_execution_is_blocked():
 
 
 def test_invalid_observations_fail_closed():
+    intent, report = _execution()
     result = evaluate_quality(
         POLICY,
-        expected_price=float("nan"),
-        fill_price=100.0,
+        intent=replace(intent, expected_price=float("nan")),
+        report=report,
         spread=0.1,
         latency_ms=50.0,
     )
@@ -51,11 +63,12 @@ def test_invalid_observations_fail_closed():
 
 
 def test_invalid_policy_rejected():
+    intent, report = _execution()
     with pytest.raises(ValueError):
         evaluate_quality(
             ExecutionQualityPolicy(-0.1, 0.5, 250.0),
-            expected_price=100.0,
-            fill_price=100.0,
+            intent=intent,
+            report=report,
             spread=0.1,
             latency_ms=10.0,
         )

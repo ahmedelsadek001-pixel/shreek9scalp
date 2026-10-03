@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from execution.quality_gate import ExecutionQualityDecision
+from execution.quality_gate import ExecutionQualityDecision, is_quality_issued
 from execution.reconciliation import ReconciliationResult, is_reconciliation_issued
 
 
@@ -52,6 +52,14 @@ def evaluate_post_trade(
         reasons.append("execution quality reasons malformed")
     elif quality.allowed and quality.reasons:
         reasons.append("execution quality decision internally inconsistent")
+    elif quality.allowed and not is_quality_issued(quality):
+        reasons.append("execution quality decision not issued by quality gate")
+    elif quality.allowed and (
+        not isinstance(reconciliation, ReconciliationResult)
+        or quality.intent_fingerprint != reconciliation.intent_fingerprint
+        or quality.report_fingerprint != reconciliation.report_fingerprint
+    ):
+        reasons.append("execution quality decision does not match reconciliation")
     elif not quality.allowed:
         reasons.extend("quality: " + reason for reason in quality.reasons)
         if not quality.reasons:

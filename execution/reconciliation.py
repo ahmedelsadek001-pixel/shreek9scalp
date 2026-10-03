@@ -6,6 +6,8 @@ report. It never sends, modifies, or closes broker orders.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from hashlib import sha256
+import json
 from math import isclose, isfinite
 
 from core.enums import Direction
@@ -39,20 +41,29 @@ class ReconciliationResult:
     matched: bool
     reasons: tuple[str, ...]
     intent_fingerprint: str | None = None
+    report_fingerprint: str | None = None
     _capability: object | None = field(default=None, repr=False, compare=False)
 
 
 def _result_state(result: ReconciliationResult) -> tuple[object, ...]:
-    return result.matched, result.reasons, result.intent_fingerprint
+    return (
+        result.matched,
+        result.reasons,
+        result.intent_fingerprint,
+        result.report_fingerprint,
+    )
 
 
 def _issue_result(
     matched: bool,
     reasons: tuple[str, ...],
     intent_fingerprint: str | None,
+    report_fingerprint: str | None,
 ) -> ReconciliationResult:
     result = ReconciliationResult(
-        matched, reasons, intent_fingerprint, _RECONCILIATION_CAPABILITY)
+        matched, reasons, intent_fingerprint, report_fingerprint,
+        _RECONCILIATION_CAPABILITY,
+    )
     _ISSUED_RECONCILIATIONS.issue(result, _result_state(result))
     return result
 
@@ -65,6 +76,51 @@ def is_reconciliation_issued(result: ReconciliationResult) -> bool:
         and _ISSUED_RECONCILIATIONS.is_issued(
             result, _result_state(result))
     )
+
+
+def fingerprint_order_intent(intent: OrderIntent) -> str:
+    """Return the ledger's canonical binding without creating an import cycle."""
+    if not isinstance(intent, OrderIntent):
+        raise TypeError("intent must be OrderIntent")
+    from execution.idempotency import IdempotencyLedger
+
+    return IdempotencyLedger.fingerprint_intent(intent)
+
+
+def _number_ratio(value: object) -> tuple[int, int]:
+    if type(value) not in (int, float):
+        raise ValueError("execution report economics must be finite and positive")
+    try:
+        if not isfinite(value) or value <= 0:
+            raise ValueError(
+                "execution report economics must be finite and positive")
+    except OverflowError as exc:
+        raise ValueError(
+            "execution report economics must be finite and positive") from exc
+    return (value, 1) if type(value) is int else value.as_integer_ratio()
+
+
+def fingerprint_execution_report(report: ExecutionReport) -> str:
+    """Bind the exact broker-neutral execution report used by downstream gates."""
+    if not isinstance(report, ExecutionReport):
+        raise TypeError("report must be ExecutionReport")
+    if type(report.order_id) is not str or not report.order_id.strip():
+        raise ValueError("execution report identity is required")
+    if type(report.symbol) is not str or not report.symbol.strip():
+        raise ValueError("execution report symbol is required")
+    if not isinstance(report.direction, Direction):
+        raise ValueError("execution report direction must be Direction")
+    payload = {
+        "version": 1,
+        "order_id": report.order_id.strip(),
+        "symbol": report.symbol,
+        "direction": report.direction.value,
+        "volume": _number_ratio(report.volume),
+        "fill_price": _number_ratio(report.fill_price),
+    }
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":")).encode()
+    return sha256(canonical).hexdigest()
 
 
 def _is_finite_number(value: object) -> bool:
@@ -107,13 +163,16 @@ def reconcile_execution(
 
     reasons: list[str] = []
     intent_fingerprint = None
+    report_fingerprint = None
     try:
-        # Import lazily because the ledger model itself imports OrderIntent.
-        from execution.idempotency import IdempotencyLedger
-
-        intent_fingerprint = IdempotencyLedger.fingerprint_intent(intent)
+        intent_fingerprint = fingerprint_order_intent(intent)
     except (TypeError, ValueError, AttributeError, OverflowError):
         # Malformed intent fields are reported below as a rejected result.
+        pass
+    try:
+        report_fingerprint = fingerprint_execution_report(report)
+    except (TypeError, ValueError, AttributeError, OverflowError):
+        # Malformed report fields are reported below as a rejected result.
         pass
 
     intent_order_id_valid = type(intent.order_id) is str and bool(intent.order_id.strip())
@@ -160,4 +219,5 @@ def reconcile_execution(
     elif not _within_tolerance(report.fill_price, intent.expected_price, price_tolerance):
         reasons.append("fill price outside tolerance")
 
-    return _issue_result(not reasons, tuple(reasons), intent_fingerprint)
+    return _issue_result(
+        not reasons, tuple(reasons), intent_fingerprint, report_fingerprint)

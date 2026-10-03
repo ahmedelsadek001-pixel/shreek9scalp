@@ -31,6 +31,10 @@ component can be implemented while its evidence gate remains open.
    only when its intent fingerprint exists in the validated ledger. Fabricated,
    copied, edited, or differently bound matches fail closed. This in-process
    correlation check does not authenticate broker evidence.
+8. Accept a positive execution-quality decision only from the quality gate and
+   only when its intent and execution-report fingerprints match reconciliation.
+   Reused or fabricated approvals fail closed; the binding does not prove that
+   caller-supplied spread or latency observations came from a broker.
 
 ## Final V6.0 acceptance target
 

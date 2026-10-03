@@ -8,7 +8,11 @@ from execution.broker_outcome import classify_broker_outcome
 from execution.execution_journal import build_snapshot
 from execution.idempotency import IdempotencyLedger, SubmissionState
 from execution.post_trade_guard import evaluate_post_trade
-from execution.quality_gate import ExecutionQualityDecision
+from execution.quality_gate import (
+    ExecutionQualityDecision,
+    ExecutionQualityPolicy,
+    evaluate_quality,
+)
 from execution.quote_safety import evaluate_quote_safety
 from execution.reconciliation import (
     ExecutionReport,
@@ -22,6 +26,7 @@ from execution.shadow import ShadowExecution
 
 
 NOW = datetime(2026, 10, 3, 8, 30, tzinfo=timezone.utc)
+QUALITY_POLICY = ExecutionQualityPolicy(0.2, 0.5, 250.0)
 
 
 def _intent(**changes):
@@ -125,9 +130,20 @@ def test_forged_reconciliation_cannot_pass_post_trade_gate():
 
 
 def test_issued_reconciliation_can_pass_post_trade_gate():
+    intent = _intent()
+    report = ExecutionReport(
+        intent.order_id, intent.symbol, intent.direction,
+        intent.volume, intent.expected_price,
+    )
     decision = evaluate_post_trade(
-        reconciliation=_matching_result(_intent()),
-        quality=ExecutionQualityDecision(True, ()),
+        reconciliation=reconcile_execution(intent, report),
+        quality=evaluate_quality(
+            QUALITY_POLICY,
+            intent=intent,
+            report=report,
+            spread=0.1,
+            latency_ms=10.0,
+        ),
     )
 
     assert decision.accepted is True
