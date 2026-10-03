@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from core.enums import Direction
-from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
+from execution.broker_outcome import classify_broker_outcome
 from execution.execution_journal import build_snapshot
 from execution.idempotency import IdempotencyLedger, SubmissionState
 from execution.quote_safety import (
@@ -49,8 +49,8 @@ def _derive(quote_decisions: tuple[QuoteSafetyDecision, ...]):
     )
     return derive_execution_safety_evidence(
         quote_decisions=quote_decisions,
-        outcome_decisions=(BrokerOutcomeDecision(
-            BrokerOutcome.ACCEPTED, False, "accepted"),),
+        outcome_decisions=(classify_broker_outcome(
+            acknowledged=True, accepted=True),),
         ledger=ledger,
         journal=build_snapshot(ledger.records()),
         recovery=ShadowRecovery(ShadowExecution()).admission(),

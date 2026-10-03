@@ -7,7 +7,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
+from execution.broker_outcome import (
+    BrokerOutcome,
+    BrokerOutcomeDecision,
+    is_broker_outcome_issued,
+)
 from execution.execution_journal import JournalSnapshot, validate_snapshot
 from execution.idempotency import IdempotencyLedger
 from execution.quote_safety import QuoteSafetyDecision, is_quote_issued
@@ -91,6 +95,7 @@ def derive_execution_safety_evidence(
         and bool(outcome_decisions)
         and all(
             isinstance(item, BrokerOutcomeDecision)
+            and is_broker_outcome_issued(item)
             and isinstance(item.outcome, BrokerOutcome)
             and type(item.retry_allowed) is bool
             and isinstance(item.reason, str)

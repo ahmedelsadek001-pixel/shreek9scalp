@@ -1,7 +1,11 @@
 """Fail-closed execution lifecycle coordination for SHREEK V5.3."""
 from __future__ import annotations
 from dataclasses import dataclass
-from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
+from execution.broker_outcome import (
+    BrokerOutcome,
+    BrokerOutcomeDecision,
+    is_broker_outcome_issued,
+)
 from execution.idempotency import IdempotencyLedger, SubmissionState
 from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult, reconcile_execution
 
@@ -22,6 +26,8 @@ class ExecutionLifecycleCoordinator:
     def _validate_outcome(outcome: BrokerOutcomeDecision) -> None:
         if not isinstance(outcome, BrokerOutcomeDecision):
             raise ValueError("outcome must be BrokerOutcomeDecision")
+        if not is_broker_outcome_issued(outcome):
+            raise ValueError("broker outcome decision not issued by classifier")
         if not isinstance(outcome.outcome, BrokerOutcome):
             raise ValueError("broker outcome is invalid")
         if type(outcome.retry_allowed) is not bool:

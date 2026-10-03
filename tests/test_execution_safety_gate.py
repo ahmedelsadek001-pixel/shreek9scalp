@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from core.enums import Direction
-from execution.broker_outcome import BrokerOutcomeDecision, BrokerOutcome
+from execution.broker_outcome import classify_broker_outcome
 from execution.execution_journal import build_snapshot
 from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.quote_safety import evaluate_quote_safety
@@ -32,6 +32,10 @@ def _quote(*, stale=False):
 
 def _ready_recovery():
     return ShadowRecovery(ShadowExecution()).admission()
+
+
+def _outcome():
+    return classify_broker_outcome(acknowledged=True, accepted=True)
 
 
 def _complete() -> ExecutionSafetyEvidence:
@@ -92,7 +96,7 @@ def test_runtime_artifacts_derive_complete_safety_evidence():
     )
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(), _quote(stale=True)),
-        outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
+        outcome_decisions=(_outcome(),),
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),
@@ -106,7 +110,7 @@ def test_runtime_artifacts_fail_closed_on_journal_mismatch_or_live_enabled():
     ledger = IdempotencyLedger()
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(),),
-        outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
+        outcome_decisions=(_outcome(),),
         ledger=ledger,
         journal=object(),
         recovery=_ready_recovery(),
@@ -129,7 +133,7 @@ def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
     ledger._records[storage_key] = ledger._records.pop("A")
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(),),
-        outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
+        outcome_decisions=(_outcome(),),
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),
@@ -152,7 +156,7 @@ def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields)
     ledger._records["A"] = SubmissionRecord(**values)
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(),),
-        outcome_decisions=(BrokerOutcomeDecision(BrokerOutcome.ACCEPTED, False, "accepted"),),
+        outcome_decisions=(_outcome(),),
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),

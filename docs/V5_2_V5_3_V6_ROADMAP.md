@@ -82,8 +82,11 @@
   limit. A later fresh quote cannot revive an expired environment approval.
   This bounds caller-supplied facts in time but does not observe a broker or
   replace a fresh adapter snapshot.
-- Broker outcome decisions are schema-checked before mutating idempotency
-  state; inconsistent retry flags fail closed.
+- Broker outcome decisions are schema-checked and must be the exact objects
+  issued by the classifier before mutating idempotency state or validating
+  execution-safety evidence. Caller-created, copied, edited, or inconsistent
+  decisions fail closed. This is in-process provenance, not broker
+  authentication or independently observed broker evidence.
 - V5.3 promotion uses an explicit execution-safety evidence gate covering
   quote safety, idempotency, outcomes, reconciliation, recovery, journal
   integrity, and the live-disabled invariant; it grants no MT5 authority.

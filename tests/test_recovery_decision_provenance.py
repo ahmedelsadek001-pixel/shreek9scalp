@@ -3,7 +3,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 
 from core.enums import Direction
-from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
+from execution.broker_outcome import classify_broker_outcome
 from execution.broker_safety import BrokerSafetyPolicy
 from execution.execution_gate import evaluate_environment_gate
 from execution.execution_journal import build_snapshot
@@ -199,8 +199,8 @@ def test_forged_recovery_cannot_validate_runtime_safety_evidence():
     ledger.finish(intent.order_id, SubmissionState.ACCEPTED)
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_safe_quote(intent),),
-        outcome_decisions=(BrokerOutcomeDecision(
-            BrokerOutcome.ACCEPTED, False, "accepted"),),
+        outcome_decisions=(classify_broker_outcome(
+            acknowledged=True, accepted=True),),
         ledger=ledger,
         journal=build_snapshot(ledger.records()),
         recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
