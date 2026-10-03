@@ -84,9 +84,12 @@
   replace a fresh adapter snapshot.
 - Broker outcome decisions are schema-checked and must be the exact objects
   issued by the classifier before mutating idempotency state or validating
-  execution-safety evidence. Caller-created, copied, edited, or inconsistent
-  decisions fail closed. This is in-process provenance, not broker
-  authentication or independently observed broker evidence.
+  execution-safety evidence. Each decision is also bound to the original
+  intent fingerprint; an issued result for another identity, symbol, side,
+  volume or expected price cannot resolve a ledger record or validate its
+  evidence. Caller-created, copied, edited, mismatched or inconsistent
+  decisions fail closed. This is in-process provenance and correlation, not
+  broker authentication or independently observed broker evidence.
 - V5.3 promotion uses an explicit execution-safety evidence gate covering
   quote safety, idempotency, outcomes, reconciliation, recovery, journal
   integrity, and the live-disabled invariant; it grants no MT5 authority.

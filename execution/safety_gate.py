@@ -100,6 +100,7 @@ def derive_execution_safety_evidence(
             and type(item.retry_allowed) is bool
             and isinstance(item.reason, str)
             and bool(item.reason.strip())
+            and type(item.intent_fingerprint) is str
             and (item.retry_allowed is (item.outcome is BrokerOutcome.REJECTED_RETRYABLE))
             for item in outcome_decisions
         )
@@ -113,6 +114,19 @@ def derive_execution_safety_evidence(
             idempotency_ok = bool(ledger_records)
         except (TypeError, ValueError, AttributeError):
             idempotency_ok = False
+
+    if outcome_ok:
+        ledger_fingerprints = {
+            record.intent_fingerprint for record in ledger_records
+            if record.intent_fingerprint is not None
+        }
+        outcome_ok = (
+            idempotency_ok
+            and all(
+                item.intent_fingerprint in ledger_fingerprints
+                for item in outcome_decisions
+            )
+        )
 
     journal_ok = False
     if isinstance(journal, JournalSnapshot) and idempotency_ok:

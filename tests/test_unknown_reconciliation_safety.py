@@ -10,7 +10,7 @@ from execution.restart_recovery import snapshot_unresolved, validate_restart
 def setup_unknown(direction=Direction.BUY):
     i=OrderIntent("U-1","XAUUSD",direction,.03,2500)
     l=IdempotencyLedger(); l.begin(i); c=ExecutionLifecycleCoordinator(l)
-    c.apply_outcome(i,classify_broker_outcome(acknowledged=False,accepted=None))
+    c.apply_outcome(i,classify_broker_outcome(intent=i,acknowledged=False,accepted=None))
     return i,l,c
 
 def test_mismatched_report_does_not_prove_unknown_order_absent():

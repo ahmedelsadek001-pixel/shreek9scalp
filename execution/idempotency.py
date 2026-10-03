@@ -112,7 +112,8 @@ class IdempotencyLedger:
         return intent.order_id.strip()
 
     @classmethod
-    def _fingerprint(cls, intent: OrderIntent) -> str:
+    def fingerprint_intent(cls, intent: OrderIntent) -> str:
+        """Return the canonical binding used for every intent-scoped artifact."""
         order_id = cls._identity(intent)
         if type(intent.symbol) is not str or not intent.symbol.strip():
             raise ValueError("order intent symbol is required")
@@ -138,7 +139,10 @@ class IdempotencyLedger:
                 raise ValueError(f"order {order_id} cannot be resubmitted from {current.state.value}")
             if current.state is SubmissionState.REJECTED:
                 raise ValueError(f"order {order_id} requires a new identity after rejection")
-        record = SubmissionRecord(order_id, SubmissionState.IN_FLIGHT, 1, self._fingerprint(intent))
+        record = SubmissionRecord(
+            order_id, SubmissionState.IN_FLIGHT, 1,
+            self.fingerprint_intent(intent),
+        )
         self._records[order_id] = record
         return record
 
@@ -173,7 +177,7 @@ class IdempotencyLedger:
             return None
         if current.intent_fingerprint is None:
             raise ValueError("original intent binding unavailable")
-        if current.intent_fingerprint != self._fingerprint(intent):
+        if current.intent_fingerprint != self.fingerprint_intent(intent):
             raise ValueError("intent does not match original reservation")
         return current
 

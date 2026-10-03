@@ -34,8 +34,11 @@ def _ready_recovery():
     return ShadowRecovery(ShadowExecution()).admission()
 
 
-def _outcome():
-    return classify_broker_outcome(acknowledged=True, accepted=True)
+def _outcome(intent=None):
+    if intent is None:
+        intent = OrderIntent("unused", "XAUUSD", Direction.BUY, .03, 2500.0)
+    return classify_broker_outcome(
+        intent=intent, acknowledged=True, accepted=True)
 
 
 def _complete() -> ExecutionSafetyEvidence:
@@ -96,7 +99,7 @@ def test_runtime_artifacts_derive_complete_safety_evidence():
     )
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(), _quote(stale=True)),
-        outcome_decisions=(_outcome(),),
+        outcome_decisions=(_outcome(intent),),
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),
@@ -126,14 +129,15 @@ def test_runtime_artifacts_fail_closed_on_journal_mismatch_or_live_enabled():
 
 @pytest.mark.parametrize("storage_key", ["B", " A "])
 def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
+    intent = OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0)
     ledger = IdempotencyLedger()
-    ledger.begin(OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0))
+    ledger.begin(intent)
     ledger.finish("A", SubmissionState.ACCEPTED)
     journal = build_snapshot(ledger.records())
     ledger._records[storage_key] = ledger._records.pop("A")
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(),),
-        outcome_decisions=(_outcome(),),
+        outcome_decisions=(_outcome(intent),),
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),
@@ -147,8 +151,9 @@ def test_valid_journal_cannot_hide_misplaced_ledger_identity(storage_key):
 
 @pytest.mark.parametrize("invalid_fields", [{"state": "accepted"}, {"attempts": 0}])
 def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields):
+    intent = OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0)
     ledger = IdempotencyLedger()
-    ledger.begin(OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0))
+    ledger.begin(intent)
     ledger.finish("A", SubmissionState.ACCEPTED)
     journal = build_snapshot(ledger.records())
     values = dict(order_id="A", state=SubmissionState.ACCEPTED, attempts=1)
@@ -156,7 +161,7 @@ def test_malformed_ledger_record_cannot_validate_safety_evidence(invalid_fields)
     ledger._records["A"] = SubmissionRecord(**values)
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_quote(),),
-        outcome_decisions=(_outcome(),),
+        outcome_decisions=(_outcome(intent),),
         ledger=ledger,
         journal=journal,
         recovery=_ready_recovery(),

@@ -45,8 +45,11 @@ def _apply(outcome: BrokerOutcomeDecision) -> SubmissionState:
     return ledger.get(intent.order_id).state
 
 
-def _derive(outcomes: tuple[BrokerOutcomeDecision, ...]):
-    intent = _intent("outcome-evidence")
+def _derive(
+    outcomes: tuple[BrokerOutcomeDecision, ...],
+    intent: OrderIntent | None = None,
+):
+    intent = _intent("outcome-evidence") if intent is None else intent
     ledger = IdempotencyLedger()
     ledger.begin(intent)
     ledger.finish(intent.order_id, SubmissionState.ACCEPTED)
@@ -88,7 +91,8 @@ def test_forged_outcome_cannot_change_in_flight_state(forged):
 
 
 def test_copied_issued_outcome_cannot_change_in_flight_state():
-    issued = classify_broker_outcome(acknowledged=True, accepted=True)
+    issued = classify_broker_outcome(
+        intent=_intent(), acknowledged=True, accepted=True)
     copied = replace(issued)
 
     assert is_broker_outcome_issued(issued)
@@ -97,7 +101,8 @@ def test_copied_issued_outcome_cannot_change_in_flight_state():
 
 
 def test_edited_issued_outcome_cannot_change_in_flight_state():
-    issued = classify_broker_outcome(acknowledged=True, accepted=True)
+    issued = classify_broker_outcome(
+        intent=_intent(), acknowledged=True, accepted=True)
     object.__setattr__(issued, "reason", "caller-edited")
 
     assert not is_broker_outcome_issued(issued)
@@ -108,7 +113,8 @@ def test_classifier_issued_outcome_can_change_in_flight_state():
     intent = _intent()
     ledger = IdempotencyLedger()
     ledger.begin(intent)
-    outcome = classify_broker_outcome(acknowledged=True, accepted=True)
+    outcome = classify_broker_outcome(
+        intent=intent, acknowledged=True, accepted=True)
 
     decision = ExecutionLifecycleCoordinator(ledger).apply_outcome(
         intent, outcome,
@@ -129,23 +135,29 @@ def test_forged_outcome_cannot_validate_execution_safety():
 
 
 def test_copied_issued_outcome_cannot_validate_execution_safety():
-    issued = classify_broker_outcome(acknowledged=True, accepted=True)
+    intent = _intent("outcome-evidence")
+    issued = classify_broker_outcome(
+        intent=intent, acknowledged=True, accepted=True)
 
-    evidence = _derive((replace(issued),))
+    evidence = _derive((replace(issued),), intent)
 
     assert evidence.outcome_classification_validated is False
     assert evaluate_execution_safety(evidence).ready is False
 
 
 def test_classifier_issued_outcomes_validate_the_control():
+    intent = _intent("outcome-evidence")
     outcomes = (
-        classify_broker_outcome(acknowledged=True, accepted=True),
-        classify_broker_outcome(acknowledged=False, accepted=None),
         classify_broker_outcome(
+            intent=intent, acknowledged=True, accepted=True),
+        classify_broker_outcome(
+            intent=intent, acknowledged=False, accepted=None),
+        classify_broker_outcome(
+            intent=intent,
             acknowledged=True, accepted=False, rejection_code="REQUOTE"),
     )
 
-    evidence = _derive(outcomes)
+    evidence = _derive(outcomes, intent)
 
     assert evidence.outcome_classification_validated is True
     assert evaluate_execution_safety(evidence).ready is True

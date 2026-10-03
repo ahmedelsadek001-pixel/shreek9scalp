@@ -6,7 +6,11 @@ from execution.broker_outcome import (
     BrokerOutcomeDecision,
     is_broker_outcome_issued,
 )
-from execution.idempotency import IdempotencyLedger, SubmissionState
+from execution.idempotency import (
+    IdempotencyLedger,
+    SubmissionState,
+    validate_intent_fingerprint,
+)
 from execution.reconciliation import ExecutionReport, OrderIntent, ReconciliationResult, reconcile_execution
 
 @dataclass(frozen=True)
@@ -28,6 +32,9 @@ class ExecutionLifecycleCoordinator:
             raise ValueError("outcome must be BrokerOutcomeDecision")
         if not is_broker_outcome_issued(outcome):
             raise ValueError("broker outcome decision not issued by classifier")
+        if outcome.intent_fingerprint is None:
+            raise ValueError("broker outcome intent binding is required")
+        validate_intent_fingerprint(outcome.intent_fingerprint)
         if not isinstance(outcome.outcome, BrokerOutcome):
             raise ValueError("broker outcome is invalid")
         if type(outcome.retry_allowed) is not bool:
@@ -44,6 +51,8 @@ class ExecutionLifecycleCoordinator:
         current=self.ledger.get_for_intent(intent)
         if current is None or current.state is not SubmissionState.IN_FLIGHT:
             raise ValueError("intent has no in-flight submission")
+        if outcome.intent_fingerprint != current.intent_fingerprint:
+            raise ValueError("broker outcome does not match original intent")
         if outcome.outcome is BrokerOutcome.ACCEPTED:
             record=self.ledger.finish(intent.order_id,SubmissionState.ACCEPTED)
             return LifecycleDecision(True,record.state,())

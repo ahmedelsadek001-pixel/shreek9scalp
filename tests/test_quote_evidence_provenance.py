@@ -50,6 +50,7 @@ def _derive(quote_decisions: tuple[QuoteSafetyDecision, ...]):
     return derive_execution_safety_evidence(
         quote_decisions=quote_decisions,
         outcome_decisions=(classify_broker_outcome(
+            intent=intent,
             acknowledged=True, accepted=True),),
         ledger=ledger,
         journal=build_snapshot(ledger.records()),

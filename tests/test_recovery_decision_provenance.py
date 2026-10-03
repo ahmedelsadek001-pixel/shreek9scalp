@@ -200,6 +200,7 @@ def test_forged_recovery_cannot_validate_runtime_safety_evidence():
     evidence = derive_execution_safety_evidence(
         quote_decisions=(_safe_quote(intent),),
         outcome_decisions=(classify_broker_outcome(
+            intent=intent,
             acknowledged=True, accepted=True),),
         ledger=ledger,
         journal=build_snapshot(ledger.records()),

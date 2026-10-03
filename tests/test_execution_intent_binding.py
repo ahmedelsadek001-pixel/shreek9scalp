@@ -27,7 +27,8 @@ def _round_trip(ledger):
 
 def _operate(coordinator, intent, operation):
     if operation == "outcome":
-        return coordinator.apply_outcome(intent, classify_broker_outcome(acknowledged=True, accepted=True))
+        return coordinator.apply_outcome(intent, classify_broker_outcome(
+            intent=intent, acknowledged=True, accepted=True))
     if operation == "report":
         report = ExecutionReport(intent.order_id, intent.symbol, intent.direction, intent.volume, intent.expected_price)
         return coordinator.reconcile(intent, report, price_tolerance=10, volume_tolerance=.1)
