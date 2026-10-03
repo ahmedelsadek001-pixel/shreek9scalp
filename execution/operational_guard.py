@@ -6,8 +6,28 @@ connects to a broker, sends orders, or changes positions.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from math import isfinite
+
+
+def _utc_snapshot(value: object) -> datetime | None:
+    """Copy an aware timestamp without retaining caller-owned timezone state."""
+    if not isinstance(value, datetime):
+        return None
+    try:
+        if value.tzinfo is None:
+            return None
+        offset = value.utcoffset()
+        if offset is None:
+            return None
+        wall_time = datetime(
+            value.year, value.month, value.day,
+            value.hour, value.minute, value.second, value.microsecond,
+            fold=value.fold,
+        )
+        return (wall_time - offset).replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
 
 
 @dataclass(frozen=True)
@@ -54,51 +74,51 @@ def evaluate_operational_readiness(
         raise TypeError(
             "operational policy must be exact OperationalPolicy")
     policy.validate()
-    if not isinstance(snapshot, OperationalSnapshot):
-        raise TypeError("snapshot must be OperationalSnapshot")
-    if type(snapshot.connected) is not bool or type(snapshot.trading_enabled) is not bool:
+    if type(snapshot) is not OperationalSnapshot:
+        raise TypeError(
+            "snapshot must be OperationalSnapshot (exact type required)")
+    connected = snapshot.connected
+    trading_enabled = snapshot.trading_enabled
+    observed_at = _utc_snapshot(snapshot.observed_at)
+    quote_time = _utc_snapshot(snapshot.quote_time)
+    heartbeat_value = snapshot.heartbeat_at
+    heartbeat_supplied = heartbeat_value is not None
+    heartbeat_at = _utc_snapshot(heartbeat_value)
+    if type(connected) is not bool or type(trading_enabled) is not bool:
         return False, ("connected and trading_enabled must be boolean",)
-    if now is not None and (
-        not isinstance(now, datetime)
-        or now.tzinfo is None
-        or now.utcoffset() is None
-    ):
+    now_utc = None if now is None else _utc_snapshot(now)
+    if now is not None and now_utc is None:
         raise ValueError("now must be timezone-aware")
 
     reasons: list[str] = []
-    timestamps = (snapshot.observed_at, snapshot.quote_time)
-    if any(not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None for value in timestamps):
+    if observed_at is None or quote_time is None:
         return False, ("observed_at and quote_time must be timezone-aware",)
-    if snapshot.heartbeat_at is not None and (
-        not isinstance(snapshot.heartbeat_at, datetime)
-        or snapshot.heartbeat_at.tzinfo is None
-        or snapshot.heartbeat_at.utcoffset() is None
-    ):
+    if heartbeat_supplied and heartbeat_at is None:
         reasons.append("heartbeat timestamp must be timezone-aware")
-    if not snapshot.connected:
+    if not connected:
         reasons.append("environment disconnected")
-    if not snapshot.trading_enabled:
+    if not trading_enabled:
         reasons.append("trading disabled")
 
-    reference_time = snapshot.observed_at if now is None else now
+    reference_time = observed_at if now_utc is None else now_utc
     if now is not None:
-        observation_age = (now - snapshot.observed_at).total_seconds()
+        observation_age = (now_utc - observed_at).total_seconds()
         if observation_age < -policy.max_clock_skew_seconds:
             reasons.append("environment observation is ahead of evaluation")
         elif observation_age > policy.max_quote_age_seconds:
             reasons.append("environment observation is stale")
 
-    quote_age = (reference_time - snapshot.quote_time).total_seconds()
+    quote_age = (reference_time - quote_time).total_seconds()
     if quote_age < -policy.max_clock_skew_seconds:
         reasons.append("quote timestamp is ahead of observation")
     elif quote_age > policy.max_quote_age_seconds:
         reasons.append("quote is stale")
 
     if policy.require_heartbeat:
-        if snapshot.heartbeat_at is None:
+        if not heartbeat_supplied:
             reasons.append("heartbeat missing")
-        else:
-            heartbeat_age = (reference_time - snapshot.heartbeat_at).total_seconds()
+        elif heartbeat_at is not None:
+            heartbeat_age = (reference_time - heartbeat_at).total_seconds()
             if heartbeat_age < -policy.max_clock_skew_seconds:
                 reasons.append("heartbeat timestamp is ahead of observation")
             elif heartbeat_age > policy.max_quote_age_seconds:

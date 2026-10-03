@@ -47,6 +47,9 @@ component can be implemented while its evidence gate remains open.
 12. Evaluate operational and broker constraints only with exact instances of
     their owning policy classes. Arbitrary objects and subclasses cannot replace
     validation logic or turn malformed configuration into execution admission.
+13. Evaluate only exact operational snapshot objects and convert supplied
+    timestamps into detached UTC values before comparing them. Mutable or
+    failing timezone providers and subclass attribute code fail closed.
 
 ## Final V6.0 acceptance target
 
