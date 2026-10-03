@@ -83,7 +83,7 @@ def is_quote_issued(decision: QuoteSafetyDecision) -> bool:
 
 
 def evaluate_quote_safety(*, symbol:str, direction:Direction, quote_time:datetime, now:datetime, intended_price:float, market_price:float, max_age_seconds:float, max_deviation_points:float, point_size:float)->QuoteSafetyDecision:
-    if not isinstance(symbol,str) or not symbol.strip() or symbol != symbol.strip():
+    if type(symbol) is not str or not symbol.strip() or symbol != symbol.strip():
         return _issue_decision(False,"quote symbol must be exact and non-empty")
     if type(direction) is not Direction or direction not in (Direction.BUY,Direction.SELL):
         return _issue_decision(False,"quote direction must be BUY or SELL")
