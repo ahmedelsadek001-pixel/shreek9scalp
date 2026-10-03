@@ -159,6 +159,23 @@ advertised FOK/IOC filling, there is another account position, or the risk budge
 it fails closed. The account's DEMO currency and the symbol profit currency
 must both be USD.
 
+To investigate scans with no confirmed signal, audit a local XAUUSD M5 CSV
+without attaching MT5:
+
+```powershell
+py -m execution.mt5_demo_signal_audit_cli --csv .\XAUUSD_M5_raw.csv
+```
+
+The header must be `timestamp,open,high,low,close,volume`, with one closed
+M5 candle per row and explicit timestamp offsets. The JSON records the source
+SHA-256, the first and last UTC timestamps, and the counts of eligible 80-bar
+windows and signals confirmed on their last bar. It shares the runner's
+39-bar continuity gate, including the detector's full warm-up and retest
+lookback. Older gaps outside that context are allowed. This offline audit
+does not check current quote freshness, bind a broker account or submit an
+order. Its counts do not establish broker fills or profitability. Do not
+loosen the strategy thresholds to force a signal.
+
 To observe broker deals after a DEMO attempt, run the read-only
 `execution.mt5_demo_history_cli --ledger $ledger`. A broker acknowledgement
 or an observed closed deal does not establish the strategy's profitability.
@@ -166,6 +183,35 @@ The history report checks opening deal timestamps against the local reservation
 and reports the observed deal clock offset separately from the stored tick/bar
 offset. An unbound clock or a future/chronologically inconsistent deal blocks
 the report. This read-only check cannot authenticate a broker export by itself.
+Opening deals must also agree between the order and position history queries:
+a matching ticket with a different symbol, strategy identifier, timestamp,
+volume, price or financial amount blocks the entire report. Consistent split
+fills may be returned in a different order without blocking the report.
+At each normalized broker timestamp, cumulative exits must not exceed the
+opening volume observed by then. An exit that depends on a later opening fill
+blocks the entire report before a partial/full status or net amount is reported.
+Deals sharing a millisecond are checked together because their order is unknown;
+consistent interleaved partial closes and reordered split fills remain supported.
+An exit deal must have the direction opposite to the bound opening. Same-side
+or unsupported exit types, or missing/ambiguous direction constants, block
+the report before closing volume or net amounts are calculated.
+Only ordinary `DEAL_ENTRY_IN` and `DEAL_ENTRY_OUT` transitions are accounted for.
+A reversal (`DEAL_ENTRY_INOUT`), close-by (`DEAL_ENTRY_OUT_BY`) or unknown entry
+blocks the entire report and requires independent broker reconciliation before
+reporting a partial/full close or a net amount.
+Repeated deal tickets in the bound position's reported deals block the entire
+report before closing volume or net amounts are calculated, even when the
+repeated rows differ. Distinct deal tickets may share one broker order; valid
+split fills and partial closes remain observable. Deal ticket uniqueness is
+defined in the [MetaQuotes deal properties](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties).
+This uniqueness check also spans all ledger attempts in one report: reusing
+an opening or exit deal ticket under a different position or order blocks the
+entire report. Consistent copies between the order and position queries for
+one attempt are still compared as the same deal, without counting it twice.
+Failure to close the history inspection session overrides every result,
+including earlier refusals or an empty ledger. The report returns
+`verified_demo=false`, no attempts and `DEMO history shutdown failed` without
+exposing terminal error details; investigate the session before retrying.
 The separate research and paper-account evidence gates stay FAILED until
 independent out-of-sample and broker export audits pass.
 

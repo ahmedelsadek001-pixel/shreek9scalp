@@ -36,8 +36,13 @@ class GuardedExecutionAdapter(Generic[T]):
         self._ledger=ledger
 
     @staticmethod
-    def _validate_decision(decision:ExecutionGateDecision)->tuple[str,...]|None:
-        if not isinstance(decision,ExecutionGateDecision) or not is_gate_issued(decision):
+    def _validate_decision(
+        decision: ExecutionGateDecision,
+        *,
+        now: datetime,
+    ) -> tuple[str, ...] | None:
+        if (not isinstance(decision, ExecutionGateDecision)
+                or not is_gate_issued(decision, now=now)):
             return ("execution gate decision not issued by execution gate",)
         if type(decision.allowed) is not bool: return ("execution gate decision malformed",)
         if not isinstance(decision.reasons,tuple) or any(not isinstance(x,str) for x in decision.reasons):
@@ -50,12 +55,13 @@ class GuardedExecutionAdapter(Generic[T]):
 
     def execute(self,decision:ExecutionGateDecision)->GuardedExecutionResult[T]:
         """Retain legacy signature while refusing transport without an intent."""
-        reasons=self._validate_decision(decision)
+        reasons=self._validate_decision(decision, now=utc_now())
         if reasons is not None: return GuardedExecutionResult(False,None,reasons)
         return GuardedExecutionResult(False,None,("unscoped execution disabled",))
 
     def execute_intent(self,decision:ExecutionGateDecision,intent:OrderIntent,quote_safety:QuoteSafetyDecision|None=None)->GuardedExecutionResult[T]:
-        reasons=self._validate_decision(decision)
+        now = utc_now()
+        reasons=self._validate_decision(decision, now=now)
         if reasons is not None: return GuardedExecutionResult(False,None,reasons)
         if not isinstance(intent,OrderIntent): return GuardedExecutionResult(False,None,("order intent malformed",))
         if not isinstance(intent.order_id,str) or not intent.order_id.strip(): return GuardedExecutionResult(False,None,("order intent identity missing",))
@@ -80,7 +86,6 @@ class GuardedExecutionAdapter(Generic[T]):
             return GuardedExecutionResult(False,None,("quote safety symbol or direction does not match intent",))
         if quote_safety.intended_price != intent.expected_price:
             return GuardedExecutionResult(False,None,("quote safety price does not match intent",))
-        now = utc_now()
         if (quote_safety.quote_time is None or quote_safety.evaluated_at is None
                 or quote_safety.max_age_seconds is None):
             return GuardedExecutionResult(False,None,("quote timing evidence missing",))

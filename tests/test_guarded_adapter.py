@@ -16,7 +16,7 @@ from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.reconciliation import ExecutionReport, OrderIntent
 from execution.recovery import RecoveryDecision, RecoveryState, ShadowRecovery
 from execution.quote_safety import evaluate_quote_safety
-from execution.idempotency import IdempotencyLedger
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.shadow import ShadowExecution
 from core.enums import Direction
 from security.release_security_gate import scan_source
@@ -33,13 +33,13 @@ def _ready_gate(
     recovery: RecoveryDecision | None = None, *,
     symbol: str = "XAUUSD", volume: float = 0.03,
 ) -> ExecutionGateDecision:
-    now = datetime(2026, 9, 21, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     return evaluate_environment_gate(
         operational_policy=OperationalPolicy(),
         operational_snapshot=OperationalSnapshot(now, now, now, True, True),
         broker_policy=BrokerSafetyPolicy(frozenset({"XAUUSD", "EURUSD"}), 1.0, 0.01, 1.0, 0.5),
         symbol=symbol, spread=0.2, volume=volume, slippage=0.1,
-        recovery=recovery or RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=recovery or ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=False,
     )
 
@@ -63,7 +63,11 @@ def _safe_quote(intent: OrderIntent | None = None):
 def test_rejected_gate_never_invokes_executor() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed"))
-    result = adapter.execute(evaluate_execution_gate(operational=(True, ()), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=True))
+    result = adapter.execute(evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
+        kill_switch_active=True,
+    ))
     assert result.executed is False
     assert result.result is None
     assert result.reasons == ("kill switch active",)
@@ -84,7 +88,7 @@ def test_caller_supplied_positive_layers_cannot_invoke_transport() -> None:
     calls = []
     decision = evaluate_execution_gate(
         operational=(True, ()), broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=False,
     )
     assert decision.allowed
@@ -121,7 +125,7 @@ def test_cloned_rejected_gate_cannot_bypass_kill_switch() -> None:
     calls = []
     rejected = evaluate_execution_gate(
         operational=(True, ()), broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=True,
     )
     cloned = replace(rejected, allowed=True, reasons=())
@@ -137,7 +141,7 @@ def test_cloned_rejected_gate_cannot_bypass_kill_switch() -> None:
 def test_in_place_modified_gate_is_rejected() -> None:
     decision = evaluate_execution_gate(
         operational=(True, ()), broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=True,
     )
     object.__setattr__(decision, "allowed", True)
@@ -161,7 +165,11 @@ def test_malformed_gate_is_fail_closed() -> None:
 def test_internally_inconsistent_allowed_gate_is_fail_closed() -> None:
     calls: list[str] = []
     adapter = GuardedExecutionAdapter(lambda: calls.append("executed"))
-    decision = evaluate_execution_gate(operational=(True, ("unexpected reason",)), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=False)
+    decision = evaluate_execution_gate(
+        operational=(True, ("unexpected reason",)), broker=(True, ()),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
+        kill_switch_active=False,
+    )
     result = adapter.execute(decision)
     assert result.executed is False
     assert result.result is None
@@ -195,6 +203,51 @@ def test_intent_aware_execution_passes_exact_identity_to_executor() -> None:
     assert received[0] is intent
 
 
+@pytest.mark.parametrize("state", [
+    SubmissionState.ACCEPTED, SubmissionState.REJECTED, SubmissionState.UNKNOWN,
+])
+def test_misplaced_prior_identity_blocks_replay_before_offline_executor(state):
+    intent = _intent()
+    ledger = IdempotencyLedger()
+    ledger.begin(intent)
+    ledger.finish(intent.order_id, state)
+    ledger._records["WRONG-KEY"] = ledger._records.pop(intent.order_id)
+    before = dict(ledger._records)
+    calls = []
+    adapter = GuardedExecutionAdapter(lambda received: calls.append(received), ledger)
+    result = adapter.execute_intent(_ready_gate(), intent, _safe_quote(intent))
+    assert not result.executed
+    assert result.result is None
+    assert "order identity" in " ".join(result.reasons)
+    assert calls == []
+    assert ledger._records == before
+
+
+@pytest.mark.parametrize("invalid_fields", [
+    {"state": "unknown"}, {"state": None}, {"state": 7},
+    {"attempts": 0}, {"attempts": True}, {"attempts": 1.5},
+])
+def test_malformed_ledger_record_never_reaches_offline_executor(invalid_fields):
+    intent = _intent()
+    ledger = IdempotencyLedger()
+    ledger.begin(intent)
+    record = ledger.mark_transport_failure(intent.order_id)
+    values = dict(order_id=record.order_id, state=record.state, attempts=record.attempts)
+    values.update(invalid_fields)
+    ledger._records[intent.order_id] = SubmissionRecord(**values)
+    if "attempts" in invalid_fields:
+        intent = replace(intent, order_id="ORD-002")
+    before = dict(ledger._records)
+    calls = []
+    adapter = GuardedExecutionAdapter(lambda received: calls.append(received), ledger)
+    result = adapter.execute_intent(_ready_gate(), intent, _safe_quote(intent))
+    assert not result.executed
+    assert result.result is None
+    assert "malformed" in " ".join(result.reasons)
+    assert calls == []
+    assert ledger._records == before
+
+
 def test_intent_aware_execution_rejects_malformed_intent_without_transport() -> None:
     calls: list[object] = []
     adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent))
@@ -222,7 +275,11 @@ def test_intent_aware_execution_rejects_invalid_economics_and_direction(changes)
 def test_intent_aware_rejected_gate_never_reaches_transport() -> None:
     calls: list[OrderIntent] = []
     adapter = GuardedExecutionAdapter(lambda intent: calls.append(intent))
-    rejected = evaluate_execution_gate(operational=(True, ()), broker=(True, ()), recovery=RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available"), kill_switch_active=True)
+    rejected = evaluate_execution_gate(
+        operational=(True, ()), broker=(True, ()),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
+        kill_switch_active=True,
+    )
     result = adapter.execute_intent(rejected, _intent())
     assert result.executed is False
     assert result.reasons == ("kill switch active",)
