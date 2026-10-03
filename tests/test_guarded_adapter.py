@@ -33,7 +33,7 @@ def _ready_gate(
     recovery: RecoveryDecision | None = None, *,
     symbol: str = "XAUUSD", volume: float = 0.03,
 ) -> ExecutionGateDecision:
-    now = datetime(2026, 9, 21, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     return evaluate_environment_gate(
         operational_policy=OperationalPolicy(),
         operational_snapshot=OperationalSnapshot(now, now, now, True, True),

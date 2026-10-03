@@ -68,6 +68,11 @@
   the same symbol and volume as the intent, and rechecks quote age at the
   instant of submission. These supplied environment facts are still not
   independently observed broker state or live authority.
+- Policy-evaluated environment decisions reject observations that are stale
+  against evaluation wall time and expire no later than the policy's data-age
+  limit. A later fresh quote cannot revive an expired environment approval.
+  This bounds caller-supplied facts in time but does not observe a broker or
+  replace a fresh adapter snapshot.
 - Broker outcome decisions are schema-checked before mutating idempotency
   state; inconsistent retry flags fail closed.
 - V5.3 promotion uses an explicit execution-safety evidence gate covering
