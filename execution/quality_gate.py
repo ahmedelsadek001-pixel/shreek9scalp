@@ -29,9 +29,17 @@ class ExecutionQualityPolicy:
 
     def validate(self) -> None:
         values = (self.max_abs_slippage, self.max_spread, self.max_latency_ms)
-        if any(not isfinite(float(value)) for value in values):
+        if any(type(value) not in (int, float) for value in values):
+            raise ValueError(
+                "execution quality limits must be built-in int or float numbers")
+        try:
+            finite = all(isfinite(value) for value in values)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                "execution quality limits must be finite") from exc
+        if not finite:
             raise ValueError("execution quality limits must be finite")
-        if any(float(value) < 0 for value in values):
+        if any(value < 0 for value in values):
             raise ValueError("execution quality limits must be non-negative")
 
 

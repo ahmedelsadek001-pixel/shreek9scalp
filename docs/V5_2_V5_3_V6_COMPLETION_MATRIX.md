@@ -35,6 +35,9 @@ component can be implemented while its evidence gate remains open.
    only when its intent and execution-report fingerprints match reconciliation.
    Reused or fabricated approvals fail closed; the binding does not prove that
    caller-supplied spread or latency observations came from a broker.
+9. Treat execution-quality limits as strict configuration: accept only finite,
+   non-negative built-in integers or floats. Booleans, numeric text, coercible
+   numeric objects, and unrepresentable values fail closed.
 
 ## Final V6.0 acceptance target
 
