@@ -44,6 +44,9 @@ component can be implemented while its evidence gate remains open.
 11. Accept operational quote-age and clock-skew limits only as finite,
     non-negative built-in integers or floats. Coercible timing configuration
     cannot extend or corrupt evidence freshness windows.
+12. Evaluate operational and broker constraints only with exact instances of
+    their owning policy classes. Arbitrary objects and subclasses cannot replace
+    validation logic or turn malformed configuration into execution admission.
 
 ## Final V6.0 acceptance target
 

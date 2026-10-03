@@ -50,6 +50,9 @@ def evaluate_operational_readiness(
     now: datetime | None = None,
 ) -> tuple[bool, tuple[str, ...]]:
     """Evaluate operational readiness without granting execution authority."""
+    if type(policy) is not OperationalPolicy:
+        raise TypeError(
+            "operational policy must be exact OperationalPolicy")
     policy.validate()
     if not isinstance(snapshot, OperationalSnapshot):
         raise TypeError("snapshot must be OperationalSnapshot")

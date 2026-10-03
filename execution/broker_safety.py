@@ -60,6 +60,9 @@ def authorize_environment(
     trading_enabled: bool,
 ) -> tuple[bool, tuple[str, ...]]:
     """Return an authorization decision for a supplied environment snapshot."""
+    if type(policy) is not BrokerSafetyPolicy:
+        raise TypeError(
+            "broker policy must be exact BrokerSafetyPolicy")
     policy.validate()
     observations = (spread, volume, slippage)
     if not all(_is_finite_number(value) for value in observations):
