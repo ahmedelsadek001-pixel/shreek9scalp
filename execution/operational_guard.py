@@ -18,8 +18,18 @@ class OperationalPolicy:
 
     def validate(self) -> None:
         values = (self.max_quote_age_seconds, self.max_clock_skew_seconds)
-        if any(not isfinite(float(value)) or float(value) < 0 for value in values):
-            raise ValueError("operational timing limits must be finite and non-negative")
+        if any(type(value) not in (int, float) for value in values):
+            raise ValueError(
+                "operational timing limits must be built-in int or float numbers")
+        try:
+            finite = all(isfinite(value) for value in values)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                "operational timing limits must be finite") from exc
+        if not finite:
+            raise ValueError("operational timing limits must be finite")
+        if any(value < 0 for value in values):
+            raise ValueError("operational timing limits must be non-negative")
         if type(self.require_heartbeat) is not bool:
             raise ValueError("require_heartbeat must be boolean")
 

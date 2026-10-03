@@ -41,6 +41,9 @@ component can be implemented while its evidence gate remains open.
 10. Apply the same strict numeric schema to broker-safety limits and supplied
     spread, volume, and slippage observations. Coercible or malformed values
     cannot become broker authorization evidence.
+11. Accept operational quote-age and clock-skew limits only as finite,
+    non-negative built-in integers or floats. Coercible timing configuration
+    cannot extend or corrupt evidence freshness windows.
 
 ## Final V6.0 acceptance target
 
