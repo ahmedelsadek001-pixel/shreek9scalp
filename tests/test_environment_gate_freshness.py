@@ -1,4 +1,6 @@
 """Environment admission must be current when transport consumes it."""
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 
 from core.enums import Direction
