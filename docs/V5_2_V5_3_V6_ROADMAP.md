@@ -68,6 +68,9 @@
   the same symbol and volume as the intent, and rechecks quote age at the
   instant of submission. These supplied environment facts are still not
   independently observed broker state or live authority.
+- Broker symbol policy accepts only an immutable `frozenset` of exact,
+  trimmed strings. A raw string cannot turn substring membership into
+  authorization for an unlisted symbol.
 - Policy-evaluated environment decisions reject observations that are stale
   against evaluation wall time and expire no later than the policy's data-age
   limit. A later fresh quote cannot revive an expired environment approval.

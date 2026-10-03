@@ -18,8 +18,18 @@ class BrokerSafetyPolicy:
     max_slippage: float
 
     def validate(self) -> None:
-        if not self.allowed_symbols or any(not symbol.strip() for symbol in self.allowed_symbols):
-            raise ValueError("allowed_symbols must contain non-empty symbols")
+        if (
+            type(self.allowed_symbols) is not frozenset
+            or not self.allowed_symbols
+            or any(
+                type(symbol) is not str
+                or not symbol.strip()
+                or symbol != symbol.strip()
+                for symbol in self.allowed_symbols
+            )
+        ):
+            raise ValueError(
+                "allowed_symbols must be an exact frozenset")
         values = (self.max_spread, self.min_volume, self.max_volume, self.max_slippage)
         if any(not isfinite(float(value)) for value in values):
             raise ValueError("broker safety limits must be finite")
