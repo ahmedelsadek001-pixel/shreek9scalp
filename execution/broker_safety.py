@@ -64,6 +64,11 @@ def authorize_environment(
         raise TypeError(
             "broker policy must be exact BrokerSafetyPolicy")
     policy.validate()
+    if (type(symbol) is not str or not symbol.strip()
+            or symbol != symbol.strip()):
+        return False, (
+            "broker symbol must be exact and non-empty",
+        )
     observations = (spread, volume, slippage)
     if not all(_is_finite_number(value) for value in observations):
         return False, (
