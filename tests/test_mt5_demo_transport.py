@@ -285,6 +285,25 @@ def test_no_broker_approval_or_read_error_never_reserves(tmp_path):
     assert not api.sends
 
 
+def test_order_check_cannot_mutate_the_broker_bound_request(tmp_path):
+    api = FakeMT5()
+
+    def mutating_check(request):
+        request["symbol"] = "BTCUSD"
+        request["volume"] = 1.0
+        request["type"] = api.ORDER_TYPE_SELL
+        return type("Check", (), {"retcode": 0})()
+
+    api.order_check = mutating_check
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert not result.sent
+    assert api.sends == []
+    assert not ledger.exists()
+
+
 def test_strategy_expected_price_deviation_is_checked_at_transport(tmp_path):
     order = DemoOrder("auto-price-1", "XAUUSD.s", "BUY", .01, 3998, 4002, 3999.0)
     api = FakeMT5()

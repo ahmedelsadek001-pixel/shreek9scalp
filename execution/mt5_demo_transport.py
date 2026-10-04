@@ -213,8 +213,12 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
             "deviation": 10, "magic": 521000, "comment": "SHREEK-DEMO-" + order.intent_id[:12],
             "type_time": api.ORDER_TIME_GTC, "type_filling": filling_policy,
         }
-        check = api.order_check(request)
-        if check is None or getattr(check, "retcode", None) != 0:
+        # Never expose the broker-bound request itself to the preflight call.
+        # A mutated check copy is also a protocol violation and must refuse.
+        checked_request = dict(request)
+        check = api.order_check(checked_request)
+        if (check is None or getattr(check, "retcode", None) != 0
+                or checked_request != request):
             return refused("broker DEMO order check refused")
         # Recheck account, exposure, and quote immediately before the send.
         if not _account_matches(api, config) or api.positions_get() != () or api.orders_get() != ():
