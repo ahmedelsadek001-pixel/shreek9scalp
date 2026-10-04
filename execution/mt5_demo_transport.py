@@ -42,6 +42,11 @@ def _number(value: Any) -> bool:
     return type(value) in (float, int) and isfinite(value)
 
 
+def _empty_broker_records(value: Any) -> bool:
+    """Accept only the exact empty tuple returned by the MT5 query API."""
+    return type(value) is tuple and len(value) == 0
+
+
 def _filling_policy(api: Any, symbol: Any) -> int | None:
     """Select only a broker-advertised immediate fill policy, preferring IOC."""
     modes = getattr(symbol, "filling_mode", None)
@@ -185,7 +190,7 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         # Existing positions and pending orders are refused, including broker read errors.
         positions = api.positions_get()
         pending = api.orders_get()
-        if positions is None or pending is None or positions or pending:
+        if not _empty_broker_records(positions) or not _empty_broker_records(pending):
             return refused("account positions, pending orders or exposure unknown")
         tick = api.symbol_info_tick(config.symbol)
         if (tick is None or not all(_number(getattr(tick, x, None)) for x in ("ask", "bid", "time_msc"))
@@ -222,7 +227,12 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
                 or checked_request != request):
             return refused("broker DEMO order check refused")
         # Recheck account, exposure, and quote immediately before the send.
-        if not _account_matches(api, config) or api.positions_get() != () or api.orders_get() != ():
+        if not _account_matches(api, config):
+            return refused("DEMO identity or exposure changed before send")
+        positions = api.positions_get()
+        pending = api.orders_get()
+        if (not _empty_broker_records(positions)
+                or not _empty_broker_records(pending)):
             return refused("DEMO identity or exposure changed before send")
         fresh = api.symbol_info_tick(config.symbol)
         if (fresh is None or getattr(fresh, "time_msc", None) != tick.time_msc

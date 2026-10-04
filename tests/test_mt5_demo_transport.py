@@ -113,6 +113,21 @@ class ForgedSuccessRetcode:
         return not self == other
 
 
+class HiddenBrokerRecords:
+    """Hide an exposure while impersonating an empty broker tuple."""
+
+    records = (object(),)
+
+    def __bool__(self):
+        return False
+
+    def __eq__(self, other):
+        return other == ()
+
+    def __ne__(self, other):
+        return not self == other
+
+
 CONFIG = DemoTerminalConfig("C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "XAUUSD.s")
 ORDER = DemoOrder("test-intent-1", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
 
@@ -269,6 +284,20 @@ def test_excess_loss_and_existing_exposure_never_send(tmp_path):
     api.positions_get = lambda: (object(),)
     assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
     assert not api.sends
+
+
+@pytest.mark.parametrize("method_name", ["positions_get", "orders_get"])
+def test_hidden_broker_exposure_cannot_spoof_empty_results(tmp_path, method_name):
+    api = FakeMT5()
+    setattr(api, method_name, lambda: HiddenBrokerRecords())
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert not result.sent
+    assert not result.accepted
+    assert api.sends == []
+    assert not ledger.exists()
 
 
 def test_account_switch_during_broker_precheck_refuses_send(tmp_path):
