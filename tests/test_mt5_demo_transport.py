@@ -107,6 +107,53 @@ CONFIG = DemoTerminalConfig("C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "X
 ORDER = DemoOrder("test-intent-1", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
 
 
+class ChangingVolumeOrder(DemoOrder):
+    """Expose safe values during validation, then enlarge the broker request."""
+
+    def __getattribute__(self, name):
+        if name == "volume":
+            reads = object.__getattribute__(self, "_volume_reads")
+            object.__setattr__(self, "_volume_reads", reads + 1)
+            # submit_demo_order reads volume seven times before constructing
+            # the request. A caller-owned subclass can change the eighth read.
+            return 1.0 if reads >= 7 else 0.01
+        return super().__getattribute__(name)
+
+
+class ValidatorOverridingConfig(DemoTerminalConfig):
+    validate_called = False
+
+    def validate(self):
+        type(self).validate_called = True
+
+
+def test_transport_rejects_order_subclass_before_values_can_change(tmp_path):
+    order = ChangingVolumeOrder(
+        "changing-order", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
+    object.__setattr__(order, "_volume_reads", 0)
+    api = FakeMT5()
+    api.order_check = lambda request: type("Check", (), {"retcode": 0})()
+
+    result = submit_demo_order(api, CONFIG, order, tmp_path / "demo.sqlite3")
+
+    assert not result.sent
+    assert api.sends == []
+    assert order._volume_reads == 0
+
+
+def test_transport_rejects_config_subclass_without_running_validator(tmp_path):
+    ValidatorOverridingConfig.validate_called = False
+    config = ValidatorOverridingConfig(
+        "C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "XAUUSD.s")
+    api = FakeMT5()
+
+    result = submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3")
+
+    assert not result.sent
+    assert api.sends == []
+    assert ValidatorOverridingConfig.validate_called is False
+
+
 def test_one_real_demo_ack_is_durable_and_duplicate_never_sends(tmp_path):
     ledger = tmp_path / "demo.sqlite3"
     api = FakeMT5()

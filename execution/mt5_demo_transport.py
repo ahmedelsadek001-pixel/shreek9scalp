@@ -141,7 +141,11 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
     or uncertain submissions remain reserved until independent reconciliation.
     """
     refused = lambda reason: DemoSubmission(False, False, reason)
-    if api is None or not isinstance(config, DemoTerminalConfig) or not isinstance(order, DemoOrder):
+    # The transport reuses these values across validation, risk calculation,
+    # reservation, and request construction. Reject subclasses so caller-owned
+    # accessors or validators cannot change broker-bound fields between reads.
+    if (api is None or type(config) is not DemoTerminalConfig
+            or type(order) is not DemoOrder):
         return refused("invalid DEMO transport inputs")
     try:
         config.validate()
