@@ -249,16 +249,18 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         result = api.order_send(request)
         result_retcode = getattr(result, "retcode", None)
         done_retcode = getattr(api, "TRADE_RETCODE_DONE", None)
+        broker_order_id = getattr(result, "order", None)
         if (result is not None and type(result_retcode) is int
                 and type(done_retcode) is int and done_retcode == 10009
                 and result_retcode == done_retcode
-                and type(getattr(result, "order", None)) is int and result.order > 0):
+                and type(broker_order_id) is int and broker_order_id > 0):
             deal_id = getattr(result, "deal", None)
             deal_id = deal_id if type(deal_id) is int and deal_id > 0 else None
             fill_price = getattr(result, "price", None)
             fill_price = float(fill_price) if _number(fill_price) and fill_price > 0 else None
-            _acknowledge(ledger, config, order.intent_id, result.order, deal_id, fill_price)
-            return DemoSubmission(True, True, "DEMO broker acknowledged; reconcile independently", result.order)
+            _acknowledge(ledger, config, order.intent_id, broker_order_id, deal_id, fill_price)
+            return DemoSubmission(True, True, "DEMO broker acknowledged; reconcile independently",
+                                  broker_order_id)
         return DemoSubmission(True, False, "DEMO submission uncertain; do not retry")
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError, sqlite3.Error):
         if reserved:

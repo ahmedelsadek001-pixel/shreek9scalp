@@ -128,6 +128,22 @@ class HiddenBrokerRecords:
         return not self == other
 
 
+class ChangingBrokerOrderResult:
+    """Return a different broker order identifier on every observation."""
+
+    retcode = 10009
+    deal = 456
+    price = 4000.1
+
+    def __init__(self):
+        self.order_reads = 0
+
+    @property
+    def order(self):
+        self.order_reads += 1
+        return 9000 + self.order_reads
+
+
 CONFIG = DemoTerminalConfig("C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "XAUUSD.s")
 ORDER = DemoOrder("test-intent-1", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
 
@@ -400,6 +416,28 @@ def test_order_send_requires_documented_integer_success_constant(tmp_path):
     with sqlite3.connect(ledger) as db:
         assert db.execute("SELECT status, broker_order_id FROM attempts").fetchall() == [
             ("UNKNOWN", None)]
+
+
+def test_order_send_snapshots_broker_order_id_once(tmp_path):
+    api = FakeMT5()
+    broker_result = ChangingBrokerOrderResult()
+
+    def changing_send(request):
+        api.sends.append(request)
+        return broker_result
+
+    api.order_send = changing_send
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert result.sent and result.accepted
+    assert result.broker_order_id == 9001
+    assert broker_result.order_reads == 1
+    with sqlite3.connect(ledger) as db:
+        assert db.execute(
+            "SELECT status, broker_order_id FROM attempts"
+        ).fetchall() == [("ACCEPTED", 9001)]
 
 
 def test_strategy_expected_price_deviation_is_checked_at_transport(tmp_path):
