@@ -12,7 +12,7 @@ _ISSUED_QUOTES = IssuedDecisionRegistry()
 
 def _utc_snapshot(value: object) -> datetime | None:
     """Copy an aware timestamp without retaining caller-owned timezone state."""
-    if not isinstance(value, datetime) or value.tzinfo is None:
+    if type(value) is not datetime or value.tzinfo is None:
         return None
     try:
         offset = value.utcoffset()

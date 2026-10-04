@@ -12,7 +12,7 @@ from math import isfinite
 
 def _utc_snapshot(value: object) -> datetime | None:
     """Copy an aware timestamp without retaining caller-owned timezone state."""
-    if not isinstance(value, datetime):
+    if type(value) is not datetime:
         return None
     try:
         if value.tzinfo is None:
