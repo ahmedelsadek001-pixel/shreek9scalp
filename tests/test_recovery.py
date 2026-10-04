@@ -112,3 +112,22 @@ def test_recovery_state_and_shadow_cannot_be_replaced_directly():
         recovery.state = RecoveryState.RECOVERING
     with pytest.raises(AttributeError):
         recovery.shadow = ShadowExecution()
+
+
+@pytest.mark.parametrize("direction", [Direction.RANGE, Direction.UNKNOWN])
+def test_non_execution_direction_report_cannot_remove_pending_shadow_order(direction):
+    intent = OrderIntent("offline-direction", "XAUUSD", direction, 0.03, 2500.0)
+    shadow = ShadowExecution()
+    shadow.submit_intent(intent)
+    recovery = ShadowRecovery(shadow)
+    recovery.disconnect()
+    recovery.begin_recovery()
+    assert not recovery.complete_recovery().can_submit
+    result = shadow.observe(ExecutionReport(
+        intent.order_id, intent.symbol, direction, intent.volume, intent.expected_price))
+    assert not result.matched
+    assert "invalid direction" in result.reasons
+    assert shadow.pending_order_ids() == (intent.order_id,)
+    decision = recovery.complete_recovery()
+    assert not decision.can_submit
+    assert decision.state is RecoveryState.RECOVERING

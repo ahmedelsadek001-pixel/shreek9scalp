@@ -7,12 +7,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from execution.broker_outcome import BrokerOutcome, BrokerOutcomeDecision
+from execution.broker_outcome import (
+    BrokerOutcome,
+    BrokerOutcomeDecision,
+    is_broker_outcome_issued,
+)
 from execution.execution_journal import JournalSnapshot, validate_snapshot
 from execution.idempotency import IdempotencyLedger
-from execution.quote_safety import QuoteSafetyDecision
-from execution.reconciliation import ReconciliationResult
-from execution.recovery import RecoveryDecision, RecoveryState
+from execution.quote_safety import QuoteSafetyDecision, is_quote_issued
+from execution.reconciliation import (
+    ReconciliationResult,
+    is_reconciliation_issued,
+)
+from execution.recovery import RecoveryDecision, RecoveryState, is_recovery_issued
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,7 @@ def derive_execution_safety_evidence(
         and bool(quote_decisions)
         and all(
             isinstance(item, QuoteSafetyDecision)
+            and is_quote_issued(item)
             and type(item.allowed) is bool
             and isinstance(item.reason, str)
             and bool(item.reason.strip())
@@ -90,10 +98,12 @@ def derive_execution_safety_evidence(
         and bool(outcome_decisions)
         and all(
             isinstance(item, BrokerOutcomeDecision)
+            and is_broker_outcome_issued(item)
             and isinstance(item.outcome, BrokerOutcome)
             and type(item.retry_allowed) is bool
             and isinstance(item.reason, str)
             and bool(item.reason.strip())
+            and type(item.intent_fingerprint) is str
             and (item.retry_allowed is (item.outcome is BrokerOutcome.REJECTED_RETRYABLE))
             for item in outcome_decisions
         )
@@ -108,6 +118,19 @@ def derive_execution_safety_evidence(
         except (TypeError, ValueError, AttributeError):
             idempotency_ok = False
 
+    ledger_fingerprints = {
+        record.intent_fingerprint for record in ledger_records
+        if record.intent_fingerprint is not None
+    }
+    if outcome_ok:
+        outcome_ok = (
+            idempotency_ok
+            and all(
+                item.intent_fingerprint in ledger_fingerprints
+                for item in outcome_decisions
+            )
+        )
+
     journal_ok = False
     if isinstance(journal, JournalSnapshot) and idempotency_ok:
         try:
@@ -118,6 +141,7 @@ def derive_execution_safety_evidence(
 
     recovery_ok = (
         isinstance(recovery, RecoveryDecision)
+        and is_recovery_issued(recovery)
         and recovery.state is RecoveryState.CONNECTED
         and type(recovery.can_submit) is bool
         and recovery.can_submit is True
@@ -130,12 +154,23 @@ def derive_execution_safety_evidence(
         and bool(reconciliation_results)
         and all(
             isinstance(item, ReconciliationResult)
+            and is_reconciliation_issued(item)
             and type(item.matched) is bool
             and item.matched is True
-            and isinstance(item.reasons, tuple)
+            and item.reasons == ()
+            and type(item.intent_fingerprint) is str
+            and type(item.report_fingerprint) is str
             for item in reconciliation_results
         )
     )
+    if reconciliation_ok:
+        reconciliation_ok = (
+            idempotency_ok
+            and all(
+                item.intent_fingerprint in ledger_fingerprints
+                for item in reconciliation_results
+            )
+        )
 
     return ExecutionSafetyEvidence(
         quote_safety_validated=quote_ok,

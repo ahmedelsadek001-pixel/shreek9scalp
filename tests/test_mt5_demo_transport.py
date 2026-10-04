@@ -103,8 +103,96 @@ class FakeMT5:
                                    "deal": 456, "price": 4000.1})()
 
 
+class ForgedSuccessRetcode:
+    """Spoof equality with documented success and refusal codes."""
+
+    def __eq__(self, other):
+        return other in (0, 10009, 10013)
+
+    def __ne__(self, other):
+        return not self == other
+
+
+class HiddenBrokerRecords:
+    """Hide an exposure while impersonating an empty broker tuple."""
+
+    records = (object(),)
+
+    def __bool__(self):
+        return False
+
+    def __eq__(self, other):
+        return other == ()
+
+    def __ne__(self, other):
+        return not self == other
+
+
+class ChangingBrokerOrderResult:
+    """Return a different broker order identifier on every observation."""
+
+    retcode = 10009
+    deal = 456
+    price = 4000.1
+
+    def __init__(self):
+        self.order_reads = 0
+
+    @property
+    def order(self):
+        self.order_reads += 1
+        return 9000 + self.order_reads
+
+
 CONFIG = DemoTerminalConfig("C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "XAUUSD.s")
 ORDER = DemoOrder("test-intent-1", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
+
+
+class ChangingVolumeOrder(DemoOrder):
+    """Expose safe values during validation, then enlarge the broker request."""
+
+    def __getattribute__(self, name):
+        if name == "volume":
+            reads = object.__getattribute__(self, "_volume_reads")
+            object.__setattr__(self, "_volume_reads", reads + 1)
+            # submit_demo_order reads volume seven times before constructing
+            # the request. A caller-owned subclass can change the eighth read.
+            return 1.0 if reads >= 7 else 0.01
+        return super().__getattribute__(name)
+
+
+class ValidatorOverridingConfig(DemoTerminalConfig):
+    validate_called = False
+
+    def validate(self):
+        type(self).validate_called = True
+
+
+def test_transport_rejects_order_subclass_before_values_can_change(tmp_path):
+    order = ChangingVolumeOrder(
+        "changing-order", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
+    object.__setattr__(order, "_volume_reads", 0)
+    api = FakeMT5()
+    api.order_check = lambda request: type("Check", (), {"retcode": 0})()
+
+    result = submit_demo_order(api, CONFIG, order, tmp_path / "demo.sqlite3")
+
+    assert not result.sent
+    assert api.sends == []
+    assert order._volume_reads == 0
+
+
+def test_transport_rejects_config_subclass_without_running_validator(tmp_path):
+    ValidatorOverridingConfig.validate_called = False
+    config = ValidatorOverridingConfig(
+        "C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "XAUUSD.s")
+    api = FakeMT5()
+
+    result = submit_demo_order(api, config, ORDER, tmp_path / "demo.sqlite3")
+
+    assert not result.sent
+    assert api.sends == []
+    assert ValidatorOverridingConfig.validate_called is False
 
 
 def test_one_real_demo_ack_is_durable_and_duplicate_never_sends(tmp_path):
@@ -214,6 +302,20 @@ def test_excess_loss_and_existing_exposure_never_send(tmp_path):
     assert not api.sends
 
 
+@pytest.mark.parametrize("method_name", ["positions_get", "orders_get"])
+def test_hidden_broker_exposure_cannot_spoof_empty_results(tmp_path, method_name):
+    api = FakeMT5()
+    setattr(api, method_name, lambda: HiddenBrokerRecords())
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert not result.sent
+    assert not result.accepted
+    assert api.sends == []
+    assert not ledger.exists()
+
+
 def test_account_switch_during_broker_precheck_refuses_send(tmp_path):
     api = FakeMT5()
 
@@ -236,6 +338,106 @@ def test_no_broker_approval_or_read_error_never_reserves(tmp_path):
     api.orders_get = lambda: None
     assert not submit_demo_order(api, CONFIG, ORDER, tmp_path / "demo.sqlite3").sent
     assert not api.sends
+
+
+def test_order_check_cannot_mutate_the_broker_bound_request(tmp_path):
+    api = FakeMT5()
+
+    def mutating_check(request):
+        request["symbol"] = "BTCUSD"
+        request["volume"] = 1.0
+        request["type"] = api.ORDER_TYPE_SELL
+        return type("Check", (), {"retcode": 0})()
+
+    api.order_check = mutating_check
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert not result.sent
+    assert api.sends == []
+    assert not ledger.exists()
+
+
+@pytest.mark.parametrize("retcode", [False, 0.0, ForgedSuccessRetcode()])
+def test_order_check_requires_exact_integer_success_retcode(tmp_path, retcode):
+    api = FakeMT5()
+    api.order_check = lambda request: type("Check", (), {"retcode": retcode})()
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert not result.sent
+    assert not result.accepted
+    assert api.sends == []
+    assert not ledger.exists()
+
+
+@pytest.mark.parametrize("retcode", [10009.0, ForgedSuccessRetcode()])
+def test_order_send_requires_exact_integer_success_retcode(tmp_path, retcode):
+    api = FakeMT5()
+
+    def forged_send(request):
+        api.sends.append(request)
+        return type("Result", (), {"retcode": retcode, "order": 9001,
+                                   "deal": 456, "price": 4000.1})()
+
+    api.order_send = forged_send
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert result.sent
+    assert not result.accepted
+    assert result.broker_order_id is None
+    assert len(api.sends) == 1
+    with sqlite3.connect(ledger) as db:
+        assert db.execute(
+            "SELECT status, broker_order_id, broker_deal_id, broker_price FROM attempts"
+        ).fetchall() == [("UNKNOWN", None, None, None)]
+
+
+def test_order_send_requires_documented_integer_success_constant(tmp_path):
+    api = FakeMT5()
+    api.TRADE_RETCODE_DONE = ForgedSuccessRetcode()
+
+    def refused_send(request):
+        api.sends.append(request)
+        return type("Result", (), {"retcode": 10013, "order": 9001,
+                                   "deal": 456, "price": 4000.1})()
+
+    api.order_send = refused_send
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert result.sent
+    assert not result.accepted
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT status, broker_order_id FROM attempts").fetchall() == [
+            ("UNKNOWN", None)]
+
+
+def test_order_send_snapshots_broker_order_id_once(tmp_path):
+    api = FakeMT5()
+    broker_result = ChangingBrokerOrderResult()
+
+    def changing_send(request):
+        api.sends.append(request)
+        return broker_result
+
+    api.order_send = changing_send
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert result.sent and result.accepted
+    assert result.broker_order_id == 9001
+    assert broker_result.order_reads == 1
+    with sqlite3.connect(ledger) as db:
+        assert db.execute(
+            "SELECT status, broker_order_id FROM attempts"
+        ).fetchall() == [("ACCEPTED", 9001)]
 
 
 def test_strategy_expected_price_deviation_is_checked_at_transport(tmp_path):
