@@ -103,6 +103,16 @@ class FakeMT5:
                                    "deal": 456, "price": 4000.1})()
 
 
+class ForgedSuccessRetcode:
+    """Spoof equality with documented success and refusal codes."""
+
+    def __eq__(self, other):
+        return other in (0, 10009, 10013)
+
+    def __ne__(self, other):
+        return not self == other
+
+
 CONFIG = DemoTerminalConfig("C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "XAUUSD.s")
 ORDER = DemoOrder("test-intent-1", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
 
@@ -302,6 +312,65 @@ def test_order_check_cannot_mutate_the_broker_bound_request(tmp_path):
     assert not result.sent
     assert api.sends == []
     assert not ledger.exists()
+
+
+@pytest.mark.parametrize("retcode", [False, 0.0, ForgedSuccessRetcode()])
+def test_order_check_requires_exact_integer_success_retcode(tmp_path, retcode):
+    api = FakeMT5()
+    api.order_check = lambda request: type("Check", (), {"retcode": retcode})()
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert not result.sent
+    assert not result.accepted
+    assert api.sends == []
+    assert not ledger.exists()
+
+
+@pytest.mark.parametrize("retcode", [10009.0, ForgedSuccessRetcode()])
+def test_order_send_requires_exact_integer_success_retcode(tmp_path, retcode):
+    api = FakeMT5()
+
+    def forged_send(request):
+        api.sends.append(request)
+        return type("Result", (), {"retcode": retcode, "order": 9001,
+                                   "deal": 456, "price": 4000.1})()
+
+    api.order_send = forged_send
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert result.sent
+    assert not result.accepted
+    assert result.broker_order_id is None
+    assert len(api.sends) == 1
+    with sqlite3.connect(ledger) as db:
+        assert db.execute(
+            "SELECT status, broker_order_id, broker_deal_id, broker_price FROM attempts"
+        ).fetchall() == [("UNKNOWN", None, None, None)]
+
+
+def test_order_send_requires_documented_integer_success_constant(tmp_path):
+    api = FakeMT5()
+    api.TRADE_RETCODE_DONE = ForgedSuccessRetcode()
+
+    def refused_send(request):
+        api.sends.append(request)
+        return type("Result", (), {"retcode": 10013, "order": 9001,
+                                   "deal": 456, "price": 4000.1})()
+
+    api.order_send = refused_send
+    ledger = tmp_path / "demo.sqlite3"
+
+    result = submit_demo_order(api, CONFIG, ORDER, ledger)
+
+    assert result.sent
+    assert not result.accepted
+    with sqlite3.connect(ledger) as db:
+        assert db.execute("SELECT status, broker_order_id FROM attempts").fetchall() == [
+            ("UNKNOWN", None)]
 
 
 def test_strategy_expected_price_deviation_is_checked_at_transport(tmp_path):

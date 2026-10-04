@@ -217,7 +217,8 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         # A mutated check copy is also a protocol violation and must refuse.
         checked_request = dict(request)
         check = api.order_check(checked_request)
-        if (check is None or getattr(check, "retcode", None) != 0
+        check_retcode = getattr(check, "retcode", None)
+        if (type(check_retcode) is not int or check_retcode != 0
                 or checked_request != request):
             return refused("broker DEMO order check refused")
         # Recheck account, exposure, and quote immediately before the send.
@@ -236,7 +237,11 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         if not reserved:
             return refused("DEMO ledger location unavailable")
         result = api.order_send(request)
-        if (result is not None and getattr(result, "retcode", None) == api.TRADE_RETCODE_DONE
+        result_retcode = getattr(result, "retcode", None)
+        done_retcode = getattr(api, "TRADE_RETCODE_DONE", None)
+        if (result is not None and type(result_retcode) is int
+                and type(done_retcode) is int and done_retcode == 10009
+                and result_retcode == done_retcode
                 and type(getattr(result, "order", None)) is int and result.order > 0):
             deal_id = getattr(result, "deal", None)
             deal_id = deal_id if type(deal_id) is int and deal_id > 0 else None
