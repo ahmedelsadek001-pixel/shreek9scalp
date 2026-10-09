@@ -32,7 +32,10 @@ matching hosted CI; this local result alone is not Windows/broker evidence.
 
 ## Offline delivery report audit
 
-Preserve the source archive and exact successful candidate CI run. On Windows,
+Preserve the source archive and exact successful candidate CI run. Verify the
+complete archive against its independently reviewed CI checkout commit using
+[the source verification guide](SOURCE_ARCHIVE_VERIFICATION.md). This source
+check does not bind saved reports to the running program. On Windows,
 retain the redacted JSON objects from the existing read-only doctor, preflight,
 local session and report-demo commands as `doctor.json`, `preflight.json`,
 `session.json` and `report-demo.json`. Run the local session and report-demo

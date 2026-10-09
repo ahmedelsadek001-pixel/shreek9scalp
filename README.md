@@ -56,6 +56,8 @@ Final release certification, security review, empirical evidence package and liv
 The current unified experimental DEMO Draft and its offline report audit are
 documented in [the delivery candidate guide](docs/DEMO_DELIVERY_CANDIDATE.md).
 Saved reports support local review only; they do not authorize a new order.
+The [source archive verification guide](docs/SOURCE_ARCHIVE_VERIFICATION.md)
+explains how to check all delivered files against an independent commit pin.
 
 The development branch runs GitHub Actions across Python 3.9, 3.10 and 3.11 with import validation, static release security checks, linting and pytest. Release evidence is generated only after the build matrix succeeds.
 
