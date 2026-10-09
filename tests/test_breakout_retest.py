@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -62,3 +63,89 @@ def test_signal_converts_to_backtest_order():
 def test_invalid_pip_size_is_rejected():
     with pytest.raises(ValueError):
         detect_breakout_retest(_bars(), pip_size=0)
+
+
+def test_diagnostics_preserve_signals_and_identify_first_failed_filter():
+    from dataclasses import replace
+    diagnostics = {"old": "discard"}
+    bars = _bars()
+    baseline = detect_breakout_retest(bars, 0.0001)
+    assert detect_breakout_retest(bars, 0.0001, diagnostics=diagnostics) == baseline
+    assert diagnostics["returned_signals"] == 1
+    assert diagnostics["valid_breakouts"] == 1
+    assert diagnostics["latest_valid_breakout"]["level"] == baseline[0].breakout_level
+    assert "old" not in diagnostics
+    for reason, changed in (
+        ("consolidation_range", [replace(b, high=b.high + 1) for b in bars]),
+        ("breakout_tick_volume", bars[:26] + [replace(bars[26], volume=150)] + bars[27:]),
+        ("breakout_body", bars[:26] + [replace(bars[26], open=bars[26].close)] + bars[27:]),
+        ("no_pin_or_engulfing_confirmation", bars[:-1] + [replace(bars[-1], open=bars[-1].close)]),
+        ("retest_did_not_touch_level", bars[:-1] + [replace(bars[-1], low=100.006)]),
+    ):
+        assert detect_breakout_retest(changed, 0.0001, min_signal_index=27,
+                                     diagnostics=diagnostics) == ()
+        assert diagnostics["rejected"][reason] == 1
+        assert diagnostics["returned_signals"] == 0
+
+
+def _repeated_confirmations(direction):
+    bars = _bars()
+    last = bars[-1]
+    bars.extend(replace(last, timestamp=last.timestamp + timedelta(minutes=i))
+                for i in range(1, 5))
+    if direction is Direction.SELL:
+        bars = [replace(bar, open=200 - bar.open, high=200 - bar.low,
+                        low=200 - bar.high, close=200 - bar.close) for bar in bars]
+    return bars
+
+
+@pytest.mark.parametrize("direction", [Direction.BUY, Direction.SELL])
+@pytest.mark.parametrize("boundary", [0, 26, 27, 28, 29, 30, 31, 32])
+def test_boundary_filters_the_same_causal_first_confirmation_stream(direction, boundary):
+    bars = _repeated_confirmations(direction)
+    complete = detect_breakout_retest(bars, 0.0001)
+    assert len(complete) == 1
+    assert complete[0].direction is direction
+    expected = tuple(signal for signal in complete
+                     if signal.signal_time in {bar.timestamp for bar in bars[boundary:]})
+    diagnostics = {}
+    assert detect_breakout_retest(bars, 0.0001, min_signal_index=boundary,
+                                 diagnostics=diagnostics) == expected
+    if boundary > 27:
+        assert diagnostics["rejected"]["first_confirmation_before_evaluation"] == 1
+    from execution.strategy_diagnostics import bounded_diagnostics
+    assert bounded_diagnostics(diagnostics)["returned_signals"] == len(expected)
+
+
+@pytest.mark.parametrize("direction", [Direction.BUY, Direction.SELL])
+def test_rolling_last_bar_scans_return_a_breakout_only_once(direction):
+    bars = _repeated_confirmations(direction)
+    replay = []
+    for end in range(27, len(bars)):
+        replay.extend(detect_breakout_retest(bars[:end + 1], 0.0001,
+                                           min_signal_index=end))
+    assert tuple(replay) == detect_breakout_retest(bars, 0.0001)
+    assert len(replay) == 1
+
+
+def test_unconfirmed_warmup_retest_does_not_consume_a_later_first_confirmation():
+    bars = _repeated_confirmations(Direction.BUY)
+    bars[27] = replace(bars[27], open=bars[27].close)
+    signals = detect_breakout_retest(bars, 0.0001, min_signal_index=28)
+    assert len(signals) == 1
+    assert signals[0].signal_time == bars[28].timestamp
+    assert signals == detect_breakout_retest(bars, 0.0001)
+
+
+def test_consumed_old_breakout_does_not_block_a_new_independent_breakout():
+    first = _repeated_confirmations(Direction.BUY)
+    second = [replace(bar, timestamp=first[-1].timestamp + timedelta(minutes=i + 1),
+                      open=bar.open + 10, high=bar.high + 10,
+                      low=bar.low + 10, close=bar.close + 10)
+              for i, bar in enumerate(_bars())]
+    bars = first + second
+    boundary = len(first)
+    signals = detect_breakout_retest(bars, 0.0001, min_signal_index=boundary)
+    assert len(signals) == 1
+    assert signals[0].signal_time == bars[-1].timestamp
+    assert signals[0].breakout_time == bars[-2].timestamp

@@ -16,6 +16,9 @@ from core.enums import Direction, SetupType, Timeframe
 from core.models import ExecutionLevels
 
 
+SIGNAL_RULES_ID = "breakout-retest-first-confirmation-v2"
+
+
 @dataclass(frozen=True)
 class ResearchBar:
     """OHLCV bar used by the research detector."""
@@ -181,20 +184,34 @@ def detect_breakout_retest(
     config: BreakoutRetestConfig = BreakoutRetestConfig(),
     *,
     min_signal_index: int = 0,
+    diagnostics: dict | None = None,
 ) -> tuple[BreakoutRetestSignal, ...]:
     """Detect completed Breakout + Retest setups without look-ahead bias.
 
     ``min_signal_index`` defines an evaluation boundary. Bars before the boundary
     remain available as historical context for consolidation and volume baselines,
     but a confirmation before that boundary can never become a returned signal.
-    This is the key distinction between warm-up context and OOS performance data.
+    Each breakout is consumed by its first valid confirmation, including one
+    in warm-up. Moving the boundary cannot revive it at a later confirmation.
+    The boundary filters the causal signal stream instead of changing it.
     """
     config.validate()
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics.update(schema="shreek.strategy-diagnostics.v1", candidates=0,
+                           rejected={}, valid_breakouts=0, returned_signals=0)
+
+    def reject(reason: str) -> None:
+        if diagnostics is not None:
+            counts = diagnostics["rejected"]
+            counts[reason] = counts.get(reason, 0) + 1
+
     if not isfinite(float(pip_size)) or pip_size <= 0:
         raise ValueError("pip_size must be finite and positive")
     if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
         raise ValueError("min_signal_index must be an integer within bars")
     if len(bars) < config.consolidation_bars + config.volume_lookback + 2:
+        reject("insufficient_history")
         return ()
     for bar in bars:
         bar.validate()
@@ -205,11 +222,14 @@ def detect_breakout_retest(
     for breakout_index in range(first_breakout, len(bars) - 1):
         if breakout_index in used_breakouts:
             continue
+        if diagnostics is not None:
+            diagnostics["candidates"] += 1
         consolidation = bars[breakout_index - config.consolidation_bars : breakout_index]
         range_high = max(bar.high for bar in consolidation)
         range_low = min(bar.low for bar in consolidation)
         range_pips = (range_high - range_low) / pip_size
         if not config.min_range_pips <= range_pips <= config.max_range_pips:
+            reject("consolidation_range")
             continue
 
         breakout = bars[breakout_index]
@@ -218,7 +238,11 @@ def detect_breakout_retest(
             bar.volume for bar in bars[breakout_index - config.volume_lookback : breakout_index]
         ) / config.volume_lookback
         volume_ratio = breakout.volume / average_volume if average_volume > 0 else 0.0
-        if body_pct <= config.breakout_body_pct or volume_ratio <= config.volume_multiplier:
+        if body_pct <= config.breakout_body_pct:
+            reject("breakout_body")
+            continue
+        if volume_ratio <= config.volume_multiplier:
+            reject("breakout_tick_volume")
             continue
 
         if breakout.close > range_high:
@@ -228,16 +252,30 @@ def detect_breakout_retest(
             direction = Direction.SELL
             level = range_low
         else:
+            reject("no_close_outside_range")
             continue
 
+        if diagnostics is not None:
+            diagnostics["valid_breakouts"] += 1
+            diagnostics["latest_valid_breakout"] = {
+                "time": breakout.timestamp.isoformat(), "side": direction.value,
+                "level": level, "range_price": range_high - range_low,
+                "body_fraction": body_pct, "tick_volume_ratio": volume_ratio,
+            }
         last_retest = min(len(bars), breakout_index + 1 + config.retest_max_bars)
+        if last_retest <= min_signal_index:
+            reject("retest_window_before_evaluation")
         for index in range(breakout_index + 1, last_retest):
             retest = bars[index]
             touched = retest.low <= level <= retest.high
             if not touched:
+                if index >= min_signal_index:
+                    reject("retest_did_not_touch_level")
                 continue
             confirmation = _confirmation(bars, index, direction)
-            if confirmation is None or index < min_signal_index:
+            if confirmation is None:
+                if index >= min_signal_index:
+                    reject("no_pin_or_engulfing_confirmation")
                 continue
             entry = retest.close
             if direction is Direction.BUY:
@@ -261,6 +299,9 @@ def detect_breakout_retest(
                     entry - risk * config.tp3_rr,
                 )
 
+            if index < min_signal_index:
+                reject("first_confirmation_before_evaluation")
+                break
             signals.append(
                 BreakoutRetestSignal(
                     direction=direction,
@@ -280,4 +321,6 @@ def detect_breakout_retest(
             used_breakouts.add(breakout_index)
             break
 
+    if diagnostics is not None:
+        diagnostics["returned_signals"] = len(signals)
     return tuple(signals)

@@ -18,6 +18,11 @@ days, absolute entry slippage no more than 1.00 price unit and fill delay no mor
 than 30 seconds. The CLI exits nonzero if the export is incomplete or exceeds a
 limit; it returns JSON without raw account identifiers.
 
+Delay uses exact timestamp arithmetic. Positive fractional seconds round upward
+in `worst_fill_delay_seconds`, preserving the integer report field without
+hiding a limit breach: 30 seconds is accepted at the default limit, while
+30.000001 seconds is reported as 31 and rejected.
+
 The manifest is JSON with *exactly* the following string keys:
 
 | Key | Value |

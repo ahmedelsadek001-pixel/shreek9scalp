@@ -24,9 +24,32 @@ component can be implemented while its evidence gate remains open.
 1. Never interpret implementation as proof of profitability.
 2. Never promote from development to `main` while a mandatory gate is failing.
 3. Never enable broker order routing merely because CI is green.
-4. Treat missing, stale, malformed, or conflicting evidence as a failed gate.
+4. Treat missing, future-dated, stale, malformed, or conflicting evidence as a failed gate.
 5. Preserve chronological separation between training, validation, and test data.
 6. Keep research analytics free of broker transport and execution authority.
+7. Accept reconciliation evidence only from the reconciler that issued it and
+   only when its intent fingerprint exists in the validated ledger. Fabricated,
+   copied, edited, or differently bound matches fail closed. This in-process
+   correlation check does not authenticate broker evidence.
+8. Accept a positive execution-quality decision only from the quality gate and
+   only when its intent and execution-report fingerprints match reconciliation.
+   Reused or fabricated approvals fail closed; the binding does not prove that
+   caller-supplied spread or latency observations came from a broker.
+9. Treat execution-quality limits as strict configuration: accept only finite,
+   non-negative built-in integers or floats. Booleans, numeric text, coercible
+   numeric objects, and unrepresentable values fail closed.
+10. Apply the same strict numeric schema to broker-safety limits and supplied
+    spread, volume, and slippage observations. Coercible or malformed values
+    cannot become broker authorization evidence.
+11. Accept operational quote-age and clock-skew limits only as finite,
+    non-negative built-in integers or floats. Coercible timing configuration
+    cannot extend or corrupt evidence freshness windows.
+12. Evaluate operational and broker constraints only with exact instances of
+    their owning policy classes. Arbitrary objects and subclasses cannot replace
+    validation logic or turn malformed configuration into execution admission.
+13. Evaluate only exact operational snapshot objects and convert supplied
+    timestamps into detached UTC values before comparing them. Mutable or
+    failing timezone providers and subclass attribute code fail closed.
 
 ## Final V6.0 acceptance target
 

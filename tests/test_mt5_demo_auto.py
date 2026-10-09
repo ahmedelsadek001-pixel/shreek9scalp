@@ -3,6 +3,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from core.enums import Direction
 from execution.mt5_demo_auto import scan_and_submit_demo
 from execution import mt5_demo_auto, mt5_demo_auto_cli
@@ -138,6 +140,37 @@ def test_real_last_bar_retest_reaches_fake_fok_demo_transport_on_shifted_feed(tm
     assert len(api.sends) == 1 and api.sends[0]["price"] == 4001.6
 
 
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+def test_consumed_breakout_cannot_reenter_on_next_completed_bar(tmp_path, side):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    bars[-2].update(open=4000.0, high=4002.0, low=3999.9,
+                    close=4001.8, tick_volume=200)
+    bars[-1].update(open=4001.0, high=4001.7, low=4000.5,
+                    close=4001.5, tick_volume=100)
+    if side == "SELL":
+        for row in bars:
+            row.update(open=8000 - row["open"], high=8000 - row["low"],
+                       low=8000 - row["high"], close=8000 - row["close"])
+    ledger = tmp_path / "demo.sqlite3"
+    initial = scan_and_submit_demo(api, CONFIG, ledger, now=clock)
+    assert initial.signal_detected and not initial.sent and not ledger.exists()
+    last = dict(bars[-1], time=bars[-1]["time"] + 300)
+    bars[:] = bars[1:] + [last]
+
+    def forbidden_quote_or_send(*args, **kwargs):
+        raise AssertionError("a consumed setup cannot reach the order boundary")
+
+    api.symbol_info_tick = forbidden_quote_or_send
+    api.order_send = forbidden_quote_or_send
+    from datetime import timedelta
+    later = scan_and_submit_demo(api, CONFIG, ledger, execute=True,
+                                 kill_switch_off=True, now=clock + timedelta(minutes=5))
+    assert not later.signal_detected and not later.sent and not later.accepted
+    assert later.reason == "no unique current closed-bar strategy signal"
+    assert later.strategy_diagnostics["rejected"]["first_confirmation_before_evaluation"] == 1
+    assert not ledger.exists() and not api.sends
+
+
 def test_shifted_m5_bars_with_unshifted_quote_never_send(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     api.copy_rates_from_pos = lambda *args: [dict(row, time=row["time"] + 10800) for row in bars]
@@ -240,6 +273,41 @@ def test_local_stop_file_prevents_auto_submission(monkeypatch, tmp_path):
     assert result.signal_detected and not result.sent and not api.sends
 
 
+def test_dangling_stop_marker_prevents_auto_submission(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+    marker = tmp_path / "demo.stop"
+    try:
+        marker.symlink_to(tmp_path / "missing-stop-target")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.reason == "automatic DEMO stop file active"
+    assert result.signal_detected and not result.sent and not api.sends
+
+
+def test_unreadable_stop_marker_prevents_auto_submission(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+    ledger = tmp_path / "demo.sqlite3"
+    original_lstat = Path.lstat
+
+    def unreadable_stop(path):
+        if path == ledger.with_suffix(".stop"):
+            raise PermissionError("private filesystem details")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", unreadable_stop)
+    result = scan_and_submit_demo(api, CONFIG, ledger,
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert result.reason == "automatic DEMO stop file active"
+    assert result.signal_detected and not result.sent and not api.sends
+    assert "private" not in str(result)
+
+
 def test_cli_never_enables_automation_without_both_opt_ins(monkeypatch, capsys, tmp_path):
     monkeypatch.setenv("SHREEK_DEMO_LOGIN", "123456")
     monkeypatch.setenv("SHREEK_DEMO_TERMINAL_PATH", CONFIG.terminal_path)
@@ -255,3 +323,14 @@ def test_cli_never_enables_automation_without_both_opt_ins(monkeypatch, capsys, 
     assert mt5_demo_auto_cli.main(["--execute-demo-auto"] + args) == 2
     assert not api.sends
     assert "123456" not in capsys.readouterr().out
+
+
+def test_no_signal_exposes_diagnostics_without_submission(tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+    assert not result.sent and not result.signal_detected and not api.sends
+    assert result.strategy_diagnostics["schema"] == "shreek.strategy-diagnostics.v1"
+    assert result.strategy_diagnostics["returned_signals"] == 0
+    assert result.strategy_diagnostics["rejected"]["breakout_body"] > 0
+    assert not (tmp_path / "demo.sqlite3").exists()

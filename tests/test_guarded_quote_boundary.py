@@ -7,7 +7,8 @@ from execution.operational_guard import OperationalPolicy, OperationalSnapshot
 from execution.guarded_adapter import GuardedExecutionAdapter
 from execution.quote_safety import evaluate_quote_safety,QuoteSafetyDecision
 from execution.reconciliation import OrderIntent
-from execution.recovery import RecoveryDecision,RecoveryState
+from execution.recovery import ShadowRecovery
+from execution.shadow import ShadowExecution
 from execution.idempotency import IdempotencyLedger
 
 def gate(symbol="XAUUSD"):
@@ -17,7 +18,7 @@ def gate(symbol="XAUUSD"):
         operational_snapshot=OperationalSnapshot(now,now,now,True,True),
         broker_policy=BrokerSafetyPolicy(frozenset({symbol}),1.0,.01,1.0,.5),
         symbol=symbol,spread=.2,volume=.03,slippage=.1,
-        recovery=RecoveryDecision(RecoveryState.CONNECTED,True,"ready"),
+        recovery=ShadowRecovery(ShadowExecution()).admission(),
         kill_switch_active=False,
     )
 def intent(): return OrderIntent("Q-1","XAUUSD",Direction.BUY,0.03,2500.0)
@@ -123,14 +124,17 @@ def test_cloned_or_mutated_quote_cannot_change_symbol_or_side():
     assert calls==[]
 
 def test_clock_rollback_after_quote_evaluation_blocks_transport(monkeypatch):
-    from execution import guarded_adapter
+    from execution import execution_gate, guarded_adapter
 
-    calls=[]; now=datetime.now(timezone.utc)
+    calls=[]; issued_at=datetime.now(timezone.utc)
+    monkeypatch.setattr(execution_gate,"utc_now",lambda: issued_at)
+    decision=gate()
+    now=issued_at+timedelta(seconds=1)
     quote=evaluate_quote_safety(symbol="XAUUSD",direction=Direction.BUY,
                                 quote_time=now,now=now,intended_price=2500.0,
                                 market_price=2500.0,max_age_seconds=2,
                                 max_deviation_points=3,point_size=.1)
-    monkeypatch.setattr(guarded_adapter,"utc_now",lambda: now-timedelta(seconds=1))
-    result=GuardedExecutionAdapter(lambda x:calls.append(x),IdempotencyLedger()).execute_intent(gate(),intent(),quote)
+    monkeypatch.setattr(guarded_adapter,"utc_now",lambda: issued_at+timedelta(seconds=.5))
+    result=GuardedExecutionAdapter(lambda x:calls.append(x),IdempotencyLedger()).execute_intent(decision,intent(),quote)
     assert result.reasons==("quote evaluated in the future",)
     assert calls==[]

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
@@ -84,3 +85,39 @@ def test_invalid_policy_rejected():
 def test_malformed_snapshot_fails_closed():
     with pytest.raises(TypeError, match="snapshot must be OperationalSnapshot"):
         evaluate_operational_readiness(OperationalPolicy(), object())
+
+
+@pytest.mark.parametrize(
+    "field",
+    ("max_quote_age_seconds", "max_clock_skew_seconds"),
+)
+@pytest.mark.parametrize(
+    "invalid_value",
+    (True, False, "2.0", None, Decimal("2.0")),
+    ids=("true", "false", "numeric-text", "none", "decimal"),
+)
+def test_policy_rejects_coercible_or_non_builtin_timing_limits(
+    field, invalid_value,
+):
+    values = {
+        "max_quote_age_seconds": 5.0,
+        "max_clock_skew_seconds": 2.0,
+    }
+    values[field] = invalid_value
+
+    with pytest.raises(ValueError, match="numbers"):
+        OperationalPolicy(**values).validate()
+
+
+def test_policy_rejects_integer_too_large_for_finite_float_validation():
+    policy = OperationalPolicy(max_quote_age_seconds=10**10_000)
+
+    with pytest.raises(ValueError, match="finite"):
+        policy.validate()
+
+
+def test_policy_accepts_plain_non_negative_ints_and_floats():
+    OperationalPolicy(
+        max_quote_age_seconds=5,
+        max_clock_skew_seconds=2.0,
+    ).validate()
