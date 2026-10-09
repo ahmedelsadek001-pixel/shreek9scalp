@@ -167,8 +167,14 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
             or (order.expected_price is not None
                 and (not _number(order.expected_price) or order.expected_price <= 0))):
         return refused("invalid or oversized DEMO intent")
-    clock = now or datetime.now(timezone.utc)
-    if clock.tzinfo is None:
+    if now is not None and type(now) is not datetime:
+        return refused("timezone-aware clock required")
+    clock = now if now is not None else datetime.now(timezone.utc)
+    try:
+        aware_clock = clock.tzinfo is not None and clock.utcoffset() is not None
+    except Exception:
+        aware_clock = False
+    if not aware_clock:
         return refused("timezone-aware clock required")
     initialized = False
     reserved = False

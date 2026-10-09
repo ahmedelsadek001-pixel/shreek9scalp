@@ -159,6 +159,17 @@ class ComparisonChangingSide(str):
         return self.comparisons == 1
 
 
+def test_transport_rejects_invalid_clock_before_mt5_initialization(tmp_path):
+    api = FakeMT5()
+
+    result = submit_demo_order(
+        api, CONFIG, ORDER, tmp_path / "demo.sqlite3", now=object())
+
+    assert not result.sent and not result.accepted
+    assert api.sends == []
+    assert api.stops == 0
+
+
 def test_transport_rejects_non_string_order_fields_before_comparison(tmp_path):
     side = ComparisonChangingSide("BUY")
     invalid_orders = (
