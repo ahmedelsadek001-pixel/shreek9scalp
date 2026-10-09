@@ -152,6 +152,9 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
     if (api is None or type(config) is not DemoTerminalConfig
             or type(order) is not DemoOrder):
         return refused("invalid DEMO transport inputs")
+    if any(type(value) is not str for value in
+           (order.intent_id, order.symbol, order.side, order.source_kind)):
+        return refused("invalid DEMO transport inputs")
     try:
         config.validate()
     except ValueError:

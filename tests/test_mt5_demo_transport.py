@@ -148,6 +148,36 @@ CONFIG = DemoTerminalConfig("C:/DEMO/terminal64.exe", 123456, "Sandbox-Demo", "X
 ORDER = DemoOrder("test-intent-1", "XAUUSD.s", "BUY", 0.01, 3998.0, 4002.0)
 
 
+class ComparisonChangingSide(str):
+    def __new__(cls, value):
+        instance = super().__new__(cls, value)
+        instance.comparisons = 0
+        return instance
+
+    def __eq__(self, other):
+        self.comparisons += 1
+        return self.comparisons == 1
+
+
+def test_transport_rejects_non_string_order_fields_before_comparison(tmp_path):
+    side = ComparisonChangingSide("BUY")
+    invalid_orders = (
+        replace(ORDER, intent_id=123),
+        replace(ORDER, symbol=object()),
+        replace(ORDER, side=side),
+        replace(ORDER, source_kind=object()),
+    )
+
+    for order in invalid_orders:
+        api = FakeMT5()
+        result = submit_demo_order(api, CONFIG, order, tmp_path / "demo.sqlite3")
+        assert not result.sent and not result.accepted
+        assert api.sends == []
+        assert api.stops == 0
+
+    assert side.comparisons == 0
+
+
 class ChangingVolumeOrder(DemoOrder):
     """Expose safe values during validation, then enlarge the broker request."""
 
