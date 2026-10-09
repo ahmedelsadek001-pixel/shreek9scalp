@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from core.enums import Direction
+from execution.mt5_demo_ledger_preflight import stop_marker_present
 from execution.mt5_demo_probe import DemoTerminalConfig, _matches_demo_account
 from execution.mt5_demo_transport import DemoOrder, submit_demo_order
 from research.breakout_retest import BreakoutRetestConfig, ResearchBar, detect_breakout_retest
@@ -43,6 +44,7 @@ class DemoAutoResult:
     reason: str
     signal_id: str | None = None
     broker_order_id: int | None = None
+    strategy_diagnostics: dict | None = None
 
 
 class _DemoSessionShutdownError(RuntimeError):
@@ -110,10 +112,14 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 or symbol_info.chart_mode != chart_mode_bid):
             return refused("automatic DEMO requires Bid-based broker candles")
         bars = _closed_m5_bars(api, config, clock)
+        diagnostics: dict = {}
         signals = detect_breakout_retest(bars, PIP_SIZE, STRATEGY_CONFIG,
-                                         min_signal_index=len(bars) - 1)
+                                         min_signal_index=len(bars) - 1,
+                                         diagnostics=diagnostics)
         if len(signals) != 1 or signals[0].signal_time != bars[-1].timestamp:
-            return refused("no unique current closed-bar strategy signal")
+            return DemoAutoResult(False, False, False,
+                                  "no unique current closed-bar strategy signal",
+                                  strategy_diagnostics=diagnostics)
         signal = signals[0]
         if signal.direction not in (Direction.BUY, Direction.SELL):
             return refused("automatic DEMO signal direction invalid")
@@ -156,7 +162,7 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 # The public wrapper converts the sentinel into a fail-closed
                 # result, so no scan outcome can conceal a leaked MT5 session.
                 raise _DemoSessionShutdownError from exc
-    if ledger.with_suffix(".stop").exists():
+    if stop_marker_present(ledger):
         return DemoAutoResult(True, False, False, "automatic DEMO stop file active", signal_id)
     order = DemoOrder(signal_id, config.symbol, side, 0.01,
                       signal.sl_price, signal.tp1, expected_execution_price,

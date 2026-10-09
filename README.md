@@ -53,6 +53,10 @@ Final release certification, security review, empirical evidence package and liv
 
 ## CI/CD
 
+The current unified experimental DEMO Draft and its offline report audit are
+documented in [the delivery candidate guide](docs/DEMO_DELIVERY_CANDIDATE.md).
+Saved reports support local review only; they do not authorize a new order.
+
 The development branch runs GitHub Actions across Python 3.9, 3.10 and 3.11 with import validation, static release security checks, linting and pytest. Release evidence is generated only after the build matrix succeeds.
 
 The release sequence is documented in `CHANGELOG.md`. Release candidates use semantic-version pre-release tags such as `5.1.0-rc.1`; no RC is considered valid until its required empirical and safety gates pass.
