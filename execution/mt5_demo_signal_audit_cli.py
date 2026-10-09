@@ -12,15 +12,16 @@ import json
 from pathlib import Path
 from typing import Sequence
 
-from execution.mt5_demo_auto import (PIP_SIZE, STRATEGY_ID,
+from execution.mt5_demo_auto import (PIP_SIZE, STRATEGY_ID, STRATEGY_CONFIG,
                                      m5_context_is_contiguous)
-from research.breakout_retest import (BreakoutRetestConfig, ResearchBar,
+from execution.strategy_diagnostics import bounded_diagnostics
+from research.breakout_retest import (ResearchBar, SIGNAL_RULES_ID,
                                       detect_breakout_retest)
 from research.csv_adapter import load_ohlcv_csv
 
 
 WINDOW_BARS = 80
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def audit_m5_bars(bars: Sequence[ResearchBar]) -> dict:
@@ -28,15 +29,23 @@ def audit_m5_bars(bars: Sequence[ResearchBar]) -> dict:
     eligible = skipped_gaps = confirmed = ambiguous = 0
     by_side = {"BUY": 0, "SELL": 0}
     latest_signal = None
-    config = BreakoutRetestConfig()
+    rejection_counts = {}
+    consumed_windows = 0
     for end in range(WINDOW_BARS - 1, len(bars)):
         window = bars[end - WINDOW_BARS + 1:end + 1]
         if not m5_context_is_contiguous(window):
             skipped_gaps += 1
             continue
         eligible += 1
-        signals = detect_breakout_retest(window, PIP_SIZE, config,
-                                         min_signal_index=WINDOW_BARS - 1)
+        diagnostics = {}
+        signals = detect_breakout_retest(window, PIP_SIZE, STRATEGY_CONFIG,
+                                         min_signal_index=WINDOW_BARS - 1,
+                                         diagnostics=diagnostics)
+        rejected = bounded_diagnostics(diagnostics)["rejected"]
+        for reason, count in rejected.items():
+            rejection_counts[reason] = rejection_counts.get(reason, 0) + count
+        if rejected.get("first_confirmation_before_evaluation", 0):
+            consumed_windows += 1
         if len(signals) == 1 and signals[0].signal_time == window[-1].timestamp:
             confirmed += 1
             by_side[signals[0].direction.value] += 1
@@ -46,6 +55,7 @@ def audit_m5_bars(bars: Sequence[ResearchBar]) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
         "strategy_id": STRATEGY_ID,
+        "signal_rules_id": SIGNAL_RULES_ID,
         "bar_count": len(bars),
         "first_bar_utc": bars[0].timestamp.astimezone(timezone.utc).isoformat() if bars else None,
         "last_bar_utc": bars[-1].timestamp.astimezone(timezone.utc).isoformat() if bars else None,
@@ -54,6 +64,9 @@ def audit_m5_bars(bars: Sequence[ResearchBar]) -> dict:
         "skipped_gap_windows": skipped_gaps,
         "confirmed_signal_bars": confirmed,
         "ambiguous_signal_bars": ambiguous,
+        "no_signal_windows": eligible - confirmed - ambiguous,
+        "previously_confirmed_breakout_windows": consumed_windows,
+        "rejection_counts": rejection_counts,
         "signals_by_side": by_side,
         "latest_signal_utc": latest_signal,
     }

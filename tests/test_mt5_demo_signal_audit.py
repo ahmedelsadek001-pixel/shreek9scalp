@@ -79,3 +79,33 @@ def test_cli_reads_strict_csv_and_reports_reproducible_source_hash(tmp_path, cap
     csv.write_text("timestamp,open,high,low,close,volume\ninvalid\n", encoding="utf-8")
     assert main(["--csv", str(csv)]) == 2
     assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_replay_does_not_count_repeated_confirmations_as_new_signals():
+    from execution.mt5_demo_auto import STRATEGY_ID
+    from research.breakout_retest import SIGNAL_RULES_ID
+    bars = _bars()
+    last = bars[-1]
+    bars.extend(replace(last, timestamp=last.timestamp + timedelta(minutes=5 * i))
+                for i in range(1, 6))
+    report = audit_m5_bars(bars)
+    assert report["schema_version"] == 2
+    assert report["strategy_id"] == STRATEGY_ID
+    assert report["signal_rules_id"] == SIGNAL_RULES_ID
+    assert report["eligible_windows"] == 6
+    assert report["confirmed_signal_bars"] == 1
+    assert report["signals_by_side"] == {"BUY": 1, "SELL": 0}
+    assert report["latest_signal_utc"] == bars[79].timestamp.isoformat()
+    assert report["no_signal_windows"] == 5
+    assert report["previously_confirmed_breakout_windows"] == 5
+    assert report["rejection_counts"]["first_confirmation_before_evaluation"] == 5
+
+
+def test_gap_window_produces_no_strategy_diagnostics_or_false_replay_signal():
+    bars = _bars()
+    bars[60] = replace(bars[60], timestamp=bars[60].timestamp + timedelta(minutes=1))
+    report = audit_m5_bars(bars)
+    assert report["rejection_counts"] == {}
+    assert report["previously_confirmed_breakout_windows"] == 0
+    assert report["no_signal_windows"] == 0
+    assert report["skipped_gap_windows"] == 1

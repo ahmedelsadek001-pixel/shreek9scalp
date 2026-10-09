@@ -82,6 +82,24 @@ def test_breakout_retest_boundary_allows_warmup_but_blocks_pre_boundary_signal()
     assert blocked_orders == ()
 
 
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+def test_oos_boundary_cannot_revive_a_confirmed_training_setup(side):
+    from dataclasses import replace
+    bars = _bars()
+    first = bars[27]
+    bars = bars[:28] + [replace(first, timestamp=first.timestamp + timedelta(minutes=i))
+                       for i in range(1, 4)]
+    if side == "SELL":
+        bars = [replace(bar, open=200 - bar.open, high=200 - bar.low,
+                        low=200 - bar.high, close=200 - bar.close) for bar in bars]
+    config = BreakoutRetestBacktestConfig(pip_size=0.0001, point_value=1.0)
+    assert len(build_breakout_retest_orders(bars, config)) == 1
+    assert build_breakout_retest_orders(bars, config, min_signal_index=28) == ()
+    oos = run_breakout_retest_backtest(bars, config, min_signal_index=28,
+                                     execution_end_index=len(bars) - 1)
+    assert oos.trades == () and oos.stats.trades == 0
+
+
 def test_backtest_preserves_configured_tp1_rr_in_order_metadata():
     signal = BreakoutRetestConfig(tp1_rr=2.0)
     config = BreakoutRetestBacktestConfig(

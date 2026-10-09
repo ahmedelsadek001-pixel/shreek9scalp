@@ -16,6 +16,9 @@ from core.enums import Direction, SetupType, Timeframe
 from core.models import ExecutionLevels
 
 
+SIGNAL_RULES_ID = "breakout-retest-first-confirmation-v2"
+
+
 @dataclass(frozen=True)
 class ResearchBar:
     """OHLCV bar used by the research detector."""
@@ -188,7 +191,9 @@ def detect_breakout_retest(
     ``min_signal_index`` defines an evaluation boundary. Bars before the boundary
     remain available as historical context for consolidation and volume baselines,
     but a confirmation before that boundary can never become a returned signal.
-    This is the key distinction between warm-up context and OOS performance data.
+    Each breakout is consumed by its first valid confirmation, including one
+    in warm-up. Moving the boundary cannot revive it at a later confirmation.
+    The boundary filters the causal signal stream instead of changing it.
     """
     config.validate()
     if diagnostics is not None:
@@ -268,7 +273,7 @@ def detect_breakout_retest(
                     reject("retest_did_not_touch_level")
                 continue
             confirmation = _confirmation(bars, index, direction)
-            if confirmation is None or index < min_signal_index:
+            if confirmation is None:
                 if index >= min_signal_index:
                     reject("no_pin_or_engulfing_confirmation")
                 continue
@@ -294,6 +299,9 @@ def detect_breakout_retest(
                     entry - risk * config.tp3_rr,
                 )
 
+            if index < min_signal_index:
+                reject("first_confirmation_before_evaluation")
+                break
             signals.append(
                 BreakoutRetestSignal(
                     direction=direction,

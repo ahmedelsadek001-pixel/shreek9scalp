@@ -4,7 +4,7 @@ REASONS = frozenset({
     "insufficient_history", "consolidation_range", "breakout_body",
     "breakout_tick_volume", "no_close_outside_range",
     "retest_window_before_evaluation", "retest_did_not_touch_level",
-    "no_pin_or_engulfing_confirmation",
+    "no_pin_or_engulfing_confirmation", "first_confirmation_before_evaluation",
 })
 SCHEMA = "shreek.strategy-diagnostics.v1"
 

@@ -6,7 +6,7 @@ claims.** This optional V5.2 experiment automatically tests the fixed
 separate from the manual sandbox CLI and cannot turn on live MT5 routing.
 
 The one-shot runner reads 80 M5 bars starting at MT5 index **1** (index 0 is
-unfinished), checks the last 33 bars are consecutive, requires the most recent
+unfinished), checks the last 39 bars are consecutive, requires the most recent
 completed candle to have closed no more than 120 seconds ago, and only accepts
 exactly one signal confirmed on that last candle. It never replays a signal
 from history. The broker symbol must explicitly report Bid-based chart bars;
@@ -18,6 +18,12 @@ the account mode/login/server, applies its 0.01-lot and risk/stop/spread gates,
 and durably reserves the signal ID before the broker call. After one attempted
 broker submission, the bounded watcher stops, including uncertain outcomes.
 Repeated scans cannot re-submit the same signal ID.
+The detector also consumes each breakout's first valid confirmation before
+applying the current-bar boundary. A later confirmation of that same breakout
+cannot become a new signal when the 80-bar window advances. An unconfirmed
+warm-up retest can still lead to a first confirmation on the current bar.
+The existing signal-ID formula is retained so an already reserved intent does
+not gain a new identity merely because this lifecycle fix was installed.
 The local SQLite ledger labels these attempts `strategy_experiment`; manually
 entered sandbox attempts are `manual_sandbox`, and migrated older rows remain
 `legacy_unattributed`. These local labels help separate observations but are
@@ -189,6 +195,13 @@ lookback. Older gaps outside that context are allowed. This offline audit
 does not check current quote freshness, bind a broker account or submit an
 order. Its counts do not establish broker fills or profitability. Do not
 loosen the strategy thresholds to force a signal.
+Audit schema version 2 also reports `no_signal_windows`,
+`previously_confirmed_breakout_windows` and `rejection_counts`, with the
+executed `signal_rules_id`. Rejection totals describe candidate/filter
+evaluations across overlapping history windows; they are not independent
+trade counts. A previously confirmed breakout window may also contain a
+separate new valid signal, so that window count is not a refusal total.
+Gap windows are skipped before detection and contribute no strategy counters.
 
 To observe broker deals after a DEMO attempt, run the read-only
 `execution.mt5_demo_history_cli --ledger $ledger`. A broker acknowledgement
@@ -256,3 +269,6 @@ Malformed diagnostics block reporting and cannot certify a session. Stale bars a
 diagnostics because they never reach the detector. This feature does not
 change strategy thresholds, the M5 freshness window, risk limits or DEMO-only
 submission gates, and does not establish profitable or live-ready trading.
+The `first_confirmation_before_evaluation` reason means a valid confirmation
+already occurred before the current-bar/OOS boundary. That breakout is
+consumed rather than revived by a later pin/engulfing candle.

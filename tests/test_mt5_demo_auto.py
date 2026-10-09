@@ -140,6 +140,37 @@ def test_real_last_bar_retest_reaches_fake_fok_demo_transport_on_shifted_feed(tm
     assert len(api.sends) == 1 and api.sends[0]["price"] == 4001.6
 
 
+@pytest.mark.parametrize("side", ["BUY", "SELL"])
+def test_consumed_breakout_cannot_reenter_on_next_completed_bar(tmp_path, side):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    bars[-2].update(open=4000.0, high=4002.0, low=3999.9,
+                    close=4001.8, tick_volume=200)
+    bars[-1].update(open=4001.0, high=4001.7, low=4000.5,
+                    close=4001.5, tick_volume=100)
+    if side == "SELL":
+        for row in bars:
+            row.update(open=8000 - row["open"], high=8000 - row["low"],
+                       low=8000 - row["high"], close=8000 - row["close"])
+    ledger = tmp_path / "demo.sqlite3"
+    initial = scan_and_submit_demo(api, CONFIG, ledger, now=clock)
+    assert initial.signal_detected and not initial.sent and not ledger.exists()
+    last = dict(bars[-1], time=bars[-1]["time"] + 300)
+    bars[:] = bars[1:] + [last]
+
+    def forbidden_quote_or_send(*args, **kwargs):
+        raise AssertionError("a consumed setup cannot reach the order boundary")
+
+    api.symbol_info_tick = forbidden_quote_or_send
+    api.order_send = forbidden_quote_or_send
+    from datetime import timedelta
+    later = scan_and_submit_demo(api, CONFIG, ledger, execute=True,
+                                 kill_switch_off=True, now=clock + timedelta(minutes=5))
+    assert not later.signal_detected and not later.sent and not later.accepted
+    assert later.reason == "no unique current closed-bar strategy signal"
+    assert later.strategy_diagnostics["rejected"]["first_confirmation_before_evaluation"] == 1
+    assert not ledger.exists() and not api.sends
+
+
 def test_shifted_m5_bars_with_unshifted_quote_never_send(monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
     api.copy_rates_from_pos = lambda *args: [dict(row, time=row["time"] + 10800) for row in bars]
