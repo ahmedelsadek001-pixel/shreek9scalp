@@ -65,11 +65,12 @@ def _closed_m5_bars(api: Any, config: DemoTerminalConfig,
     rates = api.copy_rates_from_pos(config.symbol, api.TIMEFRAME_M5, 1, 80)
     if rates is None or len(rates) != 80:
         raise ValueError("80 completed M5 bars unavailable")
-    bars = tuple(sorted((ResearchBar(
+    bars = tuple(ResearchBar(
         datetime.fromtimestamp(int(row["time"]) - config.server_utc_offset_seconds, timezone.utc),
         float(row["open"]), float(row["high"]), float(row["low"]),
         float(row["close"]), float(row["tick_volume"]),
-    ) for row in rates), key=lambda bar: bar.timestamp))
+    ) for row in rates)
+    # Sorting would hide malformed broker history and change the causal scan.
     validate_market_data(bars)
     # Avoid a cross-session setup or a delayed broker feed after market reopen.
     if not m5_context_is_contiguous(bars):
