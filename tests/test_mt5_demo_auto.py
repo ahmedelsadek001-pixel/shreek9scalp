@@ -236,6 +236,21 @@ def test_old_signal_gap_changed_price_and_active_kill_switch_block(monkeypatch, 
     assert not api.sends
 
 
+def test_out_of_order_broker_rates_are_not_silently_sorted(monkeypatch, tmp_path):
+    api, clock, bars = _api(datetime.now(timezone.utc))
+    reordered = list(bars)
+    reordered[-5], reordered[-6] = reordered[-6], reordered[-5]
+    api.copy_rates_from_pos = lambda *args: reordered
+    monkeypatch.setattr(mt5_demo_auto, "detect_breakout_retest",
+                        lambda *args, **kwargs: (_signal(bars),))
+
+    result = scan_and_submit_demo(api, CONFIG, tmp_path / "demo.sqlite3",
+                                  execute=True, kill_switch_off=True, now=clock)
+
+    assert result.reason == "automatic DEMO market data unavailable or stale"
+    assert not result.sent and not api.sends
+
+
 def test_gap_inside_complete_strategy_lookback_blocks_even_when_latest_33_are_clean(
         monkeypatch, tmp_path):
     api, clock, bars = _api(datetime.now(timezone.utc))
