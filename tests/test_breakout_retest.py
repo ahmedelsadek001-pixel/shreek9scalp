@@ -65,6 +65,30 @@ def test_invalid_pip_size_is_rejected():
         detect_breakout_retest(_bars(), pip_size=0)
 
 
+@pytest.mark.parametrize("change,match", [
+    (lambda bars: bars.__setitem__(27, replace(bars[27], timestamp=bars[26].timestamp)),
+     "strictly increasing"),
+    (lambda bars: bars.__setitem__(27, replace(bars[27], timestamp=bars[26].timestamp - timedelta(minutes=1))),
+     "strictly increasing"),
+    (lambda bars: bars.__setitem__(27, replace(bars[27], timestamp=bars[27].timestamp.replace(tzinfo=None))),
+     "timezone awareness"),
+    (lambda bars: bars.__setitem__(27, replace(bars[27], timestamp="invalid")),
+     "must be a datetime"),
+])
+def test_detector_rejects_ambiguous_bar_timeline(change, match):
+    bars = _bars()
+    change(bars)
+    with pytest.raises(ValueError, match=match):
+        detect_breakout_retest(bars, 0.0001)
+
+
+def test_detector_validates_short_history_before_returning_no_signals():
+    bars = _bars()[:2]
+    bars[1] = replace(bars[1], timestamp=bars[0].timestamp)
+    with pytest.raises(ValueError, match="strictly increasing"):
+        detect_breakout_retest(bars, 0.0001)
+
+
 def test_diagnostics_preserve_signals_and_identify_first_failed_filter():
     from dataclasses import replace
     diagnostics = {"old": "discard"}
@@ -149,3 +173,4 @@ def test_consumed_old_breakout_does_not_block_a_new_independent_breakout():
     assert len(signals) == 1
     assert signals[0].signal_time == bars[-1].timestamp
     assert signals[0].breakout_time == bars[-2].timestamp
+
