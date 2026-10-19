@@ -31,6 +31,8 @@ class ResearchBar:
     volume: float
 
     def validate(self) -> None:
+        if not isinstance(self.timestamp, datetime):
+            raise ValueError("bar timestamp must be a datetime")
         values = (self.open, self.high, self.low, self.close, self.volume)
         if any(not isfinite(float(value)) for value in values):
             raise ValueError("bar values must be finite")
@@ -210,11 +212,23 @@ def detect_breakout_retest(
         raise ValueError("pip_size must be finite and positive")
     if type(min_signal_index) is not int or min_signal_index < 0 or min_signal_index > len(bars):
         raise ValueError("min_signal_index must be an integer within bars")
+    previous_time: datetime | None = None
+    previous_awareness: bool | None = None
+    for bar in bars:
+        bar.validate()
+        try:
+            aware = bar.timestamp.tzinfo is not None and bar.timestamp.utcoffset() is not None
+            if previous_awareness is not None and aware != previous_awareness:
+                raise ValueError("bar timestamps must have consistent timezone awareness")
+            if previous_time is not None and bar.timestamp <= previous_time:
+                raise ValueError("bars must have strictly increasing timestamps")
+        except (TypeError, OverflowError) as exc:
+            raise ValueError("bar timestamps must be comparable") from exc
+        previous_time = bar.timestamp
+        previous_awareness = aware
     if len(bars) < config.consolidation_bars + config.volume_lookback + 2:
         reject("insufficient_history")
         return ()
-    for bar in bars:
-        bar.validate()
 
     signals: list[BreakoutRetestSignal] = []
     used_breakouts: set[int] = set()
@@ -324,3 +338,4 @@ def detect_breakout_retest(
     if diagnostics is not None:
         diagnostics["returned_signals"] = len(signals)
     return tuple(signals)
+
