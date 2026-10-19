@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
+from itertools import groupby
 from math import isfinite
 from pathlib import Path
 import sqlite3
@@ -68,7 +69,11 @@ def _opening_clock_offset(openings: list[Any], reserved_at: str,
         return None
 
 
-def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> DemoHistoryReport:
+class _DemoHistoryShutdownError(RuntimeError):
+    """Override pending results when the inspection session cannot close."""
+
+
+def _inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> DemoHistoryReport:
     """Read only verified DEMO deals, bound to broker order tickets in ledger.
 
     This is observational sandbox evidence, never strategy accreditation.
@@ -97,6 +102,8 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
             return refused("DEMO account changed or disconnected")
         fingerprint = sha256(f"{config.expected_login}|{config.expected_server}".encode()).hexdigest()
         output: list[dict[str, Any]] = []
+        observed_order_ids: set[int] = set()
+        observed_deal_tickets: set[int] = set()
         for (account_hash, intent_id, status, order_id, deal_id, symbol, side,
              volume, reserved_at, source_kind, bound_offset) in rows:
             if (account_hash != fingerprint or status not in ("UNKNOWN", "ACCEPTED")
@@ -111,6 +118,9 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                     or side not in ("BUY", "SELL") or type(volume) not in (int, float)
                     or not isfinite(volume) or volume <= 0):
                 return refused("DEMO ledger identity malformed")
+            if order_id in observed_order_ids:
+                return refused("duplicate broker order binding in DEMO ledger")
+            observed_order_ids.add(order_id)
             opening = api.history_deals_get(ticket=order_id)
             if opening is None:
                 return refused("broker history lookup failed")
@@ -143,16 +153,33 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                 related = api.history_deals_get(position=position_id)
                 if related is None:
                     return refused("broker position history lookup failed")
-                related_openings = [getattr(d, "ticket", None) for d in related
+                related_openings = [d for d in related
                                     if getattr(d, "position_id", None) == position_id
                                     and getattr(d, "entry", None) == api.DEAL_ENTRY_IN]
+                related_tickets = [getattr(d, "ticket", None) for d in related_openings]
                 if (len(related_openings) != len(opening_tickets)
-                        or set(related_openings) != set(opening_tickets)):
+                        or set(related_tickets) != set(opening_tickets)):
+                    return refused("broker position opening history contradicts DEMO ledger")
+                expected_openings = {d["ticket"]: d for d in opening_info}
+                if any(getattr(d, "symbol", None) != symbol
+                       or getattr(d, "magic", None) != 521000
+                       or _deal_info(d, observed_offset) != expected_openings[d.ticket]
+                       for d in related_openings):
                     return refused("broker position opening history contradicts DEMO ledger")
                 deals = [_deal_info(d, observed_offset) for d in related if getattr(d, "position_id", None) == position_id
                          and getattr(d, "symbol", None) == symbol]
                 if any(d is None for d in deals):
                     return refused("broker deal metadata incomplete")
+                if any(d["entry"] not in (api.DEAL_ENTRY_IN, api.DEAL_ENTRY_OUT)
+                       for d in deals):
+                    return refused("unsupported broker position transition; reconcile broker history")
+                # Split fills may share an order, but every deal ticket is unique.
+                tickets = [d["ticket"] for d in deals]
+                if len(set(tickets)) != len(tickets):
+                    return refused("duplicate broker deal ticket in position history")
+                if observed_deal_tickets.intersection(tickets):
+                    return refused("broker deal ticket reused across DEMO ledger attempts")
+                observed_deal_tickets.update(tickets)
                 opening_time = min(datetime.fromisoformat(d["time_utc"]) for d in opening_info)
                 if any(not opening_time <= datetime.fromisoformat(d["time_utc"]) <=
                        datetime.now(timezone.utc) + timedelta(seconds=1) for d in deals):
@@ -162,9 +189,22 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
                 closes = [d for d in related if getattr(d, "position_id", None) == position_id
                           and getattr(d, "symbol", None) == symbol
                           and getattr(d, "entry", None) == api.DEAL_ENTRY_OUT]
+                closing_type = (getattr(api, "DEAL_TYPE_SELL", None) if side == "BUY"
+                                else getattr(api, "DEAL_TYPE_BUY", None))
+                if closes and (type(closing_type) is not int or closing_type == expected_type
+                               or any(getattr(d, "type", None) != closing_type for d in closes)):
+                    return refused("broker closing direction contradicts DEMO ledger")
                 closed_volume = sum(getattr(d, "volume", 0) for d in closes)
                 if not isfinite(closed_volume) or closed_volume > volume + 1e-9:
                     return refused("broker closing volume contradicts DEMO ledger")
+                available_volume = 0.0
+                # Millisecond timestamps cannot order deals within one instant.
+                # Earlier exits must never borrow volume from a later fill.
+                for _, group in groupby(item["broker_deals"], key=lambda d: d["time_utc"]):
+                    available_volume += sum(d["volume"] if d["entry"] == api.DEAL_ENTRY_IN
+                                            else -d["volume"] for d in group)
+                    if not isfinite(available_volume) or available_volume < -1e-9:
+                        return refused("broker closing chronology contradicts DEMO ledger")
                 item["status"] = ("closed_observed" if abs(closed_volume - volume) < 1e-9
                                   else "open_or_partial")
                 item["manual_intervention"] = any(getattr(d, "magic", None) != 521000 for d in closes)
@@ -184,6 +224,14 @@ def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> 
         if initialized:
             try:
                 api.shutdown()
-            except (AttributeError, OSError, RuntimeError):
-                report = refused("DEMO history shutdown failed")
+            except (AttributeError, OSError, RuntimeError) as exc:
+                raise _DemoHistoryShutdownError from exc
     return report
+
+
+def inspect_demo_history(api: Any, config: DemoTerminalConfig, ledger: Path) -> DemoHistoryReport:
+    """Inspect read-only evidence, making shutdown failure authoritative."""
+    try:
+        return _inspect_demo_history(api, config, ledger)
+    except _DemoHistoryShutdownError:
+        return DemoHistoryReport(False, "DEMO history shutdown failed")

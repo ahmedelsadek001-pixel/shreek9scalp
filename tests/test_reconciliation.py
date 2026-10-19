@@ -120,3 +120,17 @@ def test_reconciliation_fails_closed_on_malformed_direction():
         result = reconcile_execution(replace(intent, direction=bad), report)
         assert not result.matched
         assert "invalid direction" in result.reasons
+
+
+@pytest.mark.parametrize("direction", [Direction.RANGE, Direction.UNKNOWN])
+@pytest.mark.parametrize("side", ["intent", "report", "both"])
+def test_non_execution_direction_cannot_reconcile(direction, side):
+    intent = _intent()
+    report = ExecutionReport(intent.order_id, intent.symbol, Direction.BUY, 0.03, 2500.0)
+    if side in ("intent", "both"):
+        intent = replace(intent, direction=direction)
+    if side in ("report", "both"):
+        report = replace(report, direction=direction)
+    result = reconcile_execution(intent, report)
+    assert not result.matched
+    assert "invalid direction" in result.reasons

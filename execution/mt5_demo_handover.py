@@ -23,13 +23,20 @@ def assess_handover(envelope: dict[str, Any]) -> dict[str, Any]:
         return result("blocked", "both read-only reports are required")
     if type(local.get("exit_code")) is not int or type(broker.get("exit_code")) is not int:
         return result("blocked", "report exit status is malformed")
-    if local["exit_code"] != 0 or broker["exit_code"] != 0:
+    history = broker.get("report")
+    missing_ledger = (
+        broker["exit_code"] == 2 and isinstance(history, dict)
+        and history.get("reason") == "durable DEMO ledger unavailable"
+        and history.get("verified_demo") is False and history.get("attempts") == []
+    )
+    if local["exit_code"] != 0 or (broker["exit_code"] != 0 and not missing_ledger):
         return result("blocked", "local session or broker history is unavailable")
     sessions = local.get("report")
     history = broker.get("report")
     if (not isinstance(sessions, dict) or sessions.get("journal_readable") is not True
             or not isinstance(sessions.get("sessions"), list)
-            or not isinstance(history, dict) or history.get("verified_demo") is not True
+            or not isinstance(history, dict)
+            or (history.get("verified_demo") is not True and not missing_ledger)
             or not isinstance(history.get("attempts"), list)):
         return result("blocked", "DEMO reports are malformed or unverified")
     if not sessions["sessions"] or not isinstance(sessions["sessions"][0], dict):
@@ -53,7 +60,15 @@ def assess_handover(envelope: dict[str, Any]) -> dict[str, Any]:
         if (signals != 0 or last["signal_detected"] or last["sent"] or last["accepted"]
                 or current["end_reason"] not in ("scan_complete", "watch_expired")):
             return result("blocked", "a signal or safety refusal needs inspection")
+        if last.get("signal_id") is not None or last.get("broker_order_id") is not None:
+            return result("blocked", "no-submission observation contains order identifiers")
+        if missing_ledger:
+            return result("local_observation_only",
+                          "latest clean local session recorded no submission; "
+                          "order ledger unavailable and broker history remains unverified")
         return result("observation_only", "no DEMO order was submitted in the latest session")
+    if missing_ledger:
+        return result("blocked", "submitted order cannot be reconciled without its durable ledger")
     if (sent != 1 or accepted != 1 or current["end_reason"] != "submission_attempted"
             or last["signal_detected"] is not True
             or last["sent"] is not True or last["accepted"] is not True

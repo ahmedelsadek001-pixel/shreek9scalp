@@ -206,6 +206,21 @@ def test_manifest_bound_runner_applies_costs_and_marks_artifact(monkeypatch):
     assert dict(result.artifact.metadata)["cost_application_id"] == MANIFEST_BOUND_COST_APPLICATION_ID
     assert dict(result.artifact.metadata)["execution_volume_lots"] == "0.01"
     assert dict(result.artifact.metadata)["execution_pip_size"] == "0.1"
+    from research.breakout_retest import SIGNAL_RULES_ID
+    assert dict(result.artifact.metadata)["signal_rules_id"] == SIGNAL_RULES_ID
+    assert captured["context_evaluator_id"].endswith("-v2")
+
+
+def test_manifest_bound_runner_rejects_false_signal_rule_identity(monkeypatch):
+    from research import dataset_runner
+    monkeypatch.setattr(dataset_runner, "run_evidence_pipeline", lambda *args, **kwargs: _evidence())
+    bars, _ = dataset_runner.load_ohlcv_csv(CSV)
+    with pytest.raises(ValueError, match="metadata conflicts with executed signal rules"):
+        run_xauusd_breakout_retest_research(
+            bars, ({},), source_manifest=_utc_manifest(), pip_size=0.1,
+            volume=0.01, artifact_metadata={"signal_rules_id": "old-or-fabricated-rules"},
+            train_size=3, test_size=2, purge_size=1, starting_equity=10000.0,
+        )
 
 
 @pytest.mark.parametrize("key, wrong", [

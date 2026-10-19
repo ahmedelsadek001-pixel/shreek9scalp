@@ -6,7 +6,7 @@ claims.** This optional V5.2 experiment automatically tests the fixed
 separate from the manual sandbox CLI and cannot turn on live MT5 routing.
 
 The one-shot runner reads 80 M5 bars starting at MT5 index **1** (index 0 is
-unfinished), checks the last 33 bars are consecutive, requires the most recent
+unfinished), checks the last 39 bars are consecutive, requires the most recent
 completed candle to have closed no more than 120 seconds ago, and only accepts
 exactly one signal confirmed on that last candle. It never replays a signal
 from history. The broker symbol must explicitly report Bid-based chart bars;
@@ -18,6 +18,12 @@ the account mode/login/server, applies its 0.01-lot and risk/stop/spread gates,
 and durably reserves the signal ID before the broker call. After one attempted
 broker submission, the bounded watcher stops, including uncertain outcomes.
 Repeated scans cannot re-submit the same signal ID.
+The detector also consumes each breakout's first valid confirmation before
+applying the current-bar boundary. A later confirmation of that same breakout
+cannot become a new signal when the 80-bar window advances. An unconfirmed
+warm-up retest can still lead to a first confirmation on the current bar.
+The existing signal-ID formula is retained so an already reserved intent does
+not gain a new identity merely because this lifecycle fix was installed.
 The local SQLite ledger labels these attempts `strategy_experiment`; manually
 entered sandbox attempts are `manual_sandbox`, and migrated older rows remain
 `legacy_unattributed`. These local labels help separate observations but are
@@ -142,6 +148,20 @@ still be running, the process may have been killed, or the session may predate
 end tracking. It does not prove a crash. Submission counts are local
 observations, not independently verified fills or profitability evidence.
 
+Session and scan timestamps must include a timezone. The read-only report
+compares them in UTC and blocks malformed timestamps, future observations,
+session ends before their starts, and scans outside the session interval or
+moving backwards in event order. Equal scan times and sessions without an end
+record remain readable. A blocked chronology requires inspection of the local
+journal and host clock; the report does not rewrite either. Session identity,
+opt-in state, watch duration and paired end markers are also validated before
+output, so malformed metadata cannot become a clean handover. Scan outcomes
+must also preserve `accepted <= sent <= signal_detected`, use a bounded
+single-line reason, bind strategy signals to their generated hash, and attach
+a positive broker order ID only to accepted observations. Duplicate JSON keys
+in scan results or retained diagnostics, including nested counters and escaped
+key spellings, block the report instead of replacing an earlier observation.
+
 Press Ctrl+C to stop the watcher. A file called `demo_orders.stop` next to the
 SQLite ledger stops future scans and blocks submission at the runner boundary:
 
@@ -159,6 +179,30 @@ advertised FOK/IOC filling, there is another account position, or the risk budge
 it fails closed. The account's DEMO currency and the symbol profit currency
 must both be USD.
 
+To investigate scans with no confirmed signal, audit a local XAUUSD M5 CSV
+without attaching MT5:
+
+```powershell
+py -m execution.mt5_demo_signal_audit_cli --csv .\XAUUSD_M5_raw.csv
+```
+
+The header must be `timestamp,open,high,low,close,volume`, with one closed
+M5 candle per row and explicit timestamp offsets. The JSON records the source
+SHA-256, the first and last UTC timestamps, and the counts of eligible 80-bar
+windows and signals confirmed on their last bar. It shares the runner's
+39-bar continuity gate, including the detector's full warm-up and retest
+lookback. Older gaps outside that context are allowed. This offline audit
+does not check current quote freshness, bind a broker account or submit an
+order. Its counts do not establish broker fills or profitability. Do not
+loosen the strategy thresholds to force a signal.
+Audit schema version 2 also reports `no_signal_windows`,
+`previously_confirmed_breakout_windows` and `rejection_counts`, with the
+executed `signal_rules_id`. Rejection totals describe candidate/filter
+evaluations across overlapping history windows; they are not independent
+trade counts. A previously confirmed breakout window may also contain a
+separate new valid signal, so that window count is not a refusal total.
+Gap windows are skipped before detection and contribute no strategy counters.
+
 To observe broker deals after a DEMO attempt, run the read-only
 `execution.mt5_demo_history_cli --ledger $ledger`. A broker acknowledgement
 or an observed closed deal does not establish the strategy's profitability.
@@ -166,9 +210,65 @@ The history report checks opening deal timestamps against the local reservation
 and reports the observed deal clock offset separately from the stored tick/bar
 offset. An unbound clock or a future/chronologically inconsistent deal blocks
 the report. This read-only check cannot authenticate a broker export by itself.
+Opening deals must also agree between the order and position history queries:
+a matching ticket with a different symbol, strategy identifier, timestamp,
+volume, price or financial amount blocks the entire report. Consistent split
+fills may be returned in a different order without blocking the report.
+At each normalized broker timestamp, cumulative exits must not exceed the
+opening volume observed by then. An exit that depends on a later opening fill
+blocks the entire report before a partial/full status or net amount is reported.
+Deals sharing a millisecond are checked together because their order is unknown;
+consistent interleaved partial closes and reordered split fills remain supported.
+An exit deal must have the direction opposite to the bound opening. Same-side
+or unsupported exit types, or missing/ambiguous direction constants, block
+the report before closing volume or net amounts are calculated.
+Only ordinary `DEAL_ENTRY_IN` and `DEAL_ENTRY_OUT` transitions are accounted for.
+A reversal (`DEAL_ENTRY_INOUT`), close-by (`DEAL_ENTRY_OUT_BY`) or unknown entry
+blocks the entire report and requires independent broker reconciliation before
+reporting a partial/full close or a net amount.
+Repeated deal tickets in the bound position's reported deals block the entire
+report before closing volume or net amounts are calculated, even when the
+repeated rows differ. Distinct deal tickets may share one broker order; valid
+split fills and partial closes remain observable. Deal ticket uniqueness is
+defined in the [MetaQuotes deal properties](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties).
+This uniqueness check also spans all ledger attempts in one report: reusing
+an opening or exit deal ticket under a different position or order blocks the
+entire report. Consistent copies between the order and position queries for
+one attempt are still compared as the same deal, without counting it twice.
+Failure to close the history inspection session overrides every result,
+including earlier refusals or an empty ledger. The report returns
+`verified_demo=false`, no attempts and `DEMO history shutdown failed` without
+exposing terminal error details; investigate the session before retrying.
 The separate research and paper-account evidence gates stay FAILED until
 independent out-of-sample and broker export audits pass.
 
 MetaQuotes references: [closed-bar indices](https://www.mql5.com/en/docs/python_metatrader5/mt5copyratesfrompos_py),
 [DEMO account mode](https://www.mql5.com/en/docs/constants/environment_state/accountinformation),
 [DEMO order result](https://www.mql5.com/en/docs/python_metatrader5/mt5ordersend_py).
+
+### Strategy diagnostics during no-signal scans
+
+A fresh, valid scan with no unique current signal now includes
+`strategy_diagnostics` in console JSON. `rejected` counts the first failed
+breakout filter per candidate (range, body, tick volume or outside close),
+and retest failures per evaluated confirmation bar. Counts describe multiple
+historical candidates, not a single current trade or a probability of success.
+`latest_valid_breakout`, when present, contains the most recent qualifying
+breakout's level, direction, time and measured values. A qualifying breakout
+alone does not authorize execution. The detector uses the same conditions
+and returns the same signals with or without diagnostics.
+
+The journal now also persists a bounded projection of diagnostic counters
+in a separate table, atomically with the corresponding scan. The existing
+six-field outcome schema stays compatible with older report readers.
+`--report-local` includes `last_strategy_diagnostics` with its own observation
+time, so later stale scans cannot hide the last actual strategy evaluation.
+Older journals without the table return null. Only known reasons and bounded
+integer counters are persisted; breakout measurements remain console-only.
+Malformed diagnostics block reporting and cannot certify a session. Stale bars and connection failures do not receive strategy
+diagnostics because they never reach the detector. This feature does not
+change strategy thresholds, the M5 freshness window, risk limits or DEMO-only
+submission gates, and does not establish profitable or live-ready trading.
+The `first_confirmation_before_evaluation` reason means a valid confirmation
+already occurred before the current-bar/OOS boundary. That breakout is
+consumed rather than revived by a later pin/engulfing candle.

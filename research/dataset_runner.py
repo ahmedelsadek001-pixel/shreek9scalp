@@ -15,7 +15,7 @@ from typing import Any, Mapping, Sequence
 from core.research_certification import ResearchCertificationPolicy
 from research.backtest_wfo import BacktestEvaluator, ContextBacktestEvaluator
 from research.backtest_breakout_retest import run_breakout_retest_backtest
-from research.breakout_retest import BreakoutRetestConfig, ResearchBar
+from research.breakout_retest import BreakoutRetestConfig, ResearchBar, SIGNAL_RULES_ID
 from research.csv_adapter import load_ohlcv_csv
 from research.dataset_provenance import DatasetProvenance, fingerprint_bars
 from research.data_validation import MarketDataValidation, validate_market_data
@@ -27,7 +27,7 @@ from research.xauusd_source_manifest import XAUUSDSourceManifest
 
 
 MANIFEST_BOUND_COST_APPLICATION_ID = "manifest-bound-breakout-retest-v1"
-MANIFEST_BOUND_CONTEXT_EVALUATOR_ID = "manifest-bound-breakout-retest-context-v1"
+MANIFEST_BOUND_CONTEXT_EVALUATOR_ID = "manifest-bound-breakout-retest-context-v2"
 XAUUSD_THREE_TIMEFRAME_QUALITY_GATE_ID = "m5-m15-h1-default-v1"
 _SIGNAL_PARAMETER_NAMES = frozenset(field.name for field in fields(BreakoutRetestConfig))
 _ECONOMIC_PARAMETER_NAMES = frozenset({
@@ -253,6 +253,9 @@ def run_xauusd_breakout_retest_research(
         )
 
     metadata = dict(artifact_metadata or {})
+    if "signal_rules_id" in metadata and metadata["signal_rules_id"] != SIGNAL_RULES_ID:
+        raise ValueError("artifact metadata conflicts with executed signal rules")
+    metadata["signal_rules_id"] = SIGNAL_RULES_ID
     existing = metadata.get("cost_application_id")
     if existing is not None and existing != MANIFEST_BOUND_COST_APPLICATION_ID:
         raise ValueError("artifact metadata conflicts with manifest-bound cost application")

@@ -1,5 +1,6 @@
 from core.enums import Direction
-from execution.idempotency import IdempotencyLedger
+import pytest
+from execution.idempotency import IdempotencyLedger, SubmissionRecord, SubmissionState
 from execution.reconciliation import OrderIntent
 from execution.restart_recovery import RecoverySnapshot,snapshot_unresolved,validate_restart
 
@@ -64,3 +65,41 @@ def test_snapshot_unresolved_rejects_corrupt_submission_record():
         assert "malformed submission record" in str(exc)
     else:
         raise AssertionError("corrupt submission record must fail closed")
+
+
+def test_restart_snapshot_refuses_new_state_in_a_previously_reserved_record():
+    ledger = IdempotencyLedger()
+    record = ledger.begin(_i("A"))
+    object.__setattr__(record, "state", SubmissionState.NEW)
+    with pytest.raises(ValueError, match="malformed submission state"):
+        snapshot_unresolved(ledger)
+
+
+@pytest.mark.parametrize("corruption", ["moved", "padded", "record", "alias"])
+def test_recovery_cannot_report_an_identity_different_from_its_record(corruption):
+    ledger = IdempotencyLedger()
+    record = ledger.begin(_i("A"))
+    if corruption == "moved":
+        ledger._records = {"B": record}
+    elif corruption == "padded":
+        ledger._records = {" A ": record}
+    elif corruption == "record":
+        ledger._records = {"A": SubmissionRecord("B", record.state, record.attempts)}
+    else:
+        ledger._records["B"] = record
+    before = dict(ledger._records)
+    with pytest.raises(ValueError, match="order identity"):
+        snapshot_unresolved(ledger)
+    assert ledger._records == before
+
+
+@pytest.mark.parametrize("attempts", [0, -1, True, 1.5])
+def test_terminal_record_with_invalid_attempts_cannot_allow_restart(attempts):
+    ledger = IdempotencyLedger()
+    ledger.begin(_i("A"))
+    ledger.finish("A", SubmissionState.ACCEPTED)
+    ledger._records["A"] = SubmissionRecord("A", SubmissionState.ACCEPTED, attempts)
+    before = dict(ledger._records)
+    with pytest.raises(ValueError, match="malformed submission attempts"):
+        snapshot_unresolved(ledger)
+    assert ledger._records == before

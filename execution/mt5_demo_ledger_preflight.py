@@ -9,6 +9,18 @@ import sqlite3
 from execution.mt5_demo_probe import DemoTerminalConfig
 
 
+def stop_marker_present(ledger: Path) -> bool:
+    """Fail closed when a stop marker exists or cannot be inspected."""
+    marker = ledger.with_suffix(".stop")
+    try:
+        marker.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
 def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,
                             *, check_lock: bool = True) -> tuple[str, ...]:
     config.validate()
@@ -18,7 +30,7 @@ def ledger_session_blockers(ledger: Path, config: DemoTerminalConfig,
         return ("absolute DEMO SQLite ledger path required",)
     blockers = []
     try:
-        if ledger.with_suffix(".stop").exists():
+        if stop_marker_present(ledger):
             blockers.append("automatic DEMO stop file active")
         lock = ledger.with_suffix(".watch.lock")
         if check_lock and (lock.exists() or lock.is_symlink()):

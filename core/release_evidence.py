@@ -53,8 +53,12 @@ class EvidenceRecord:
             raise ValueError(f"unsupported evidence name: {self.name}")
         if type(self.passed) is not bool:
             raise TypeError("evidence passed must be bool")
-        if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
+        if (not isinstance(self.recorded_at, datetime)
+                or self.recorded_at.tzinfo is None
+                or self.recorded_at.utcoffset() is None):
             raise ValueError("recorded_at must be timezone-aware")
+        if self.recorded_at.astimezone(timezone.utc) > datetime.now(timezone.utc):
+            raise ValueError("recorded_at cannot be in the future")
         normalized_sha = _validate_commit_sha(self.commit_sha)
         if self.commit_sha != normalized_sha:
             raise ValueError("evidence commit_sha must be normalized hexadecimal")
@@ -112,6 +116,8 @@ class ReleaseEvidenceBundle:
         ):
             raise ValueError("bundle_id must be a normalized SHA-256")
         for record in self.records:
+            if not isinstance(record, EvidenceRecord):
+                raise TypeError("records must contain EvidenceRecord values")
             record.validate()
         expected = sha256(self._canonical(self.records).encode("utf-8")).hexdigest()
         if self.bundle_id != expected:

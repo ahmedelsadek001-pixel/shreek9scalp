@@ -1,12 +1,41 @@
+from core.enums import Direction
 from execution.post_trade_guard import evaluate_post_trade
-from execution.quality_gate import ExecutionQualityDecision
-from execution.reconciliation import ReconciliationResult
+from execution.quality_gate import (
+    ExecutionQualityDecision,
+    ExecutionQualityPolicy,
+    evaluate_quality,
+)
+from execution.reconciliation import (
+    ExecutionReport,
+    OrderIntent,
+    ReconciliationResult,
+    reconcile_execution,
+)
+
+
+POLICY = ExecutionQualityPolicy(0.2, 0.5, 250.0)
+
+
+def _artifacts(*, spread=0.1, latency_ms=10.0):
+    intent = OrderIntent("A", "XAUUSD", Direction.BUY, 0.03, 2500.0)
+    report = ExecutionReport("A", "XAUUSD", Direction.BUY, 0.03, 2500.0)
+    return (
+        reconcile_execution(intent, report),
+        evaluate_quality(
+            POLICY,
+            intent=intent,
+            report=report,
+            spread=spread,
+            latency_ms=latency_ms,
+        ),
+    )
 
 
 def test_post_trade_accepts_only_reconciled_quality_fill():
+    reconciliation, quality = _artifacts()
     decision = evaluate_post_trade(
-        reconciliation=ReconciliationResult(True, ()),
-        quality=ExecutionQualityDecision(True, ()),
+        reconciliation=reconciliation,
+        quality=quality,
     )
     assert decision.accepted is True
     assert decision.reasons == ()
@@ -22,9 +51,10 @@ def test_post_trade_blocks_unreconciled_fill():
 
 
 def test_post_trade_blocks_bad_execution_quality():
+    reconciliation, quality = _artifacts(latency_ms=400.0)
     decision = evaluate_post_trade(
-        reconciliation=ReconciliationResult(True, ()),
-        quality=ExecutionQualityDecision(False, ("latency outside limit",)),
+        reconciliation=reconciliation,
+        quality=quality,
     )
     assert decision.accepted is False
     assert "quality: latency outside limit" in decision.reasons
@@ -59,8 +89,9 @@ def test_post_trade_blocks_internally_inconsistent_reconciliation():
 
 
 def test_post_trade_blocks_internally_inconsistent_quality():
+    reconciliation, _ = _artifacts()
     decision = evaluate_post_trade(
-        reconciliation=ReconciliationResult(True, ()),
+        reconciliation=reconciliation,
         quality=ExecutionQualityDecision(True, ("unexpected reason",)),
     )
 

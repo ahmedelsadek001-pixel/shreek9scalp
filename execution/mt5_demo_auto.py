@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from core.enums import Direction
+from execution.mt5_demo_ledger_preflight import stop_marker_present
 from execution.mt5_demo_probe import DemoTerminalConfig, _matches_demo_account
 from execution.mt5_demo_transport import DemoOrder, submit_demo_order
 from research.breakout_retest import BreakoutRetestConfig, ResearchBar, detect_breakout_retest
@@ -43,6 +44,7 @@ class DemoAutoResult:
     reason: str
     signal_id: str | None = None
     broker_order_id: int | None = None
+    strategy_diagnostics: dict | None = None
 
 
 class _DemoSessionShutdownError(RuntimeError):
@@ -63,11 +65,12 @@ def _closed_m5_bars(api: Any, config: DemoTerminalConfig,
     rates = api.copy_rates_from_pos(config.symbol, api.TIMEFRAME_M5, 1, 80)
     if rates is None or len(rates) != 80:
         raise ValueError("80 completed M5 bars unavailable")
-    bars = tuple(sorted((ResearchBar(
+    bars = tuple(ResearchBar(
         datetime.fromtimestamp(int(row["time"]) - config.server_utc_offset_seconds, timezone.utc),
         float(row["open"]), float(row["high"]), float(row["low"]),
         float(row["close"]), float(row["tick_volume"]),
-    ) for row in rates), key=lambda bar: bar.timestamp))
+    ) for row in rates)
+    # Sorting would hide malformed broker history and change the causal scan.
     validate_market_data(bars)
     # Avoid a cross-session setup or a delayed broker feed after market reopen.
     if not m5_context_is_contiguous(bars):
@@ -110,10 +113,14 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 or symbol_info.chart_mode != chart_mode_bid):
             return refused("automatic DEMO requires Bid-based broker candles")
         bars = _closed_m5_bars(api, config, clock)
+        diagnostics: dict = {}
         signals = detect_breakout_retest(bars, PIP_SIZE, STRATEGY_CONFIG,
-                                         min_signal_index=len(bars) - 1)
+                                         min_signal_index=len(bars) - 1,
+                                         diagnostics=diagnostics)
         if len(signals) != 1 or signals[0].signal_time != bars[-1].timestamp:
-            return refused("no unique current closed-bar strategy signal")
+            return DemoAutoResult(False, False, False,
+                                  "no unique current closed-bar strategy signal",
+                                  strategy_diagnostics=diagnostics)
         signal = signals[0]
         if signal.direction not in (Direction.BUY, Direction.SELL):
             return refused("automatic DEMO signal direction invalid")
@@ -156,7 +163,7 @@ def _scan_and_submit_demo(api: Any, config: DemoTerminalConfig, ledger: Path,
                 # The public wrapper converts the sentinel into a fail-closed
                 # result, so no scan outcome can conceal a leaked MT5 session.
                 raise _DemoSessionShutdownError from exc
-    if ledger.with_suffix(".stop").exists():
+    if stop_marker_present(ledger):
         return DemoAutoResult(True, False, False, "automatic DEMO stop file active", signal_id)
     order = DemoOrder(signal_id, config.symbol, side, 0.01,
                       signal.sl_price, signal.tp1, expected_execution_price,

@@ -90,3 +90,38 @@ def test_unavailable_broker_history_or_claimed_export_is_blocked():
     report = deepcopy(_submitted())
     report["independent_broker_export_verified"] = True
     assert assess_handover(report)["state"] == "blocked"
+
+
+def _missing_ledger(report):
+    report["broker_history"] = {"exit_code": 2, "report": {
+        "reason": "durable DEMO ledger unavailable", "verified_demo": False, "attempts": []}}
+    return report
+
+
+def test_clean_no_submission_with_missing_ledger_is_explicitly_local_only():
+    decision = assess_handover(_missing_ledger(_report()))
+    assert decision["state"] == "local_observation_only"
+    assert "unverified" in decision["reason"]
+    assert not decision["paper_trading_validated"]
+    assert not decision["independent_broker_export_verified"]
+
+
+def test_missing_ledger_never_explains_away_submitted_or_uncertain_order():
+    assert assess_handover(_missing_ledger(_submitted()))["state"] == "blocked"
+    for field, value in (("end_reason", "safety_refusal"), ("end_recorded", False),
+                         ("signals", 1), ("submission_observations", 1)):
+        report = _missing_ledger(_report())
+        report["local_sessions"]["report"]["sessions"][0][field] = value
+        assert assess_handover(report)["state"] == "blocked"
+    for field, value in (("signal_id", "unresolved"), ("broker_order_id", 123)):
+        report = _missing_ledger(_report())
+        report["local_sessions"]["report"]["sessions"][0]["last_result"][field] = value
+        assert assess_handover(report)["state"] == "blocked"
+
+
+def test_other_broker_failures_are_not_classified_as_missing_ledger():
+    for field, value in (("reason", "DEMO account changed or disconnected"),
+                         ("verified_demo", True), ("attempts", [{}])):
+        report = _missing_ledger(_report())
+        report["broker_history"]["report"][field] = value
+        assert assess_handover(report)["state"] == "blocked"

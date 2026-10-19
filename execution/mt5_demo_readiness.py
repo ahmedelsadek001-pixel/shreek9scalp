@@ -59,8 +59,8 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
         return refused("MT5 runtime or DEMO binding unavailable")
     try:
         config.validate()
-        clock = now or datetime.now(timezone.utc)
-        if not isinstance(clock, datetime) or clock.tzinfo is None or clock.utcoffset() is None:
+        if now is not None and (
+                not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None):
             return refused("readiness clock invalid")
     except ValueError:
         return refused("DEMO binding invalid")
@@ -110,6 +110,10 @@ def inspect_demo_readiness(api: Any, config: DemoTerminalConfig,
                 if positions != () or pending != ():
                     blockers.append("existing exposure or broker exposure read unavailable")
                 tick = api.symbol_info_tick(config.symbol)
+                # Initialization and broker reads may block. Evaluate the quote
+                # against time sampled after receiving it, not a pre-connect
+                # timestamp that could make a fresh tick appear future-dated.
+                clock = now if now is not None else datetime.now(timezone.utc)
                 if (tick is None or not all(_number(getattr(tick, x, None))
                                             for x in ("ask", "bid", "time_msc"))
                         or tick.bid <= 0 or tick.ask <= tick.bid
