@@ -136,15 +136,32 @@ def test_bundle_rejects_malformed_trusted_expected_commit():
 
 
 def test_complete_provenance_bundle_can_pass_release_gate():
-    decision = evaluate_evidence_bundle(_bundle(), _required())
+    decision = evaluate_evidence_bundle(_bundle(), _required(), _COMMIT)
     assert decision.ready
     assert not decision.failures
+
+def test_release_evaluation_fails_closed_without_trusted_commit():
+    decision = evaluate_evidence_bundle(_bundle(), _required())
+    assert not decision.ready
+    assert decision.failures == ("trusted expected commit SHA is required",)
+
+
+def test_release_evaluation_rejects_mismatched_trusted_commit():
+    decision = evaluate_evidence_bundle(_bundle(), _required(), "b" * 40)
+    assert not decision.ready
+    assert decision.failures == ("evidence bundle commit SHA does not match expected commit",)
+
+
+def test_release_evaluation_rejects_malformed_trusted_commit():
+    decision = evaluate_evidence_bundle(_bundle(), _required(), "not-a-sha")
+    assert not decision.ready
+    assert decision.failures == ("trusted expected commit SHA is invalid",)
 
 
 def test_missing_provenance_blocks_release_even_if_required_flag_is_true():
     records = tuple(_bundle().records[:-1])
     bundle = ReleaseEvidenceBundle.from_records(records)
-    decision = evaluate_evidence_bundle(bundle, _required())
+    decision = evaluate_evidence_bundle(bundle, _required(), _COMMIT)
     assert not decision.ready
     assert "recovery_validated" in decision.failures[0]
 
@@ -153,7 +170,7 @@ def test_required_policy_blocks_failed_required_evidence():
     records = list(_bundle().records)
     records[0] = EvidenceRecord("ci_green", False, "validated-test", "run-001", datetime(2026, 9, 12, tzinfo=timezone.utc), _COMMIT)
     bundle = ReleaseEvidenceBundle.from_records(tuple(records))
-    decision = evaluate_evidence_bundle(bundle, _required())
+    decision = evaluate_evidence_bundle(bundle, _required(), _COMMIT)
     assert not decision.ready
     assert decision.failures == ("required evidence failed: ci_green",)
 
@@ -182,7 +199,7 @@ def test_tampered_record_is_rejected_by_release_evaluation():
     original = _bundle()
     changed = replace(original.records[0], run_id="attacker-run")
     tampered = replace(original, records=(changed,) + original.records[1:])
-    decision = evaluate_evidence_bundle(tampered, _required())
+    decision = evaluate_evidence_bundle(tampered, _required(), _COMMIT)
     assert not decision.ready
     assert decision.failures == ("evidence bundle integrity validation failed",)
 
@@ -191,7 +208,7 @@ def test_tampered_commit_is_rejected_by_release_evaluation():
     original = _bundle()
     changed = replace(original.records[0], commit_sha="b" * 40)
     tampered = replace(original, records=(changed,) + original.records[1:])
-    decision = evaluate_evidence_bundle(tampered, _required())
+    decision = evaluate_evidence_bundle(tampered, _required(), _COMMIT)
     assert not decision.ready
     assert decision.failures == ("evidence bundle integrity validation failed",)
 
