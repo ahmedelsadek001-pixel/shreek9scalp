@@ -60,7 +60,7 @@ class EvidenceRecord:
         # timestamps during canonical UTC conversion.
         try:
             utc_offset = self.recorded_at.utcoffset()
-        except (TypeError, ValueError, OverflowError) as exc:
+        except Exception as exc:
             raise ValueError("recorded_at must have a valid UTC offset") from exc
         if utc_offset is None:
             raise ValueError("recorded_at must have a valid UTC offset")
