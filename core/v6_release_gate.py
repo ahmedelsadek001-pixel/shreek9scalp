@@ -43,13 +43,14 @@ def evaluate_v6_release(
         return V6ReleaseDecision(False, live, ("trusted expected commit SHA is required",))
     try:
         evidence = _validated_evidence(bundle, expected_commit_sha)
-    except (TypeError, ValueError, OverflowError):
+    except (TypeError, ValueError, OverflowError) as exc:
         live = LiveAuthorization(False, REQUIRED_EVIDENCE)
-        return V6ReleaseDecision(
-            False,
-            live,
-            ("evidence bundle integrity or commit validation failed",),
+        failure = (
+            "evidence bundle commit SHA does not match expected commit"
+            if str(exc) == "evidence bundle commit SHA does not match expected commit"
+            else "evidence bundle integrity validation failed"
         )
+        return V6ReleaseDecision(False, live, (failure,))
     live = evaluate_live_authorization(evidence)
     failures = tuple(f"missing/failed evidence: {item}" for item in live.missing)
     return V6ReleaseDecision(live.authorized, live, failures)
