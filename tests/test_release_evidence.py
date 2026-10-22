@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 
 import pytest
 
@@ -35,6 +35,21 @@ def test_bundle_requires_nonempty_records():
 def test_record_requires_provenance():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "", "run-1", datetime.now(timezone.utc), _COMMIT).validate()
+
+
+def test_record_rejects_tzinfo_without_utc_offset():
+    class UndefinedOffset(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+        def dst(self, dt):
+            return None
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=UndefinedOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="valid UTC offset"):
+        record.validate()
 
 
 def test_record_requires_valid_commit_sha():
