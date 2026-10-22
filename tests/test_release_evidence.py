@@ -119,6 +119,22 @@ def test_duplicate_evidence_name_is_rejected():
         ReleaseEvidenceBundle.from_records((record, record))
 
 
+def test_bundle_can_be_bound_to_trusted_expected_commit():
+    bundle = _bundle()
+    bundle.validate_for_commit(_COMMIT)
+
+
+def test_bundle_rejects_mismatch_with_trusted_expected_commit():
+    bundle = _bundle()
+    with pytest.raises(ValueError, match="does not match expected commit"):
+        bundle.validate_for_commit("b" * 40)
+
+
+def test_bundle_rejects_malformed_trusted_expected_commit():
+    with pytest.raises(ValueError, match="40-character SHA"):
+        _bundle().validate_for_commit("not-a-sha")
+
+
 def test_complete_provenance_bundle_can_pass_release_gate():
     decision = evaluate_evidence_bundle(_bundle(), _required())
     assert decision.ready
