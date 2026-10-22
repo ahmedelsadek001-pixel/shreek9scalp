@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime, timezone, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import pytest
 
@@ -47,6 +47,21 @@ def test_record_rejects_tzinfo_without_utc_offset():
 
     record = EvidenceRecord(
         "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=UndefinedOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="valid UTC offset"):
+        record.validate()
+
+
+def test_record_rejects_out_of_range_utc_offset():
+    class OutOfRangeOffset(tzinfo):
+        def utcoffset(self, dt):
+            return timedelta(days=1)
+
+        def dst(self, dt):
+            return timedelta(0)
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=OutOfRangeOffset()), _COMMIT
     )
     with pytest.raises(ValueError, match="valid UTC offset"):
         record.validate()
