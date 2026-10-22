@@ -132,6 +132,17 @@ class ReleaseEvidenceBundle:
         if rebuilt.bundle_id != self.bundle_id:
             raise ValueError("evidence bundle integrity validation failed")
 
+    def validate_for_commit(self, expected_commit_sha: str) -> None:
+        """Validate integrity and bind this bundle to a trusted checkout SHA.
+
+        The caller must obtain expected_commit_sha from the trusted execution
+        environment (for example, the CI checkout), not from this bundle.
+        """
+        normalized_expected = _validate_commit_sha(expected_commit_sha)
+        self.validate()
+        if self.records[0].commit_sha.lower() != normalized_expected:
+            raise ValueError("evidence bundle commit SHA does not match expected commit")
+
     def as_map(self) -> Mapping[str, bool]:
         self.validate()
         return {record.name: record.passed for record in self.records}
