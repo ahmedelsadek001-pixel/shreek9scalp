@@ -187,12 +187,33 @@ def build_paper_account_evidence(report: PaperAccountAudit, run_id: str,
     )
 
 
-def evaluate_evidence_bundle(bundle: ReleaseEvidenceBundle, required: ReleaseEvidence) -> ReleaseDecision:
-    """Evaluate only integrity- and provenance-validated V5.1 values."""
+def evaluate_evidence_bundle(
+    bundle: ReleaseEvidenceBundle,
+    required: ReleaseEvidence,
+    expected_commit_sha: str | None = None,
+) -> ReleaseDecision:
+    """Evaluate evidence only when it matches a trusted checkout SHA.
+
+    expected_commit_sha must come from the trusted caller environment
+    (for example, the checked-out CI commit), never from the evidence bundle.
+    Omitting it intentionally blocks release readiness.
+    """
     if not isinstance(bundle, ReleaseEvidenceBundle):
         raise TypeError("bundle must be ReleaseEvidenceBundle")
     if not isinstance(required, ReleaseEvidence):
         raise TypeError("required must be ReleaseEvidence")
+    if expected_commit_sha is None:
+        return ReleaseDecision(False, ("trusted expected commit SHA is required",))
+    try:
+        normalized_expected = _validate_commit_sha(expected_commit_sha)
+    except (TypeError, ValueError):
+        return ReleaseDecision(False, ("trusted expected commit SHA is invalid",))
+    try:
+        bundle.validate_for_commit(normalized_expected)
+    except (TypeError, ValueError, OverflowError) as exc:
+        if str(exc) == "evidence bundle commit SHA does not match expected commit":
+            return ReleaseDecision(False, (str(exc),))
+        return ReleaseDecision(False, ("evidence bundle integrity validation failed",))
     try:
         values = bundle.as_map()
     except (TypeError, ValueError, OverflowError):
