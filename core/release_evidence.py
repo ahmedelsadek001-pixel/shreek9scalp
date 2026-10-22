@@ -55,6 +55,15 @@ class EvidenceRecord:
             raise TypeError("evidence passed must be bool")
         if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
             raise ValueError("recorded_at must be timezone-aware")
+        # A non-None tzinfo object is not sufficient: Python permits tzinfo
+        # implementations whose utcoffset() is None, which behave as naive
+        # timestamps during canonical UTC conversion.
+        try:
+            utc_offset = self.recorded_at.utcoffset()
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("recorded_at must have a valid UTC offset") from exc
+        if utc_offset is None:
+            raise ValueError("recorded_at must have a valid UTC offset")
         normalized_sha = _validate_commit_sha(self.commit_sha)
         if self.commit_sha != normalized_sha:
             raise ValueError("evidence commit_sha must be normalized hexadecimal")
