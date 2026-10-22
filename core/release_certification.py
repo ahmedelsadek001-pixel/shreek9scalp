@@ -47,8 +47,16 @@ def certify_release(
             raise TypeError("certification metadata must contain string keys and values")
     if expected_commit_sha is not None and not _valid_sha(expected_commit_sha):
         raise ValueError("expected_commit_sha must be a 40-character hexadecimal SHA")
+    if expected_commit_sha is None:
+        return CertificationResult(
+            False,
+            getattr(bundle, "bundle_id", ""),
+            ("trusted expected commit SHA is required",),
+            None,
+        )
 
     try:
+        bundle.validate_for_commit(expected_commit_sha)
         bundle_commit_sha = bundle.commit_sha
         bundle_id = bundle.bundle_id
     except (TypeError, ValueError, OverflowError, AttributeError):
@@ -59,7 +67,7 @@ def certify_release(
             None,
         )
 
-    if expected_commit_sha is not None and bundle_commit_sha != expected_commit_sha.lower():
+    if bundle_commit_sha != expected_commit_sha.lower():
         return CertificationResult(
             False,
             bundle_id,
@@ -67,7 +75,7 @@ def certify_release(
             bundle_commit_sha,
         )
 
-    decision: ReleaseDecision = evaluate_evidence_bundle(bundle, required)
+    decision: ReleaseDecision = evaluate_evidence_bundle(bundle, required, expected_commit_sha)
     return CertificationResult(
         decision.ready,
         bundle_id,
