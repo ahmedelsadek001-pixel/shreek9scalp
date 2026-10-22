@@ -59,11 +59,16 @@ def certify_release(
         bundle.validate_for_commit(expected_commit_sha)
         bundle_commit_sha = bundle.commit_sha
         bundle_id = bundle.bundle_id
-    except (TypeError, ValueError, OverflowError, AttributeError):
+    except (TypeError, ValueError, OverflowError, AttributeError) as exc:
+        failure = (
+            "evidence commit does not match expected release commit"
+            if str(exc) == "evidence bundle commit SHA does not match expected commit"
+            else "evidence bundle integrity validation failed"
+        )
         return CertificationResult(
             False,
             getattr(bundle, "bundle_id", ""),
-            ("evidence bundle integrity validation failed",),
+            (failure,),
             None,
         )
 
