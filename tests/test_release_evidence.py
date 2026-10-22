@@ -67,6 +67,21 @@ def test_record_rejects_out_of_range_utc_offset():
         record.validate()
 
 
+def test_record_rejects_timezone_implementation_error():
+    class BrokenOffset(tzinfo):
+        def utcoffset(self, dt):
+            raise RuntimeError("timezone provider failed")
+
+        def dst(self, dt):
+            return None
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=BrokenOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="valid UTC offset"):
+        record.validate()
+
+
 def test_record_requires_valid_commit_sha():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "test", "run-1", datetime.now(timezone.utc), "not-a-sha").validate()
