@@ -47,19 +47,38 @@ def certify_release(
             raise TypeError("certification metadata must contain string keys and values")
     if expected_commit_sha is not None and not _valid_sha(expected_commit_sha):
         raise ValueError("expected_commit_sha must be a 40-character hexadecimal SHA")
-
-    try:
-        bundle_commit_sha = bundle.commit_sha
-        bundle_id = bundle.bundle_id
-    except (TypeError, ValueError, OverflowError, AttributeError):
+    if expected_commit_sha is None:
         return CertificationResult(
             False,
             getattr(bundle, "bundle_id", ""),
-            ("evidence bundle integrity validation failed",),
+            ("trusted expected commit SHA is required",),
             None,
         )
 
-    if expected_commit_sha is not None and bundle_commit_sha != expected_commit_sha.lower():
+    try:
+        bundle.validate_for_commit(expected_commit_sha)
+        bundle_commit_sha = bundle.commit_sha
+        bundle_id = bundle.bundle_id
+    except (TypeError, ValueError, OverflowError, AttributeError) as exc:
+        commit_mismatch = str(exc) == "evidence bundle commit SHA does not match expected commit"
+        failure = (
+            "evidence commit does not match expected release commit"
+            if commit_mismatch
+            else "evidence bundle integrity validation failed"
+        )
+        evidence_commit = (
+            bundle.records[0].commit_sha.lower()
+            if commit_mismatch
+            else None
+        )
+        return CertificationResult(
+            False,
+            getattr(bundle, "bundle_id", ""),
+            (failure,),
+            evidence_commit,
+        )
+
+    if bundle_commit_sha != expected_commit_sha.lower():
         return CertificationResult(
             False,
             bundle_id,
@@ -67,7 +86,7 @@ def certify_release(
             bundle_commit_sha,
         )
 
-    decision: ReleaseDecision = evaluate_evidence_bundle(bundle, required)
+    decision: ReleaseDecision = evaluate_evidence_bundle(bundle, required, expected_commit_sha)
     return CertificationResult(
         decision.ready,
         bundle_id,

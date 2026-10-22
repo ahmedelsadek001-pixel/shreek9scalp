@@ -20,32 +20,47 @@ class V6ReleaseDecision:
     failures: tuple[str, ...]
 
 
-def _validated_evidence(bundle: ReleaseEvidenceBundle) -> Mapping[str, bool]:
+def _validated_evidence(
+    bundle: ReleaseEvidenceBundle,
+    expected_commit_sha: str,
+) -> Mapping[str, bool]:
     if not isinstance(bundle, ReleaseEvidenceBundle):
         raise TypeError("V6 release requires ReleaseEvidenceBundle")
-    for record in bundle.records:
-        record.validate()
+    bundle.validate_for_commit(expected_commit_sha)
     return bundle.as_map()
 
 
-def evaluate_v6_release(bundle: ReleaseEvidenceBundle) -> V6ReleaseDecision:
-    """Return a fail-closed V6 decision from provenance-bound evidence only."""
-    try:
-        evidence = _validated_evidence(bundle)
-    except (TypeError, ValueError, OverflowError):
+def evaluate_v6_release(
+    bundle: ReleaseEvidenceBundle,
+    expected_commit_sha: str | None = None,
+) -> V6ReleaseDecision:
+    """Return a fail-closed V6 decision bound to a trusted checkout SHA."""
+    if not isinstance(bundle, ReleaseEvidenceBundle):
         live = LiveAuthorization(False, REQUIRED_EVIDENCE)
-        return V6ReleaseDecision(
-            False,
-            live,
-            ("evidence bundle integrity validation failed",),
+        return V6ReleaseDecision(False, live, ("evidence bundle integrity validation failed",))
+    if expected_commit_sha is None:
+        live = LiveAuthorization(False, REQUIRED_EVIDENCE)
+        return V6ReleaseDecision(False, live, ("trusted expected commit SHA is required",))
+    try:
+        evidence = _validated_evidence(bundle, expected_commit_sha)
+    except (TypeError, ValueError, OverflowError) as exc:
+        live = LiveAuthorization(False, REQUIRED_EVIDENCE)
+        failure = (
+            "evidence bundle commit SHA does not match expected commit"
+            if str(exc) == "evidence bundle commit SHA does not match expected commit"
+            else "evidence bundle integrity validation failed"
         )
+        return V6ReleaseDecision(False, live, (failure,))
     live = evaluate_live_authorization(evidence)
     failures = tuple(f"missing/failed evidence: {item}" for item in live.missing)
     return V6ReleaseDecision(live.authorized, live, failures)
 
 
-def require_v6_release(bundle: ReleaseEvidenceBundle) -> None:
-    """Raise when any V6 live-release prerequisite is absent or false."""
-    decision = evaluate_v6_release(bundle)
+def require_v6_release(
+    bundle: ReleaseEvidenceBundle,
+    expected_commit_sha: str | None = None,
+) -> None:
+    """Raise when trusted commit binding or any V6 prerequisite is absent."""
+    decision = evaluate_v6_release(bundle, expected_commit_sha)
     if not decision.release_ready:
         raise RuntimeError("V6 release blocked; " + "; ".join(decision.failures))

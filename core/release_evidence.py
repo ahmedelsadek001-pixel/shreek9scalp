@@ -55,6 +55,15 @@ class EvidenceRecord:
             raise TypeError("evidence passed must be bool")
         if not isinstance(self.recorded_at, datetime) or self.recorded_at.tzinfo is None:
             raise ValueError("recorded_at must be timezone-aware")
+        # A non-None tzinfo object is not sufficient: Python permits tzinfo
+        # implementations whose utcoffset() is None, which behave as naive
+        # timestamps during canonical UTC conversion.
+        try:
+            utc_offset = self.recorded_at.utcoffset()
+        except Exception as exc:
+            raise ValueError("recorded_at must have a valid UTC offset") from exc
+        if utc_offset is None:
+            raise ValueError("recorded_at must have a valid UTC offset")
         normalized_sha = _validate_commit_sha(self.commit_sha)
         if self.commit_sha != normalized_sha:
             raise ValueError("evidence commit_sha must be normalized hexadecimal")
@@ -68,17 +77,20 @@ class ReleaseEvidenceBundle:
     @staticmethod
     def _canonical(records: tuple[EvidenceRecord, ...]) -> str:
         """Return an unambiguous deterministic encoding of evidence provenance."""
-        payload = [
-            {
-                "name": r.name,
-                "passed": r.passed,
-                "source": r.source,
-                "run_id": r.run_id,
-                "recorded_at": r.recorded_at.astimezone(timezone.utc).isoformat(),
-                "commit_sha": r.commit_sha.lower(),
-            }
-            for r in sorted(records, key=lambda item: item.name)
-        ]
+        payload = []
+        for record in sorted(records, key=lambda item: item.name):
+            try:
+                recorded_at = record.recorded_at.astimezone(timezone.utc).isoformat()
+            except Exception as exc:
+                raise ValueError("recorded_at cannot be normalized to UTC") from exc
+            payload.append({
+                "name": record.name,
+                "passed": record.passed,
+                "source": record.source,
+                "run_id": record.run_id,
+                "recorded_at": recorded_at,
+                "commit_sha": record.commit_sha.lower(),
+            })
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
     @classmethod
@@ -119,6 +131,17 @@ class ReleaseEvidenceBundle:
         rebuilt = ReleaseEvidenceBundle.from_records(self.records)
         if rebuilt.bundle_id != self.bundle_id:
             raise ValueError("evidence bundle integrity validation failed")
+
+    def validate_for_commit(self, expected_commit_sha: str) -> None:
+        """Validate integrity and bind this bundle to a trusted checkout SHA.
+
+        The caller must obtain expected_commit_sha from the trusted execution
+        environment (for example, the CI checkout), not from this bundle.
+        """
+        normalized_expected = _validate_commit_sha(expected_commit_sha)
+        self.validate()
+        if self.records[0].commit_sha.lower() != normalized_expected:
+            raise ValueError("evidence bundle commit SHA does not match expected commit")
 
     def as_map(self) -> Mapping[str, bool]:
         self.validate()
@@ -164,12 +187,33 @@ def build_paper_account_evidence(report: PaperAccountAudit, run_id: str,
     )
 
 
-def evaluate_evidence_bundle(bundle: ReleaseEvidenceBundle, required: ReleaseEvidence) -> ReleaseDecision:
-    """Evaluate only integrity- and provenance-validated V5.1 values."""
+def evaluate_evidence_bundle(
+    bundle: ReleaseEvidenceBundle,
+    required: ReleaseEvidence,
+    expected_commit_sha: str | None = None,
+) -> ReleaseDecision:
+    """Evaluate evidence only when it matches a trusted checkout SHA.
+
+    expected_commit_sha must come from the trusted caller environment
+    (for example, the checked-out CI commit), never from the evidence bundle.
+    Omitting it intentionally blocks release readiness.
+    """
     if not isinstance(bundle, ReleaseEvidenceBundle):
         raise TypeError("bundle must be ReleaseEvidenceBundle")
     if not isinstance(required, ReleaseEvidence):
         raise TypeError("required must be ReleaseEvidence")
+    if expected_commit_sha is None:
+        return ReleaseDecision(False, ("trusted expected commit SHA is required",))
+    try:
+        normalized_expected = _validate_commit_sha(expected_commit_sha)
+    except (TypeError, ValueError):
+        return ReleaseDecision(False, ("trusted expected commit SHA is invalid",))
+    try:
+        bundle.validate_for_commit(normalized_expected)
+    except (TypeError, ValueError, OverflowError) as exc:
+        if str(exc) == "evidence bundle commit SHA does not match expected commit":
+            return ReleaseDecision(False, (str(exc),))
+        return ReleaseDecision(False, ("evidence bundle integrity validation failed",))
     try:
         values = bundle.as_map()
     except (TypeError, ValueError, OverflowError):
