@@ -82,6 +82,27 @@ def test_record_rejects_timezone_implementation_error():
         record.validate()
 
 
+def test_bundle_rejects_timestamp_that_fails_during_utc_normalization():
+    class UnstableOffset(tzinfo):
+        calls = 0
+
+        def utcoffset(self, dt):
+            self.calls += 1
+            if self.calls > 1:
+                raise RuntimeError("timezone provider failed during normalization")
+            return timedelta(0)
+
+        def dst(self, dt):
+            return timedelta(0)
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1",
+        datetime(2026, 9, 12, tzinfo=UnstableOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="cannot be normalized to UTC"):
+        ReleaseEvidenceBundle.from_records((record,))
+
+
 def test_record_requires_valid_commit_sha():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "test", "run-1", datetime.now(timezone.utc), "not-a-sha").validate()
