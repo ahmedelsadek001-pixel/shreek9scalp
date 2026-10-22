@@ -77,17 +77,20 @@ class ReleaseEvidenceBundle:
     @staticmethod
     def _canonical(records: tuple[EvidenceRecord, ...]) -> str:
         """Return an unambiguous deterministic encoding of evidence provenance."""
-        payload = [
-            {
-                "name": r.name,
-                "passed": r.passed,
-                "source": r.source,
-                "run_id": r.run_id,
-                "recorded_at": r.recorded_at.astimezone(timezone.utc).isoformat(),
-                "commit_sha": r.commit_sha.lower(),
-            }
-            for r in sorted(records, key=lambda item: item.name)
-        ]
+        payload = []
+        for record in sorted(records, key=lambda item: item.name):
+            try:
+                recorded_at = record.recorded_at.astimezone(timezone.utc).isoformat()
+            except Exception as exc:
+                raise ValueError("recorded_at cannot be normalized to UTC") from exc
+            payload.append({
+                "name": record.name,
+                "passed": record.passed,
+                "source": record.source,
+                "run_id": record.run_id,
+                "recorded_at": recorded_at,
+                "commit_sha": record.commit_sha.lower(),
+            })
         return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
     @classmethod
