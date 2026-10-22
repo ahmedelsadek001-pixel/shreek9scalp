@@ -28,9 +28,15 @@ def full_bundle(passed=True):
 
 
 def test_v6_release_ready_with_complete_provenance():
-    decision = evaluate_v6_release(full_bundle())
+    decision = evaluate_v6_release(full_bundle(), _COMMIT)
     assert decision.release_ready is True
     assert decision.failures == ()
+
+def test_v6_release_fails_closed_without_trusted_commit():
+    decision = evaluate_v6_release(full_bundle())
+    assert decision.release_ready is False
+    assert decision.live.authorized is False
+    assert decision.failures == ("trusted expected commit SHA is required",)
 
 
 def test_v6_release_fails_closed_on_failed_evidence():
@@ -40,11 +46,11 @@ def test_v6_release_fails_closed_on_failed_evidence():
                        r.source, r.run_id, r.recorded_at, r.commit_sha)
         for r in bundle.records
     )
-    decision = evaluate_v6_release(ReleaseEvidenceBundle.from_records(records))
+    decision = evaluate_v6_release(ReleaseEvidenceBundle.from_records(records), _COMMIT)
     assert decision.release_ready is False
     assert any("robustness_passed" in item for item in decision.failures)
     with pytest.raises(RuntimeError):
-        require_v6_release(ReleaseEvidenceBundle.from_records(records))
+        require_v6_release(ReleaseEvidenceBundle.from_records(records), _COMMIT)
 
 
 def test_v6_release_blocks_raw_boolean_mapping():
@@ -57,7 +63,7 @@ def test_v6_release_blocks_raw_boolean_mapping():
 def test_v6_release_requires_all_provenance_records():
     bundle = full_bundle()
     incomplete = ReleaseEvidenceBundle.from_records(bundle.records[:-1])
-    decision = evaluate_v6_release(incomplete)
+    decision = evaluate_v6_release(incomplete, _COMMIT)
     assert decision.release_ready is False
     assert "operator_approval" in decision.failures[0]
 
@@ -65,7 +71,7 @@ def test_v6_release_requires_all_provenance_records():
 def test_v6_release_evaluation_blocks_tampered_bundle_without_raising():
     bundle = full_bundle()
     tampered = replace(bundle, bundle_id="0" * 64)
-    decision = evaluate_v6_release(tampered)
+    decision = evaluate_v6_release(tampered, _COMMIT)
     assert decision.release_ready is False
     assert decision.live.authorized is False
     assert decision.failures == ("evidence bundle integrity validation failed",)
@@ -77,7 +83,7 @@ def test_v6_release_blocks_mixed_commit_provenance():
     bundle = full_bundle()
     changed = replace(bundle.records[0], commit_sha="b" * 40)
     tampered = replace(bundle, records=(changed,) + bundle.records[1:])
-    decision = evaluate_v6_release(tampered)
+    decision = evaluate_v6_release(tampered, _COMMIT)
     assert decision.release_ready is False
     assert decision.live.authorized is False
     assert decision.failures == ("evidence bundle integrity validation failed",)
