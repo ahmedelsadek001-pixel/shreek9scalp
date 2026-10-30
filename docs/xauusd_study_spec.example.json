@@ -1,0 +1,38 @@
+{
+  "schema": "shreek.xauusd-study.v1",
+  "strategy_version": "research-v1",
+  "source_manifest": {
+    "broker": "One World Markets",
+    "server": "OWMarkets-Server",
+    "symbol": "XAUUSD",
+    "timezone_offset_minutes": 180,
+    "digits": 2,
+    "point_size": 0.01,
+    "contract_size": 100.0,
+    "minimum_volume": 0.01,
+    "volume_step": 0.01,
+    "observed_spread_points": 19.0,
+    "round_turn_commission_per_lot": 7.0,
+    "slippage_points": 1.5
+  },
+  "parameter_sets": [
+    {"volume_multiplier": 1.5},
+    {"volume_multiplier": 1.2}
+  ],
+  "pip_size": 0.1,
+  "volume": 1.0,
+  "run": {
+    "train_size": 40000,
+    "test_size": 20000,
+    "purge_size": 12,
+    "step": 20000,
+    "starting_equity": 10000.0,
+    "simulations": 1000,
+    "seed": 42,
+    "slippage_multiplier": 1.5,
+    "spread_multiplier": 1.5,
+    "bootstrap_block_size": 2,
+    "bootstrap_simulations": 2000,
+    "label_horizon": 12
+  }
+}

@@ -1,0 +1,82 @@
+from research.research_evidence import ResearchEvidence, verify_evidence
+
+
+def test_evidence_is_reproducible_and_verifiable():
+    evidence = ResearchEvidence.create("gold-2026", "V5.2", 120, {"expectancy": 1.2, "win_rate": 57.5})
+    assert verify_evidence(evidence) is True
+    assert evidence.evidence_hash == ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"win_rate": 57.5, "expectancy": 1.2}
+    ).evidence_hash
+
+
+def test_invalid_evidence_rejected():
+    try:
+        ResearchEvidence.create("", "V5.2", 10, {})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_provenance_is_bound_to_evidence_hash():
+    evidence = ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"expectancy": 1.2, "win_rate": 57.5},
+        data={"bars": 120, "symbol": "XAUUSD"},
+        config={"risk": 0.01, "timeframe": "M5"}, code_revision="abc123",
+    )
+    assert verify_evidence(evidence) is True
+
+
+def test_partial_provenance_is_rejected():
+    try:
+        ResearchEvidence.create("gold-2026", "V5.2", 120, {"expectancy": 1.2}, data={"bars": 120})
+    except ValueError as exc:
+        assert "supplied together" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_provenance_tampering_fails_verification():
+    evidence = ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"expectancy": 1.2},
+        data={"bars": 120}, config={"risk": 0.01}, code_revision="abc123",
+    )
+    object.__setattr__(evidence.provenance, "code_revision", "tampered")
+    assert verify_evidence(evidence) is False
+
+
+def test_metric_tampering_is_blocked_by_immutability():
+    evidence = ResearchEvidence.create("gold-2026", "V5.2", 120, {"expectancy": 1.2})
+    try:
+        evidence.metrics["expectancy"] = 99.0
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("expected immutable metrics mapping")
+    assert verify_evidence(evidence) is True
+
+
+def test_non_finite_metric_is_rejected():
+    try:
+        ResearchEvidence.create("gold-2026", "V5.2", 120, {"expectancy": float("nan")})
+    except ValueError as exc:
+        assert "finite" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_provenance_fingerprint_changes_when_nested_data_changes():
+    first = ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"expectancy": 1.2},
+        data={"bars": [{"close": 1.0}]},
+        config={"risk": 0.01},
+        code_revision="abc123",
+    )
+    second = ResearchEvidence.create(
+        "gold-2026", "V5.2", 120, {"expectancy": 1.2},
+        data={"bars": [{"close": 1.1}]},
+        config={"risk": 0.01},
+        code_revision="abc123",
+    )
+    assert first.provenance.data_fingerprint != second.provenance.data_fingerprint
+    assert first.evidence_hash != second.evidence_hash
