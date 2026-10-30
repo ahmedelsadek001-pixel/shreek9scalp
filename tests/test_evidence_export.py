@@ -162,3 +162,18 @@ def test_export_rejects_certification_robustness_metric_policy_bypass(field, val
     forged = replace(result, certification=certification)
     with pytest.raises(ValueError, match=message):
         build_evidence_export(forged, _provenance())
+
+
+
+def test_export_rejects_partial_statistical_evidence():
+    result = _result()
+    result = EvidencePipelineResult(
+        result.wfo,
+        result.robustness,
+        result.report,
+        result.gate,
+        result.policy,
+        interval=object(),
+    )
+    with pytest.raises(ValueError, match="statistical certification evidence must be complete"):
+        build_evidence_export(result, _provenance())
