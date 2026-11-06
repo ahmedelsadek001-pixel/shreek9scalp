@@ -11,7 +11,7 @@ def intent(): return OrderIntent("O1","XAUUSD",Direction.BUY,0.03,2500.0)
 def test_accepted_then_reconciled():
     ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
     c=ExecutionLifecycleCoordinator(ledger)
-    d=c.apply_outcome(i,classify_broker_outcome(acknowledged=True,accepted=True))
+    d=c.apply_outcome(i,classify_broker_outcome(intent=i,acknowledged=True,accepted=True))
     assert d.safe and d.state is SubmissionState.ACCEPTED
     r=c.reconcile(i,ExecutionReport("O1","XAUUSD",Direction.BUY,0.03,2500.0))
     assert r.matched
@@ -19,7 +19,7 @@ def test_accepted_then_reconciled():
 def test_unknown_blocks_and_requires_reconciliation():
     ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
     c=ExecutionLifecycleCoordinator(ledger)
-    d=c.apply_outcome(i,classify_broker_outcome(acknowledged=False,accepted=None))
+    d=c.apply_outcome(i,classify_broker_outcome(intent=i,acknowledged=False,accepted=None))
     assert not d.safe and d.state is SubmissionState.UNKNOWN
     with pytest.raises(ValueError): ledger.begin(i)
     r=c.reconcile(i,ExecutionReport("O1","XAUUSD",Direction.BUY,0.03,2500.0))
@@ -29,7 +29,7 @@ def test_unknown_blocks_and_requires_reconciliation():
 def test_unknown_mismatch_remains_unknown_and_blocks_retry():
     ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
     c=ExecutionLifecycleCoordinator(ledger)
-    c.apply_outcome(i,classify_broker_outcome(acknowledged=False,accepted=None))
+    c.apply_outcome(i,classify_broker_outcome(intent=i,acknowledged=False,accepted=None))
     r=c.reconcile(i,ExecutionReport("WRONG","XAUUSD",Direction.BUY,0.03,2500.0))
     assert not r.matched
     assert ledger.get("O1").state is SubmissionState.UNKNOWN
@@ -38,7 +38,7 @@ def test_unknown_mismatch_remains_unknown_and_blocks_retry():
 def test_explicit_retryable_rejection_still_requires_new_identity():
     ledger=IdempotencyLedger(); i=intent(); ledger.begin(i)
     c=ExecutionLifecycleCoordinator(ledger)
-    d=c.apply_outcome(i,classify_broker_outcome(acknowledged=True,accepted=False,rejection_code="REQUOTE"))
+    d=c.apply_outcome(i,classify_broker_outcome(intent=i,acknowledged=True,accepted=False,rejection_code="REQUOTE"))
     assert d.state is SubmissionState.REJECTED
     with pytest.raises(ValueError,match="new identity"): ledger.begin(i)
 

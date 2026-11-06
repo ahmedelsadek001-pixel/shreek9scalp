@@ -39,7 +39,7 @@ _LIVE_FUNCTIONS = {
 DEFAULT_EXCLUDED_PARTS = frozenset({".git", ".venv", "venv", "__pycache__", "tests", "security"})
 # The sole broker send call is constrained to a reviewed DEMO-only module.
 # Any change to it breaks the release gate until its new bytes are reviewed.
-_DEMO_TRANSPORT_SHA256 = "76c5e273a92ffc7b4c7963152aaff58e5f9bdaaa8a20759939ec6a17f82a057b"
+_DEMO_TRANSPORT_SHA256 = "17b573b6736e55c2455899f7a735fc66d8994b4b8af7a2d48fa067d27fb4ed6b"
 
 
 def _reviewed_demo_transport(path: str, content: str) -> bool:

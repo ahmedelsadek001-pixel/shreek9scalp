@@ -127,13 +127,13 @@ jobs:
         retention-days: 90
     - name: Create source archive
       run: |
-        zip -qr "shreek9scalp-v5.1-development-${GITHUB_SHA}.zip" . \
-          -x '.git/*' '.venv/*' 'venv/*' '__pycache__/*' '*.pyc'
+        python -m utils.source_archive build --repo . --commit "$GITHUB_SHA" \
+          --output "shreek9scalp-source-${GITHUB_SHA}.zip"
     - name: Upload source archive
       uses: actions/upload-artifact@v4
       with:
         name: shreek9scalp-source-${{ github.sha }}
-        path: shreek9scalp-v5.1-development-${{ github.sha }}.zip
+        path: shreek9scalp-source-${{ github.sha }}.zip
         if-no-files-found: error
         retention-days: 30
 

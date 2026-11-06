@@ -42,6 +42,11 @@ def _number(value: Any) -> bool:
     return type(value) in (float, int) and isfinite(value)
 
 
+def _empty_broker_records(value: Any) -> bool:
+    """Accept only the exact empty tuple returned by the MT5 query API."""
+    return type(value) is tuple and len(value) == 0
+
+
 def _filling_policy(api: Any, symbol: Any) -> int | None:
     """Select only a broker-advertised immediate fill policy, preferring IOC."""
     modes = getattr(symbol, "filling_mode", None)
@@ -141,7 +146,14 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
     or uncertain submissions remain reserved until independent reconciliation.
     """
     refused = lambda reason: DemoSubmission(False, False, reason)
-    if api is None or not isinstance(config, DemoTerminalConfig) or not isinstance(order, DemoOrder):
+    # The transport reuses these values across validation, risk calculation,
+    # reservation, and request construction. Reject subclasses so caller-owned
+    # accessors or validators cannot change broker-bound fields between reads.
+    if (api is None or type(config) is not DemoTerminalConfig
+            or type(order) is not DemoOrder):
+        return refused("invalid DEMO transport inputs")
+    if any(type(value) is not str for value in
+           (order.intent_id, order.symbol, order.side, order.source_kind)):
         return refused("invalid DEMO transport inputs")
     try:
         config.validate()
@@ -155,8 +167,14 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
             or (order.expected_price is not None
                 and (not _number(order.expected_price) or order.expected_price <= 0))):
         return refused("invalid or oversized DEMO intent")
-    clock = now or datetime.now(timezone.utc)
-    if clock.tzinfo is None:
+    if now is not None and type(now) is not datetime:
+        return refused("timezone-aware clock required")
+    clock = now if now is not None else datetime.now(timezone.utc)
+    try:
+        aware_clock = clock.tzinfo is not None and clock.utcoffset() is not None
+    except Exception:
+        aware_clock = False
+    if not aware_clock:
         return refused("timezone-aware clock required")
     initialized = False
     reserved = False
@@ -181,7 +199,7 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         # Existing positions and pending orders are refused, including broker read errors.
         positions = api.positions_get()
         pending = api.orders_get()
-        if positions is None or pending is None or positions or pending:
+        if not _empty_broker_records(positions) or not _empty_broker_records(pending):
             return refused("account positions, pending orders or exposure unknown")
         tick = api.symbol_info_tick(config.symbol)
         if (tick is None or not all(_number(getattr(tick, x, None)) for x in ("ask", "bid", "time_msc"))
@@ -209,11 +227,21 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
             "deviation": 10, "magic": 521000, "comment": "SHREEK-DEMO-" + order.intent_id[:12],
             "type_time": api.ORDER_TIME_GTC, "type_filling": filling_policy,
         }
-        check = api.order_check(request)
-        if check is None or getattr(check, "retcode", None) != 0:
+        # Never expose the broker-bound request itself to the preflight call.
+        # A mutated check copy is also a protocol violation and must refuse.
+        checked_request = dict(request)
+        check = api.order_check(checked_request)
+        check_retcode = getattr(check, "retcode", None)
+        if (type(check_retcode) is not int or check_retcode != 0
+                or checked_request != request):
             return refused("broker DEMO order check refused")
         # Recheck account, exposure, and quote immediately before the send.
-        if not _account_matches(api, config) or api.positions_get() != () or api.orders_get() != ():
+        if not _account_matches(api, config):
+            return refused("DEMO identity or exposure changed before send")
+        positions = api.positions_get()
+        pending = api.orders_get()
+        if (not _empty_broker_records(positions)
+                or not _empty_broker_records(pending)):
             return refused("DEMO identity or exposure changed before send")
         fresh = api.symbol_info_tick(config.symbol)
         if (fresh is None or getattr(fresh, "time_msc", None) != tick.time_msc
@@ -228,14 +256,20 @@ def submit_demo_order(api: Any, config: DemoTerminalConfig, order: DemoOrder,
         if not reserved:
             return refused("DEMO ledger location unavailable")
         result = api.order_send(request)
-        if (result is not None and getattr(result, "retcode", None) == api.TRADE_RETCODE_DONE
-                and type(getattr(result, "order", None)) is int and result.order > 0):
+        result_retcode = getattr(result, "retcode", None)
+        done_retcode = getattr(api, "TRADE_RETCODE_DONE", None)
+        broker_order_id = getattr(result, "order", None)
+        if (result is not None and type(result_retcode) is int
+                and type(done_retcode) is int and done_retcode == 10009
+                and result_retcode == done_retcode
+                and type(broker_order_id) is int and broker_order_id > 0):
             deal_id = getattr(result, "deal", None)
             deal_id = deal_id if type(deal_id) is int and deal_id > 0 else None
             fill_price = getattr(result, "price", None)
             fill_price = float(fill_price) if _number(fill_price) and fill_price > 0 else None
-            _acknowledge(ledger, config, order.intent_id, result.order, deal_id, fill_price)
-            return DemoSubmission(True, True, "DEMO broker acknowledged; reconcile independently", result.order)
+            _acknowledge(ledger, config, order.intent_id, broker_order_id, deal_id, fill_price)
+            return DemoSubmission(True, True, "DEMO broker acknowledged; reconcile independently",
+                                  broker_order_id)
         return DemoSubmission(True, False, "DEMO submission uncertain; do not retry")
     except (AttributeError, OSError, RuntimeError, TypeError, ValueError, OverflowError, sqlite3.Error):
         if reserved:

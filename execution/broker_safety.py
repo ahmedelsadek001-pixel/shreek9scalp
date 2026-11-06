@@ -9,6 +9,15 @@ from dataclasses import dataclass
 from math import isfinite
 
 
+def _is_finite_number(value: object) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
 @dataclass(frozen=True)
 class BrokerSafetyPolicy:
     allowed_symbols: frozenset[str]
@@ -18,10 +27,23 @@ class BrokerSafetyPolicy:
     max_slippage: float
 
     def validate(self) -> None:
-        if not self.allowed_symbols or any(not symbol.strip() for symbol in self.allowed_symbols):
-            raise ValueError("allowed_symbols must contain non-empty symbols")
+        if (
+            type(self.allowed_symbols) is not frozenset
+            or not self.allowed_symbols
+            or any(
+                type(symbol) is not str
+                or not symbol.strip()
+                or symbol != symbol.strip()
+                for symbol in self.allowed_symbols
+            )
+        ):
+            raise ValueError(
+                "allowed_symbols must be an exact frozenset")
         values = (self.max_spread, self.min_volume, self.max_volume, self.max_slippage)
-        if any(not isfinite(float(value)) for value in values):
+        if any(type(value) not in (int, float) for value in values):
+            raise ValueError(
+                "broker safety limits must be built-in int or float numbers")
+        if not all(_is_finite_number(value) for value in values):
             raise ValueError("broker safety limits must be finite")
         if self.max_spread < 0 or self.min_volume <= 0 or self.max_volume < self.min_volume or self.max_slippage < 0:
             raise ValueError("broker safety limits are inconsistent")
@@ -38,7 +60,20 @@ def authorize_environment(
     trading_enabled: bool,
 ) -> tuple[bool, tuple[str, ...]]:
     """Return an authorization decision for a supplied environment snapshot."""
+    if type(policy) is not BrokerSafetyPolicy:
+        raise TypeError(
+            "broker policy must be exact BrokerSafetyPolicy")
     policy.validate()
+    if (type(symbol) is not str or not symbol.strip()
+            or symbol != symbol.strip()):
+        return False, (
+            "broker symbol must be exact and non-empty",
+        )
+    observations = (spread, volume, slippage)
+    if not all(_is_finite_number(value) for value in observations):
+        return False, (
+            "broker observations must be finite built-in numbers",
+        )
     reasons: list[str] = []
     if not connected:
         reasons.append("broker disconnected")

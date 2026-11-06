@@ -119,3 +119,70 @@ def test_future_or_naive_readiness_clock_refused():
     assert not inspect_demo_readiness(api, CONFIG, now=datetime.now()).ready_for_demo_attempt
     assert not inspect_demo_readiness(api, CONFIG,
                                       now=datetime.now(timezone.utc).replace(year=2020)).ready_for_demo_attempt
+
+
+def test_readiness_samples_clock_after_slow_connection_and_quote_read(monkeypatch):
+    from datetime import timedelta
+    from execution import mt5_demo_readiness as readiness
+    original_datetime = datetime
+    base = original_datetime(2026, 10, 1, tzinfo=timezone.utc)
+    current = [base]
+
+    class Clock(original_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current[0]
+
+    monkeypatch.setattr(readiness, "datetime", Clock)
+    for offset in (0, 10800):
+        api = FakeMT5()
+        current[0] = base
+        initialize = api.initialize
+        tick = api.symbol_info_tick
+
+        def slow_initialize(*args, **kwargs):
+            current[0] += timedelta(seconds=8)
+            return initialize(*args, **kwargs)
+
+        def slow_tick(*args, **kwargs):
+            current[0] += timedelta(seconds=2)
+            api.tick_ms = int(current[0].timestamp() * 1000) + offset * 1000
+            return tick(*args, **kwargs)
+
+        api.initialize = slow_initialize
+        api.symbol_info_tick = slow_tick
+        report = inspect_demo_readiness(api, replace(CONFIG, server_utc_offset_seconds=offset))
+        assert report.ready_for_demo_attempt
+        assert report.observed_tick_utc_offset_seconds == offset
+        assert not report.order_transport_enabled and not api.sends
+        assert api.stops == 1
+
+
+def test_slow_connection_does_not_relax_stale_or_future_quote_limits(monkeypatch):
+    from datetime import timedelta
+    from execution import mt5_demo_readiness as readiness
+    original_datetime = datetime
+    base = original_datetime(2026, 10, 1, tzinfo=timezone.utc)
+    current = [base]
+
+    class Clock(original_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current[0]
+
+    monkeypatch.setattr(readiness, "datetime", Clock)
+    for offset in (0, 10800):
+        for delta in (-6000, 2000):
+            api = FakeMT5()
+            current[0] = base
+            initialize = api.initialize
+
+            def slow_initialize(*args, **kwargs):
+                current[0] += timedelta(seconds=10)
+                api.tick_ms = int(current[0].timestamp() * 1000) + offset * 1000 + delta
+                return initialize(*args, **kwargs)
+
+            api.initialize = slow_initialize
+            report = inspect_demo_readiness(api, replace(CONFIG, server_utc_offset_seconds=offset))
+            assert not report.ready_for_demo_attempt and not api.sends
+            assert "DEMO quote missing, stale or wide" in report.blockers

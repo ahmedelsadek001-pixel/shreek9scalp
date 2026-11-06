@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+from pathlib import Path
 import sqlite3
 
 import pytest
@@ -92,6 +93,43 @@ def test_preflight_blocks_stop_file_and_unresolved_ledger(monkeypatch, capsys, t
     report = json.loads(capsys.readouterr().out)
     assert "unresolved DEMO submission in ledger" in report["session_blockers"]
     assert not api.sends
+
+
+def test_preflight_blocks_dangling_stop_marker(monkeypatch, capsys, tmp_path):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    try:
+        ledger.with_suffix(".stop").symlink_to(tmp_path / "missing-stop-target")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert "automatic DEMO stop file active" in report["session_blockers"]
+    assert report["strategy_scan"] is None and not api.sends
+
+
+def test_preflight_blocks_when_stop_marker_cannot_be_inspected(monkeypatch, capsys, tmp_path):
+    _env(monkeypatch)
+    ledger = tmp_path / "demo.sqlite3"
+    original_lstat = Path.lstat
+
+    def unreadable_stop(path):
+        if path == ledger.with_suffix(".stop"):
+            raise PermissionError("private filesystem details")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", unreadable_stop)
+    api, _, _ = _api(datetime.now(timezone.utc))
+    api.tick_ms += 10_800_000
+    monkeypatch.setattr(mt5_demo_preflight_cli, "read_only_mt5_runtime", lambda: api)
+    assert mt5_demo_preflight_cli.main(["--ledger", str(ledger)]) == 2
+    report = json.loads(capsys.readouterr().out)
+    assert "automatic DEMO stop file active" in report["session_blockers"]
+    assert report["strategy_scan"] is None and not api.sends
+    assert "private" not in str(report)
 
 
 def test_preflight_rejects_malformed_or_missing_ledger_location(monkeypatch, capsys, tmp_path):

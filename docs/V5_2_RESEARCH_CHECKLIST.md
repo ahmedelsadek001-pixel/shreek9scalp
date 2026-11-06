@@ -10,6 +10,16 @@ robustness evidence still fail research certification: the stressed Monte
 Carlo ruin rate is 100%, and uncertainty bounds do not exclude a non-positive
 expectancy. No empirical release item below is therefore cleared.
 
+The current detector consumes the first valid confirmation of each breakout
+before applying its train/OOS/current-bar boundary. A setup confirmed in
+warm-up cannot be revived as an OOS trade by a later confirmation. New
+manifest-bound research artifacts record
+`signal_rules_id=breakout-retest-first-confirmation-v2` and context evaluator
+`manifest-bound-breakout-retest-context-v2`. Conflicting rule metadata is
+rejected. Prior study counts remain evidence for their original code revision;
+they must be recomputed on the corrected candidate before supporting a new
+promotion decision. This correction does not establish profitable performance.
+
 ## Software gates
 
 - [x] MAE/MFE measurement is deterministic and direction-aware.

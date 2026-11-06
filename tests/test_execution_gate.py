@@ -9,7 +9,7 @@ from execution.shadow import ShadowExecution
 
 
 def _ready_recovery() -> RecoveryDecision:
-    return RecoveryDecision(RecoveryState.CONNECTED, True, "execution channel available")
+    return ShadowRecovery(ShadowExecution()).admission()
 
 
 def test_execution_gate_allows_only_when_every_layer_is_ready():
@@ -35,10 +35,12 @@ def test_kill_switch_always_blocks():
 
 
 def test_recovery_not_ready_blocks_even_if_other_layers_pass():
+    recovery = ShadowRecovery(ShadowExecution())
+    recovery.disconnect()
     decision = evaluate_execution_gate(
         operational=(True, ()),
         broker=(True, ()),
-        recovery=RecoveryDecision(RecoveryState.RECOVERING, False, "recovery in progress"),
+        recovery=recovery.begin_recovery(),
         kill_switch_active=False,
     )
     assert decision.allowed is False
