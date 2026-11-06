@@ -4,7 +4,7 @@ name: Python package
 
 on:
   push:
-    branches: [ "main", "v5.1-development" ]
+    branches: [ "main", "v5.1-development", "v5.3-authenticated-ci-provenance" ]
   pull_request:
     branches: [ "main", "v5.1-development" ]
 
