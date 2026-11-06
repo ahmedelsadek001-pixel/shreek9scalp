@@ -29,26 +29,31 @@ def _required() -> ReleaseEvidence:
 
 
 def test_certification_passes_only_for_complete_passing_evidence():
-    result = certify_release(_bundle(), _required(), metadata={"release": "V5.1-RC1"})
+    result = certify_release(_bundle(), _required(), metadata={"release": "V5.1-RC1"}, expected_commit_sha=_COMMIT)
     assert result.ready
     assert result.bundle_id
     assert not result.failures
 
 
 def test_certification_blocks_failed_evidence():
-    result = certify_release(_bundle(False), _required())
+    result = certify_release(_bundle(False), _required(), expected_commit_sha=_COMMIT)
     assert not result.ready
     assert result.failures
 
 
 def test_metadata_cannot_grant_release_authority():
-    result = certify_release(_bundle(False), _required(), metadata={"approved": "true"})
+    result = certify_release(_bundle(False), _required(), metadata={"approved": "true"}, expected_commit_sha=_COMMIT)
     assert not result.ready
 
 
 def test_certification_requires_matching_expected_commit():
     result = certify_release(_bundle(), _required(), expected_commit_sha=_COMMIT)
     assert result.ready
+
+def test_certification_fails_closed_without_trusted_expected_commit():
+    result = certify_release(_bundle(), _required())
+    assert not result.ready
+    assert result.failures == ("trusted expected commit SHA is required",)
 
 
 def test_certification_blocks_stale_commit_evidence():

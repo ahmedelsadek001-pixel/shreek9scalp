@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 
 import pytest
 
@@ -37,6 +37,72 @@ def test_record_requires_provenance():
         EvidenceRecord("ci_green", True, "", "run-1", datetime.now(timezone.utc), _COMMIT).validate()
 
 
+def test_record_rejects_tzinfo_without_utc_offset():
+    class UndefinedOffset(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+        def dst(self, dt):
+            return None
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=UndefinedOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="valid UTC offset"):
+        record.validate()
+
+
+def test_record_rejects_out_of_range_utc_offset():
+    class OutOfRangeOffset(tzinfo):
+        def utcoffset(self, dt):
+            return timedelta(days=1)
+
+        def dst(self, dt):
+            return timedelta(0)
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=OutOfRangeOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="valid UTC offset"):
+        record.validate()
+
+
+def test_record_rejects_timezone_implementation_error():
+    class BrokenOffset(tzinfo):
+        def utcoffset(self, dt):
+            raise RuntimeError("timezone provider failed")
+
+        def dst(self, dt):
+            return None
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1", datetime(2026, 9, 12, tzinfo=BrokenOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="valid UTC offset"):
+        record.validate()
+
+
+def test_bundle_rejects_timestamp_that_fails_during_utc_normalization():
+    class UnstableOffset(tzinfo):
+        calls = 0
+
+        def utcoffset(self, dt):
+            self.calls += 1
+            if self.calls > 1:
+                raise RuntimeError("timezone provider failed during normalization")
+            return timedelta(0)
+
+        def dst(self, dt):
+            return timedelta(0)
+
+    record = EvidenceRecord(
+        "ci_green", True, "test", "run-1",
+        datetime(2026, 9, 12, tzinfo=UnstableOffset()), _COMMIT
+    )
+    with pytest.raises(ValueError, match="cannot be normalized to UTC"):
+        ReleaseEvidenceBundle.from_records((record,))
+
+
 def test_record_requires_valid_commit_sha():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "test", "run-1", datetime.now(timezone.utc), "not-a-sha").validate()
@@ -53,16 +119,49 @@ def test_duplicate_evidence_name_is_rejected():
         ReleaseEvidenceBundle.from_records((record, record))
 
 
+def test_bundle_can_be_bound_to_trusted_expected_commit():
+    bundle = _bundle()
+    bundle.validate_for_commit(_COMMIT)
+
+
+def test_bundle_rejects_mismatch_with_trusted_expected_commit():
+    bundle = _bundle()
+    with pytest.raises(ValueError, match="does not match expected commit"):
+        bundle.validate_for_commit("b" * 40)
+
+
+def test_bundle_rejects_malformed_trusted_expected_commit():
+    with pytest.raises(ValueError, match="40-character SHA"):
+        _bundle().validate_for_commit("not-a-sha")
+
+
 def test_complete_provenance_bundle_can_pass_release_gate():
-    decision = evaluate_evidence_bundle(_bundle(), _required())
+    decision = evaluate_evidence_bundle(_bundle(), _required(), _COMMIT)
     assert decision.ready
     assert not decision.failures
+
+def test_release_evaluation_fails_closed_without_trusted_commit():
+    decision = evaluate_evidence_bundle(_bundle(), _required())
+    assert not decision.ready
+    assert decision.failures == ("trusted expected commit SHA is required",)
+
+
+def test_release_evaluation_rejects_mismatched_trusted_commit():
+    decision = evaluate_evidence_bundle(_bundle(), _required(), "b" * 40)
+    assert not decision.ready
+    assert decision.failures == ("evidence bundle commit SHA does not match expected commit",)
+
+
+def test_release_evaluation_rejects_malformed_trusted_commit():
+    decision = evaluate_evidence_bundle(_bundle(), _required(), "not-a-sha")
+    assert not decision.ready
+    assert decision.failures == ("trusted expected commit SHA is invalid",)
 
 
 def test_missing_provenance_blocks_release_even_if_required_flag_is_true():
     records = tuple(_bundle().records[:-1])
     bundle = ReleaseEvidenceBundle.from_records(records)
-    decision = evaluate_evidence_bundle(bundle, _required())
+    decision = evaluate_evidence_bundle(bundle, _required(), _COMMIT)
     assert not decision.ready
     assert "recovery_validated" in decision.failures[0]
 
@@ -71,7 +170,7 @@ def test_required_policy_blocks_failed_required_evidence():
     records = list(_bundle().records)
     records[0] = EvidenceRecord("ci_green", False, "validated-test", "run-001", datetime(2026, 9, 12, tzinfo=timezone.utc), _COMMIT)
     bundle = ReleaseEvidenceBundle.from_records(tuple(records))
-    decision = evaluate_evidence_bundle(bundle, _required())
+    decision = evaluate_evidence_bundle(bundle, _required(), _COMMIT)
     assert not decision.ready
     assert decision.failures == ("required evidence failed: ci_green",)
 
@@ -100,7 +199,7 @@ def test_tampered_record_is_rejected_by_release_evaluation():
     original = _bundle()
     changed = replace(original.records[0], run_id="attacker-run")
     tampered = replace(original, records=(changed,) + original.records[1:])
-    decision = evaluate_evidence_bundle(tampered, _required())
+    decision = evaluate_evidence_bundle(tampered, _required(), _COMMIT)
     assert not decision.ready
     assert decision.failures == ("evidence bundle integrity validation failed",)
 
@@ -109,7 +208,7 @@ def test_tampered_commit_is_rejected_by_release_evaluation():
     original = _bundle()
     changed = replace(original.records[0], commit_sha="b" * 40)
     tampered = replace(original, records=(changed,) + original.records[1:])
-    decision = evaluate_evidence_bundle(tampered, _required())
+    decision = evaluate_evidence_bundle(tampered, _required(), _COMMIT)
     assert not decision.ready
     assert decision.failures == ("evidence bundle integrity validation failed",)
 
