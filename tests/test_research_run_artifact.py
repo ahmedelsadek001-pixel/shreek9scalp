@@ -585,3 +585,4 @@ def test_strategy_binding_rejects_rehashed_embedded_identity_tampering(field, va
             strategy_version="research-v1",
             code_revision=revision,
         )
+

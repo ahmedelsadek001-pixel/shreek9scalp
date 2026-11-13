@@ -28,27 +28,35 @@ def _required() -> ReleaseEvidence:
     return ReleaseEvidence(*(True for _ in _NAMES))
 
 
-def test_certification_passes_only_for_complete_passing_evidence():
-    result = certify_release(_bundle(), _required(), metadata={"release": "V5.1-RC1"})
-    assert result.ready
+def test_certification_blocks_complete_self_asserted_evidence():
+    result = certify_release(_bundle(), _required(), metadata={"release": "V5.1-RC1"}, expected_commit_sha=_COMMIT)
+    assert not result.ready
     assert result.bundle_id
-    assert not result.failures
+    assert result.failures == (
+        "evidence claims are self-asserted; independent authenticity verification is not implemented",
+    )
 
 
 def test_certification_blocks_failed_evidence():
-    result = certify_release(_bundle(False), _required())
+    result = certify_release(_bundle(False), _required(), expected_commit_sha=_COMMIT)
     assert not result.ready
     assert result.failures
 
 
 def test_metadata_cannot_grant_release_authority():
-    result = certify_release(_bundle(False), _required(), metadata={"approved": "true"})
+    result = certify_release(_bundle(False), _required(), metadata={"approved": "true"}, expected_commit_sha=_COMMIT)
     assert not result.ready
 
 
-def test_certification_requires_matching_expected_commit():
+def test_certification_binds_commit_but_blocks_unauthenticated_claims():
     result = certify_release(_bundle(), _required(), expected_commit_sha=_COMMIT)
-    assert result.ready
+    assert not result.ready
+    assert result.commit_sha == _COMMIT
+
+def test_certification_fails_closed_without_trusted_expected_commit():
+    result = certify_release(_bundle(), _required())
+    assert not result.ready
+    assert result.failures == ("trusted expected commit SHA is required",)
 
 
 def test_certification_blocks_stale_commit_evidence():

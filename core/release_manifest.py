@@ -72,14 +72,15 @@ class ReleaseManifest:
             raise TypeError("certification failures must be a tuple of non-empty strings")
         if result.ready != (len(result.failures) == 0):
             raise ValueError("certification readiness contradicts failures")
-        if result.commit_sha is not None:
-            if type(result.commit_sha) is not str or len(result.commit_sha) != 40:
-                raise ValueError("certification commit_sha must be a 40-character SHA")
-            certified_sha = result.commit_sha.lower()
-            if any(char not in "0123456789abcdef" for char in certified_sha):
-                raise ValueError("certification commit_sha must contain only hexadecimal characters")
-            if certified_sha != normalized_sha:
-                raise ValueError("manifest commit does not match certified evidence commit")
+        if result.commit_sha is None:
+            raise ValueError("certification must include trusted evidence commit SHA")
+        if type(result.commit_sha) is not str or len(result.commit_sha) != 40:
+            raise ValueError("certification commit_sha must be a 40-character SHA")
+        certified_sha = result.commit_sha.lower()
+        if any(char not in "0123456789abcdef" for char in certified_sha):
+            raise ValueError("certification commit_sha must contain only hexadecimal characters")
+        if certified_sha != normalized_sha:
+            raise ValueError("manifest commit does not match certified evidence commit")
 
         canonical = cls._canonical(
             version, normalized_sha, normalized_bundle, result.ready, result.failures
