@@ -62,3 +62,26 @@ def test_signal_converts_to_backtest_order():
 def test_invalid_pip_size_is_rejected():
     with pytest.raises(ValueError):
         detect_breakout_retest(_bars(), pip_size=0)
+
+
+def test_diagnostics_preserve_signals_and_identify_first_failed_filter():
+    from dataclasses import replace
+    diagnostics = {"old": "discard"}
+    bars = _bars()
+    baseline = detect_breakout_retest(bars, 0.0001)
+    assert detect_breakout_retest(bars, 0.0001, diagnostics=diagnostics) == baseline
+    assert diagnostics["returned_signals"] == 1
+    assert diagnostics["valid_breakouts"] == 1
+    assert diagnostics["latest_valid_breakout"]["level"] == baseline[0].breakout_level
+    assert "old" not in diagnostics
+    for reason, changed in (
+        ("consolidation_range", [replace(b, high=b.high + 1) for b in bars]),
+        ("breakout_tick_volume", bars[:26] + [replace(bars[26], volume=150)] + bars[27:]),
+        ("breakout_body", bars[:26] + [replace(bars[26], open=bars[26].close)] + bars[27:]),
+        ("no_pin_or_engulfing_confirmation", bars[:-1] + [replace(bars[-1], open=bars[-1].close)]),
+        ("retest_did_not_touch_level", bars[:-1] + [replace(bars[-1], low=100.006)]),
+    ):
+        assert detect_breakout_retest(changed, 0.0001, min_signal_index=27,
+                                     diagnostics=diagnostics) == ()
+        assert diagnostics["rejected"][reason] == 1
+        assert diagnostics["returned_signals"] == 0
