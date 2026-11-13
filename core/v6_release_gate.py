@@ -1,8 +1,9 @@
-"""V6.0 provenance-bound release gate.
+"""V6.0 fail-closed release gate for integrity-bound evidence claims.
 
-This module is a policy boundary only. It does not perform live execution.
-Raw boolean evidence is intentionally rejected: V6 authorization must be
-backed by a validated ReleaseEvidenceBundle with provenance records.
+A valid bundle hash and commit binding do not authenticate who produced an
+evidence claim. Until independent evidence-source verification is implemented,
+this gate must not grant release or live authority, even for all-True records.
+This module never performs live execution.
 """
 from __future__ import annotations
 
@@ -52,8 +53,15 @@ def evaluate_v6_release(
         )
         return V6ReleaseDecision(False, live, (failure,))
     live = evaluate_live_authorization(evidence)
+    if live.authorized:
+        blocked = LiveAuthorization(False, REQUIRED_EVIDENCE)
+        return V6ReleaseDecision(
+            False,
+            blocked,
+            ("evidence claims are self-asserted; independent authenticity verification is not implemented",),
+        )
     failures = tuple(f"missing/failed evidence: {item}" for item in live.missing)
-    return V6ReleaseDecision(live.authorized, live, failures)
+    return V6ReleaseDecision(False, live, failures)
 
 
 def require_v6_release(
