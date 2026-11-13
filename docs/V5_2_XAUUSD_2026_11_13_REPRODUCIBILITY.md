@@ -123,13 +123,23 @@ single-exit trades and TP1/TP2/TP3 partial exits. The
 `stress_backtest_trades` adapter consumes those explicit fields and rejects
 records that lack cost provenance.
 
-This integration is tested at the backtest-engine/unit-test level. It is **not
-yet wired into the official WFO robustness artifact generation or the
-certification gate**, and no new XAUUSD OOS study was run from these changed
-engine semantics. The existing official Monte Carlo shock remains unchanged.
-Do not use the diagnostic for promotion until the WFO pipeline emits and binds
-the per-trade cost ledger into the immutable research evidence and is tested
-end to end against independent broker cost observations.
+The official WFO evidence export now includes a canonical per-trade OOS
+execution-cost ledger. Each row binds its WFO window and trade index, timestamps,
+direction, prices, volume, gross P&L, all three cost components, total costs and
+net P&L. The ledger has its own SHA-256 digest. Artifact validation recomputes
+the digest, validates row ordering and arithmetic, and reconciles trade count,
+net P&L and expectancy against the archived OOS report. It also recomputes the
+additive spread/slippage-only stress totals from the ledger, with commission
+held unchanged.
+
+This cost-ledger integration is now covered by unit tests and the immutable
+research-artifact validation path. The additive cost stress remains a separate
+diagnostic and is **not** substituted into the existing Monte Carlo shock or
+used as a certification input. No new XAUUSD OOS study was run from the changed
+engine semantics, and broker spread/slippage/commission observations are still
+not independently verified. The ledger makes the assumed costs auditable; it
+does not turn those assumptions into observed broker execution costs. Do not
+use the diagnostic for promotion.
 
 ## Disposition
 
