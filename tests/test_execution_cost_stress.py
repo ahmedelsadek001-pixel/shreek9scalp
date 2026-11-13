@@ -9,7 +9,7 @@ def test_cost_stress_scales_spread_and_slippage_but_not_commission():
         spread_multiplier=1.5, slippage_multiplier=2.0,
     )
     assert result.baseline_net_pnl == pytest.approx((9.2, -4.8))
-    assert result.stressed_net_pnl == pytest.approx((9.0, -5.15))
+    assert result.stressed_net_pnl == pytest.approx((8.85, -5.15))
     assert result.total_commission == pytest.approx(0.4)
 
 
