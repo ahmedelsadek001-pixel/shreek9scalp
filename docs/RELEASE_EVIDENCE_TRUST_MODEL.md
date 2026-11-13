@@ -24,6 +24,11 @@ A failed or missing evidence item remains a separate blocker and is reported
 as such. No metadata field, bundle digest, expected commit pin, CI green state,
 or caller-provided Boolean can override this boundary.
 
+The low-level V6 flag evaluator reports only whether the required claims are
+complete. Its authorization field remains false, and the require-style helper
+raises even when every Boolean is true. Only a future independent evidence
+verifier may create a positive authorization path.
+
 ## Requirements to restore a positive release path
 
 Each evidence producer needs a verifiable, immutable artifact and an explicit
