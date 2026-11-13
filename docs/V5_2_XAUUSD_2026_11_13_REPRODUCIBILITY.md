@@ -73,6 +73,39 @@ independent requirements:
 Zero Monte Carlo ruin at this volume does not cure weak statistical evidence.
 The model also does not reconstruct historical bid/ask paths.
 
+## Stress-model interpretation requiring follow-up
+
+The existing Monte Carlo helper does not multiply spread and slippage costs
+inside each trade. It applies an asymmetric outcome shock to already-net P&L:
+positive outcomes are divided by the product of the two multipliers, while
+negative outcomes are multiplied by that product. At 1.5x / 1.5x this means
+winners are scaled to 44.44% and losses to 225% of their original net values.
+This is a deliberately severe P&L shock, not a literal execution-cost replay.
+
+For this fixed 0.03-lot manifest, the backtest's average cost decomposition
+is recoverable from the configured economics: spread 0.57, slippage 0.09 and
+round-turn commission 0.21 per trade (total 0.87). A separate offline
+diagnostic that retains each gross trade outcome and applies 1.5x to spread
+and slippage costs while leaving commission unchanged produced:
+
+| Additive cost-only diagnostic | Result |
+|---|---:|
+| Mean stressed trade P&L | +1.419375 |
+| Total stressed OOS P&L | +249.81 |
+| Median ending equity | 10,232.11 |
+| Worst ending equity | 9,640.45 |
+| 5th percentile ending equity | 9,864.22 |
+| Median maximum drawdown | 162.98 |
+| Worst maximum drawdown | 514.92 |
+| Ruin rate | 0.0% |
+
+This diagnostic is **not** part of the official evidence pipeline, is not a
+replacement for the existing conservative P&L shock, and must not be used for
+promotion. It demonstrates that the two stress concepts are materially
+different and should be reported separately after a tested implementation
+that preserves gross P&L, spread cost, slippage cost and commission per trade.
+Until then, retain the legacy shock and all certification failures.
+
 ## Disposition
 
 - Keep V5.2 **not certified**.
