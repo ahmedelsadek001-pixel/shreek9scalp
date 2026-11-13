@@ -17,6 +17,7 @@ from research.evidence_export import serialize_evidence_export
 from research.evidence_pipeline import EvidencePipelineResult, ResearchRunConfig
 from research.evidence_report import OOSEvidenceReport
 from research.purged_wfo import build_purged_windows
+from core.execution_cost_stress import stress_execution_costs
 
 
 ARTIFACT_SCHEMA_VERSION = "1"
@@ -30,6 +31,119 @@ def _reject_nonstandard_json_constant(value: str) -> None:
 def _serialized_dataset(dataset: DatasetProvenance) -> dict[str, Any]:
     """Return the exact JSON representation used by the evidence exporter."""
     return json.loads(json.dumps(asdict(dataset), sort_keys=True, default=str))
+
+
+def _validate_execution_cost_evidence(payload: dict[str, Any]) -> None:
+    """Verify the archived OOS cost ledger, arithmetic, digest, and additive stress."""
+    evidence = payload.get("evidence")
+    wfo = payload.get("wfo_evidence")
+    ledger = payload.get("execution_cost_evidence")
+    if wfo is None:
+        if ledger is not None:
+            raise ValueError("execution-cost ledger requires archived WFO evidence")
+        return
+    if payload.get("schema_version") != "3" or not isinstance(ledger, dict):
+        raise ValueError("schema v3 WFO evidence requires an execution-cost ledger")
+    required = {"schema", "trade_count", "rows", "ledger_sha256", "stress"}
+    if set(ledger) != required or ledger.get("schema") != "shreek.oos-execution-cost-ledger.v1":
+        raise ValueError("archived execution-cost ledger structure is invalid")
+    rows = ledger.get("rows")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("archived execution-cost ledger requires trade rows")
+    if type(ledger.get("trade_count")) is not int or ledger["trade_count"] != len(rows):
+        raise ValueError("archived execution-cost ledger trade count is inconsistent")
+    expected_fields = {
+        "window_index", "trade_index", "signal_time", "entry_time", "exit_time",
+        "direction", "entry", "exit", "volume", "gross_pnl", "spread_cost",
+        "slippage_cost", "commission_cost", "costs", "net_pnl",
+    }
+    normalized = []
+    gross_values, spread_values, slippage_values, commissions = [], [], [], []
+    net_total = 0.0
+    previous_key = (-1, -1)
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != expected_fields:
+            raise ValueError("archived execution-cost ledger row structure is invalid")
+        window_index, trade_index = row["window_index"], row["trade_index"]
+        if type(window_index) is not int or type(trade_index) is not int or window_index < 0 or trade_index < 0:
+            raise ValueError("archived execution-cost ledger indices are invalid")
+        key = (window_index, trade_index)
+        if key <= previous_key or window_index >= len(wfo["windows"]):
+            raise ValueError("archived execution-cost ledger ordering or window binding is invalid")
+        previous_key = key
+        if type(row["direction"]) is not str or not row["direction"]:
+            raise ValueError("archived execution-cost ledger direction is invalid")
+        parsed_times = []
+        for name in ("signal_time", "entry_time", "exit_time"):
+            value = row[name]
+            if type(value) is not str or not value:
+                raise ValueError("archived execution-cost ledger timestamps are invalid")
+            try:
+                parsed_times.append(datetime.fromisoformat(value))
+            except ValueError as exc:
+                raise ValueError("archived execution-cost ledger timestamps are invalid") from exc
+        if not parsed_times[0] <= parsed_times[1] <= parsed_times[2]:
+            raise ValueError("archived execution-cost ledger timestamps are not chronological")
+        numeric_fields = (
+            "entry", "exit", "volume", "gross_pnl", "spread_cost",
+            "slippage_cost", "commission_cost", "costs", "net_pnl",
+        )
+        if any(type(row[name]) not in (int, float) or not isfinite(float(row[name])) for name in numeric_fields):
+            raise ValueError("archived execution-cost ledger numbers must be finite")
+        if any(row[name] < 0 for name in ("volume", "spread_cost", "slippage_cost", "commission_cost", "costs")):
+            raise ValueError("archived execution-cost ledger costs and volume must be non-negative")
+        component_total = row["spread_cost"] + row["slippage_cost"] + row["commission_cost"]
+        if not isclose(float(row["costs"]), float(component_total), rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("archived execution-cost ledger total does not reconcile")
+        expected_net = row["gross_pnl"] - component_total
+        if not isclose(float(row["net_pnl"]), float(expected_net), rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("archived execution-cost ledger net P&L does not reconcile")
+        gross_values.append(float(row["gross_pnl"]))
+        spread_values.append(float(row["spread_cost"]))
+        slippage_values.append(float(row["slippage_cost"]))
+        commissions.append(float(row["commission_cost"]))
+        net_total += float(row["net_pnl"])
+        normalized.append(row)
+    canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    digest = ledger.get("ledger_sha256")
+    if type(digest) is not str or len(digest) != 64 or sha256(canonical.encode("utf-8")).hexdigest() != digest:
+        raise ValueError("archived execution-cost ledger fingerprint mismatch")
+    if ledger["trade_count"] != evidence.get("oos_trade_count"):
+        raise ValueError("execution-cost ledger count does not match OOS evidence")
+    if not isclose(net_total, float(evidence["oos_net_pnl"]), rel_tol=1e-12, abs_tol=1e-12):
+        raise ValueError("execution-cost ledger net P&L does not match OOS evidence")
+    if not isclose(net_total / len(rows), float(evidence["oos_expectancy"]), rel_tol=1e-12, abs_tol=1e-12):
+        raise ValueError("execution-cost ledger expectancy does not match OOS evidence")
+    stress = ledger.get("stress")
+    stress_fields = {"method", "spread_multiplier", "slippage_multiplier", "commission_unchanged", "totals"}
+    total_fields = {
+        "gross_pnl", "spread_cost", "slippage_cost", "commission_cost",
+        "baseline_net_pnl", "cost_stressed_net_pnl",
+    }
+    if not isinstance(stress, dict) or set(stress) != stress_fields:
+        raise ValueError("archived execution-cost stress structure is invalid")
+    if stress.get("method") != "additive_spread_slippage_only" or stress.get("commission_unchanged") is not True:
+        raise ValueError("archived execution-cost stress method is invalid")
+    if not isinstance(stress.get("totals"), dict) or set(stress["totals"]) != total_fields:
+        raise ValueError("archived execution-cost stress totals are invalid")
+    result = stress_execution_costs(
+        gross_values, spread_values, slippage_values, commissions,
+        spread_multiplier=stress.get("spread_multiplier"),
+        slippage_multiplier=stress.get("slippage_multiplier"),
+    )
+    expected_totals = {
+        "gross_pnl": result.total_gross_pnl,
+        "spread_cost": result.total_spread_cost,
+        "slippage_cost": result.total_slippage_cost,
+        "commission_cost": result.total_commission,
+        "baseline_net_pnl": result.total_baseline_net_pnl,
+        "cost_stressed_net_pnl": result.total_stressed_net_pnl,
+    }
+    for name, wanted in expected_totals.items():
+        actual = stress["totals"][name]
+        if type(actual) not in (int, float) or not isfinite(float(actual)) or not isclose(float(actual), wanted, rel_tol=1e-12, abs_tol=1e-12):
+            raise ValueError("archived execution-cost stress totals do not match ledger")
+
 
 
 def _validate_embedded_export(payload: dict[str, Any]) -> None:
@@ -446,6 +560,7 @@ class ResearchRunArtifact:
         if export_payload.get("schema_version") not in {"2", "3"}:
             raise ValueError("unsupported evidence export schema version")
         _validate_embedded_export(export_payload)
+        _validate_execution_cost_evidence(export_payload)
         if type(self.metadata) is not tuple:
             raise ValueError("metadata must be a tuple")
         for item in self.metadata:
