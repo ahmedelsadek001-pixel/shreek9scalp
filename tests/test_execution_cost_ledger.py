@@ -111,3 +111,10 @@ def test_wfo_export_cannot_omit_execution_cost_ledger():
     del payload["execution_cost_evidence"]
     with pytest.raises(ValueError, match="requires an execution-cost ledger"):
         _validate_execution_cost_evidence(payload)
+
+
+def test_legacy_schema_v2_wfo_artifact_remains_readable_without_cost_ledger():
+    payload = _payload()
+    payload["schema_version"] = "2"
+    del payload["execution_cost_evidence"]
+    _validate_execution_cost_evidence(payload)
