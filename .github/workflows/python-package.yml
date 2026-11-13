@@ -73,6 +73,10 @@ jobs:
       with:
         ref: ${{ github.sha }}
         fetch-depth: 1
+    - name: Create and verify source archive
+      run: |
+        python -m utils.source_archive build --repo . --commit "$GITHUB_SHA" \
+          --output "shreek9scalp-source-$GITHUB_SHA.zip" > shreek-source-archive-report.json
     - name: Generate immutable CI provenance
       env:
         PYTHONPATH: ${{ github.workspace }}
@@ -84,9 +88,21 @@ jobs:
         from pathlib import Path
         from datetime import datetime, timezone
 
-        commit_sha = os.environ["GITHUB_SHA"]
-        if len(commit_sha) != 40 or any(c not in "0123456789abcdefABCDEF" for c in commit_sha):
+        commit_sha = os.environ["GITHUB_SHA"].lower()
+        if len(commit_sha) != 40 or any(c not in "0123456789abcdef" for c in commit_sha):
             raise SystemExit("invalid GITHUB_SHA")
+
+        archive_path = Path("shreek9scalp-source-" + commit_sha + ".zip")
+        archive_report = json.loads(Path("shreek-source-archive-report.json").read_text(encoding="utf-8"))
+        actual_archive_sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+        if (
+            archive_report.get("state") != "source_content_verified"
+            or archive_report.get("commit_sha") != commit_sha
+            or archive_report.get("archive_sha256") != actual_archive_sha256
+            or archive_report.get("source_commit_verified") is not True
+            or archive_report.get("source_tree_verified") is not True
+        ):
+            raise SystemExit("source archive verification report does not match this CI checkout")
 
         files = []
         for path in sorted(Path(".").rglob("*.py")):
@@ -96,15 +112,23 @@ jobs:
             files.append({"path": str(path), "sha256": digest})
 
         payload = {
-            "schema": "shreek.ci-provenance.v1",
+            "schema": "shreek.ci-provenance.v2",
             "workflow": os.environ["GITHUB_WORKFLOW"],
             "run_id": os.environ["GITHUB_RUN_ID"],
             "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
             "repository": os.environ["GITHUB_REPOSITORY"],
             "ref": os.environ["GITHUB_REF"],
-            "commit_sha": commit_sha.lower(),
+            "commit_sha": commit_sha,
             "event": os.environ["GITHUB_EVENT_NAME"],
             "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "source_archive": {
+                "file": archive_path.name,
+                "archive_sha256": actual_archive_sha256,
+                "tree_sha": archive_report["tree_sha"],
+                "file_count": archive_report["file_count"],
+                "manifest_sha256": archive_report["manifest_sha256"],
+                "state": archive_report["state"],
+            },
             "production_python_files": files,
         }
         canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -115,6 +139,7 @@ jobs:
         print(json.dumps({
             "run_id": payload["run_id"],
             "commit_sha": payload["commit_sha"],
+            "source_archive_sha256": actual_archive_sha256,
             "manifest_sha256": payload["manifest_sha256"],
         }, sort_keys=True))
         PY
@@ -125,10 +150,6 @@ jobs:
         path: shreek-ci-provenance.json
         if-no-files-found: error
         retention-days: 90
-    - name: Create source archive
-      run: |
-        python -m utils.source_archive build --repo . --commit "$GITHUB_SHA" \
-          --output "shreek9scalp-source-$GITHUB_SHA.zip"
     - name: Upload source archive
       uses: actions/upload-artifact@v4
       with:
