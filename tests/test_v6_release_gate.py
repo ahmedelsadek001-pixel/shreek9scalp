@@ -27,10 +27,14 @@ def full_bundle(passed=True):
     return ReleaseEvidenceBundle.from_records(records)
 
 
-def test_v6_release_ready_with_complete_provenance():
+def test_v6_release_blocks_all_true_self_asserted_evidence():
     decision = evaluate_v6_release(full_bundle(), _COMMIT)
-    assert decision.release_ready is True
-    assert decision.failures == ()
+    assert decision.release_ready is False
+    assert decision.live.authorized is False
+    assert decision.live.missing == REQUIRED_EVIDENCE
+    assert decision.failures == (
+        "evidence claims are self-asserted; independent authenticity verification is not implemented",
+    )
 
 def test_v6_release_fails_closed_without_trusted_commit():
     decision = evaluate_v6_release(full_bundle())
