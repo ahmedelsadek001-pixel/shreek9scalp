@@ -1,4 +1,4 @@
-"""Provenance-bound release evidence for SHREEK V5.1/V6.0."""
+"""Integrity-bound release evidence claims; independent source authentication is separate."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -228,4 +228,10 @@ def evaluate_evidence_bundle(
             return ReleaseDecision(False, (f"required policy contains non-boolean value: {name}",))
         if expected and not values[name]:
             return ReleaseDecision(False, (f"required evidence failed: {name}",))
-    return evaluate_release(evidence)
+    decision = evaluate_release(evidence)
+    if decision.ready:
+        return ReleaseDecision(
+            False,
+            ("evidence claims are self-asserted; independent authenticity verification is not implemented",),
+        )
+    return decision
