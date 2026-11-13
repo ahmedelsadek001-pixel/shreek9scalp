@@ -36,6 +36,8 @@ def test_v6_release_blocks_all_true_self_asserted_evidence():
     assert decision.failures == (
         "evidence claims are self-asserted; independent authenticity verification is not implemented",
     )
+    with pytest.raises(RuntimeError, match="self-asserted"):
+        require_v6_release(full_bundle(), _COMMIT)
 
 def test_v6_release_fails_closed_without_trusted_commit():
     decision = evaluate_v6_release(full_bundle())
