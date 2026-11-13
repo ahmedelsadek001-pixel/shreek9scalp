@@ -28,11 +28,13 @@ def _required() -> ReleaseEvidence:
     return ReleaseEvidence(*(True for _ in _NAMES))
 
 
-def test_certification_passes_only_for_complete_passing_evidence():
+def test_certification_blocks_complete_self_asserted_evidence():
     result = certify_release(_bundle(), _required(), metadata={"release": "V5.1-RC1"}, expected_commit_sha=_COMMIT)
-    assert result.ready
+    assert not result.ready
     assert result.bundle_id
-    assert not result.failures
+    assert result.failures == (
+        "evidence claims are self-asserted; independent authenticity verification is not implemented",
+    )
 
 
 def test_certification_blocks_failed_evidence():
