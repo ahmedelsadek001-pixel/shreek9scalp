@@ -20,10 +20,13 @@ def full_evidence():
     }
 
 
-def test_complete_evidence_authorizes():
+def test_complete_claims_do_not_grant_live_authorization():
     result = evaluate_live_authorization(full_evidence())
-    assert result.authorized is True
+    assert result.authorized is False
+    assert result.requirements_satisfied is True
     assert result.missing == ()
+    with pytest.raises(RuntimeError, match="independent evidence authenticity verification"):
+        require_live_authorization(full_evidence())
 
 
 def test_missing_evidence_blocks():
@@ -31,6 +34,7 @@ def test_missing_evidence_blocks():
     evidence["broker_validation"] = False
     result = evaluate_live_authorization(evidence)
     assert result.authorized is False
+    assert result.requirements_satisfied is False
     assert "broker_validation" in result.missing
 
 
@@ -46,6 +50,7 @@ def test_missing_key_blocks():
     del evidence["execution_reconciled"]
     result = evaluate_live_authorization(evidence)
     assert result.authorized is False
+    assert result.requirements_satisfied is False
     assert result.missing == ("execution_reconciled",)
 
 
@@ -61,6 +66,7 @@ def test_every_required_evidence_item_is_mandatory():
 
         result = evaluate_live_authorization(evidence)
         assert result.authorized is False, f"authorization unexpectedly passed without {key}"
+        assert result.requirements_satisfied is False
         assert key in result.missing
         with pytest.raises(RuntimeError):
             require_live_authorization(evidence)
