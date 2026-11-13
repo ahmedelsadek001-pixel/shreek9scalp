@@ -41,7 +41,7 @@ def test_cost_stress_rejects_invalid_cost_components(costs):
 
 @pytest.mark.parametrize("spread,slippage", [(0.9, 1.0), (1.0, 0.9), (float("nan"), 1.0), (1.0, float("inf"))])
 def test_cost_stress_rejects_invalid_multipliers(spread, slippage):
-    with pytest.raises(ValueError, match="multipliers"):
+    with pytest.raises(ValueError, match="multiplier"):
         stress_execution_costs([1.0], [0.1], [0.1], [0.1],
                                spread_multiplier=spread, slippage_multiplier=slippage)
 
