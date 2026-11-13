@@ -135,10 +135,12 @@ def test_bundle_rejects_malformed_trusted_expected_commit():
         _bundle().validate_for_commit("not-a-sha")
 
 
-def test_complete_provenance_bundle_can_pass_release_gate():
+def test_self_asserted_complete_bundle_cannot_authorize_release():
     decision = evaluate_evidence_bundle(_bundle(), _required(), _COMMIT)
-    assert decision.ready
-    assert not decision.failures
+    assert not decision.ready
+    assert decision.failures == (
+        "evidence claims are self-asserted; independent authenticity verification is not implemented",
+    )
 
 def test_release_evaluation_fails_closed_without_trusted_commit():
     decision = evaluate_evidence_bundle(_bundle(), _required())
