@@ -48,9 +48,10 @@ def test_metadata_cannot_grant_release_authority():
     assert not result.ready
 
 
-def test_certification_requires_matching_expected_commit():
+def test_certification_binds_commit_but_blocks_unauthenticated_claims():
     result = certify_release(_bundle(), _required(), expected_commit_sha=_COMMIT)
-    assert result.ready
+    assert not result.ready
+    assert result.commit_sha == _COMMIT
 
 def test_certification_fails_closed_without_trusted_expected_commit():
     result = certify_release(_bundle(), _required())
