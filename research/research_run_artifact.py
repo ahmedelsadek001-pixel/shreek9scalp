@@ -42,6 +42,8 @@ def _validate_execution_cost_evidence(payload: dict[str, Any]) -> None:
         if ledger is not None:
             raise ValueError("execution-cost ledger requires archived WFO evidence")
         return
+    if payload.get("schema_version") == "2" and ledger is None:
+        return
     if payload.get("schema_version") != "3" or not isinstance(ledger, dict):
         raise ValueError("schema v3 WFO evidence requires an execution-cost ledger")
     required = {"schema", "trade_count", "rows", "ledger_sha256", "stress"}
