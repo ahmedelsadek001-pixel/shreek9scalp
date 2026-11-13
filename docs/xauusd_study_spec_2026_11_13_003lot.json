@@ -1,0 +1,62 @@
+{
+  "schema": "shreek.xauusd-study.v1",
+  "strategy_version": "research-v1",
+  "source_manifest": {
+    "broker": "One World Markets",
+    "server": "OWMarkets-Server",
+    "symbol": "XAUUSD",
+    "timezone_offset_minutes": 180,
+    "digits": 2,
+    "point_size": 0.01,
+    "contract_size": 100.0,
+    "minimum_volume": 0.01,
+    "volume_step": 0.01,
+    "observed_spread_points": 19.0,
+    "round_turn_commission_per_lot": 7.0,
+    "slippage_points": 1.5
+  },
+  "parameter_sets": [
+    {
+      "breakout_body_pct": 0.65,
+      "consolidation_bars": 6,
+      "max_range_pips": 40.0,
+      "min_range_pips": 20.0,
+      "retest_max_bars": 12,
+      "sl_buffer_pips": 5.0,
+      "tp1_rr": 1.5,
+      "tp2_rr": 2.5,
+      "tp3_rr": 4.0,
+      "volume_lookback": 20,
+      "volume_multiplier": 1.5
+    },
+    {
+      "breakout_body_pct": 0.65,
+      "consolidation_bars": 6,
+      "max_range_pips": 40.0,
+      "min_range_pips": 20.0,
+      "retest_max_bars": 12,
+      "sl_buffer_pips": 5.0,
+      "tp1_rr": 1.5,
+      "tp2_rr": 2.5,
+      "tp3_rr": 4.0,
+      "volume_lookback": 20,
+      "volume_multiplier": 1.2
+    }
+  ],
+  "pip_size": 0.1,
+  "volume": 0.03,
+  "run": {
+    "train_size": 40000,
+    "test_size": 20000,
+    "purge_size": 12,
+    "step": 20000,
+    "starting_equity": 10000.0,
+    "simulations": 1000,
+    "seed": 42,
+    "slippage_multiplier": 1.5,
+    "spread_multiplier": 1.5,
+    "bootstrap_block_size": 2,
+    "bootstrap_simulations": 2000,
+    "label_horizon": 12
+  }
+}
