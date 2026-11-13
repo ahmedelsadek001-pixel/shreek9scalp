@@ -13,6 +13,7 @@ from research.backtest_wfo import BacktestWFOResult
 from research.dataset_provenance import DatasetProvenance
 from research.evidence_pipeline import EvidencePipelineResult
 from research.evidence_gate import evaluate_oos_evidence
+from core.execution_cost_stress import stress_backtest_trades
 
 
 EXPORT_SCHEMA_VERSION = "3"
@@ -118,6 +119,83 @@ def _build_wfo_evidence(wfo: BacktestWFOResult, expected_windows: int) -> dict[s
 
 
 
+def _build_execution_cost_evidence(wfo: BacktestWFOResult, spread_multiplier: float, slippage_multiplier: float) -> dict[str, Any]:
+    """Build a canonical, per-trade OOS cost ledger and a separate additive stress diagnostic."""
+    rows: list[dict[str, Any]] = []
+    trades = []
+    for window_index, result in enumerate(wfo.oos_results):
+        for trade_index, trade in enumerate(result.trades):
+            values = {
+                "entry": trade.entry,
+                "exit": trade.exit,
+                "volume": trade.volume,
+                "gross_pnl": trade.gross_pnl,
+                "spread_cost": trade.spread_cost,
+                "slippage_cost": trade.slippage_cost,
+                "commission_cost": trade.commission_cost,
+                "costs": trade.costs,
+                "net_pnl": trade.net_pnl,
+            }
+            if any(type(value) not in (int, float) or not isfinite(float(value)) for value in values.values()):
+                raise ValueError("OOS execution-cost ledger values must be finite real numbers")
+            if any(values[name] < 0 for name in ("volume", "spread_cost", "slippage_cost", "commission_cost", "costs")):
+                raise ValueError("OOS execution costs and volume must be non-negative")
+            component_total = trade.spread_cost + trade.slippage_cost + trade.commission_cost
+            if not isclose(float(trade.costs), float(component_total), rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError("OOS trade total costs do not reconcile to cost components")
+            if not isclose(float(trade.net_pnl), float(trade.gross_pnl - component_total), rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError("OOS trade net P&L does not reconcile to gross P&L and costs")
+            direction = getattr(trade.direction, "value", trade.direction)
+            if type(direction) is not str or not direction:
+                raise ValueError("OOS trade direction must be a non-empty string")
+            timestamps = {}
+            for name in ("signal_time", "entry_time", "exit_time"):
+                value = getattr(trade, name, None)
+                if not isinstance(value, datetime):
+                    raise ValueError("OOS cost ledger trades must expose datetime timestamps")
+                timestamps[name] = value.isoformat()
+            if trade.entry_time < trade.signal_time or trade.exit_time < trade.entry_time:
+                raise ValueError("OOS cost ledger trade timestamps are not chronological")
+            rows.append({
+                "window_index": window_index,
+                "trade_index": trade_index,
+                **timestamps,
+                "direction": direction,
+                **values,
+            })
+            trades.append(trade)
+    if not rows:
+        raise ValueError("OOS execution-cost ledger requires realized trades")
+    canonical_rows = json.dumps(rows, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    stress = stress_backtest_trades(
+        trades,
+        spread_multiplier=spread_multiplier,
+        slippage_multiplier=slippage_multiplier,
+    )
+    totals = {
+        "gross_pnl": stress.total_gross_pnl,
+        "spread_cost": stress.total_spread_cost,
+        "slippage_cost": stress.total_slippage_cost,
+        "commission_cost": stress.total_commission,
+        "baseline_net_pnl": stress.total_baseline_net_pnl,
+        "cost_stressed_net_pnl": stress.total_stressed_net_pnl,
+    }
+    return {
+        "schema": "shreek.oos-execution-cost-ledger.v1",
+        "trade_count": len(rows),
+        "rows": rows,
+        "ledger_sha256": sha256(canonical_rows.encode("utf-8")).hexdigest(),
+        "stress": {
+            "method": "additive_spread_slippage_only",
+            "spread_multiplier": stress.spread_multiplier,
+            "slippage_multiplier": stress.slippage_multiplier,
+            "commission_unchanged": True,
+            "totals": totals,
+        },
+    }
+
+
+
 def build_evidence_export(
     result: EvidencePipelineResult,
     provenance: DatasetProvenance,
@@ -159,6 +237,11 @@ def build_evidence_export(
         ):
             raise ValueError("selected WFO parameters are absent from candidate parameter grid")
         payload["research_config"] = config
+        payload["execution_cost_evidence"] = _build_execution_cost_evidence(
+            result.wfo,
+            result.run_config.spread_multiplier,
+            result.run_config.slippage_multiplier,
+        )
     statistical = (result.interval, result.bootstrap, result.certification)
     if any(item is not None for item in statistical):
         if any(item is None for item in statistical):
