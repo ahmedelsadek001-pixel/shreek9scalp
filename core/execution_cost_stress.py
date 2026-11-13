@@ -12,9 +12,15 @@ from typing import Sequence
 
 
 def _finite_number(value: object, name: str) -> float:
-    if type(value) not in (int, float) or not isfinite(value):
+    if type(value) not in (int, float):
         raise ValueError(f"{name} must contain finite real numbers")
-    return float(value)
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        raise ValueError(f"{name} must contain finite real numbers")
+    if not isfinite(number):
+        raise ValueError(f"{name} must contain finite real numbers")
+    return number
 
 
 @dataclass(frozen=True)
