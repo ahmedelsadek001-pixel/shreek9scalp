@@ -58,3 +58,24 @@ def test_cost_stress_fails_closed_on_aggregate_overflow():
 def test_cost_stress_rejects_integer_overflow_inputs():
     with pytest.raises(ValueError, match="gross_pnl"):
         stress_execution_costs([10 ** 10000], [0.1], [0.1], [0.1])
+
+
+def test_backtest_trade_adapter_uses_explicit_cost_components():
+    from types import SimpleNamespace
+    from core.execution_cost_stress import stress_backtest_trades
+
+    trades = [
+        SimpleNamespace(gross_pnl=10.0, spread_cost=0.2, slippage_cost=0.1, commission_cost=0.3),
+        SimpleNamespace(gross_pnl=-2.0, spread_cost=0.2, slippage_cost=0.1, commission_cost=0.3),
+    ]
+    result = stress_backtest_trades(trades, spread_multiplier=2.0, slippage_multiplier=3.0)
+    assert result.baseline_net_pnl == pytest.approx((9.4, -2.6))
+    assert result.stressed_net_pnl == pytest.approx((9.1, -2.9))
+
+
+def test_backtest_trade_adapter_rejects_missing_cost_provenance():
+    from types import SimpleNamespace
+    from core.execution_cost_stress import stress_backtest_trades
+
+    with pytest.raises(ValueError, match="all three cost components"):
+        stress_backtest_trades([SimpleNamespace(gross_pnl=1.0)])
