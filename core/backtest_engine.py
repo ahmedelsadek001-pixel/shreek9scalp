@@ -64,6 +64,9 @@ class BacktestTrade:
     exit_reason: str
     tag: str = ""
     lifecycle_events: tuple[str, ...] = ()
+    spread_cost: float = 0.0
+    slippage_cost: float = 0.0
+    commission_cost: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -146,6 +149,14 @@ def _execution_cost(raw_price: float, actual_price: float, volume: float, point_
     return abs(actual_price - raw_price) * volume * point_value
 
 
+def _cost_components(bar: BacktestBar, volume: float, costs: CostModel) -> tuple[float, float, float]:
+    """Return auditable spread, slippage and commission for one execution leg."""
+    spread = (bar.spread / 2.0) * volume * costs.point_value
+    slippage = costs.slippage * volume * costs.point_value
+    commission = costs.commission_per_volume * volume
+    return spread, slippage, commission
+
+
 def _hit(bar: BacktestBar, direction: Direction, stop: float, target: float,
          intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST) -> Optional[tuple[float, str]]:
     try:
@@ -201,12 +212,11 @@ def _stats(start: float, equity: Sequence[float], trades: Sequence[BacktestTrade
 
 
 def _close_at_bar(bar: BacktestBar, direction: Direction, raw_entry: float, volume: float,
-                  costs: CostModel, raw_price: float) -> tuple[float, float, float]:
+                  costs: CostModel, raw_price: float) -> tuple[float, float, float, float, float]:
     exit_price = _exit_price(bar, direction, raw_price, costs.slippage)
     gross = _pnl(raw_entry, raw_price, direction, volume, costs.point_value)
-    execution_cost = _execution_cost(raw_price, exit_price, volume, costs.point_value)
-    commission = costs.commission_per_volume * volume
-    return exit_price, gross, execution_cost + commission
+    spread, slippage, commission = _cost_components(bar, volume, costs)
+    return exit_price, gross, spread, slippage, commission
 
 
 def _run_lifecycle(series: Sequence[BacktestBar], order: BacktestOrder, entry_index: int,
@@ -214,7 +224,7 @@ def _run_lifecycle(series: Sequence[BacktestBar], order: BacktestOrder, entry_in
                    trading_window: Optional[TradingWindowPolicy] = None,
                    force_close_at_end: bool = True,
                    intrabar_policy: IntrabarPolicy = IntrabarPolicy.STOP_FIRST
-                   ) -> tuple[Optional[int], Optional[float], str, float, float, float, tuple[str, ...]]:
+                   ) -> tuple[Optional[int], Optional[float], str, float, float, float, float, float, tuple[str, ...]]:
     policy.validate()
     if trading_window is not None:
         trading_window.validate()
@@ -222,9 +232,10 @@ def _run_lifecycle(series: Sequence[BacktestBar], order: BacktestOrder, entry_in
     remaining = order.volume
     raw_entry = series[entry_index].open
     gross_total = 0.0
-    entry_cost = _execution_cost(raw_entry, entry, order.volume, costs.point_value)
-    entry_cost += costs.commission_per_volume * order.volume
-    exit_cost_total = 0.0
+    entry_spread, entry_slippage, entry_commission = _cost_components(series[entry_index], order.volume, costs)
+    spread_total = entry_spread
+    slippage_total = entry_slippage
+    commission_total = entry_commission
     events: list[str] = []
     entry_time = series[entry_index].timestamp
     stages = (("TP1", order.levels.tp1), ("TP2", order.levels.tp2), ("TP3", order.levels.tp3))
@@ -233,8 +244,11 @@ def _run_lifecycle(series: Sequence[BacktestBar], order: BacktestOrder, entry_in
     while index < len(series) and remaining > 0:
         bar = series[index]
         if trading_window is not None and trading_window.holding_expired(entry_time, bar.timestamp):
-            exit_price, gross, cost = _close_at_bar(bar, order.direction, raw_entry, remaining, costs, bar.open)
-            return index, exit_price, "TIME", gross_total + gross, entry_cost + exit_cost_total + cost, remaining, tuple(events)
+            exit_price, gross, spread, slippage, commission = _close_at_bar(bar, order.direction, raw_entry, remaining, costs, bar.open)
+            spread_total += spread
+            slippage_total += slippage
+            commission_total += commission
+            return index, exit_price, "TIME", gross_total + gross, spread_total, slippage_total, commission_total, remaining, tuple(events)
         stop = state.stop_price if state.stop_price is not None else order.levels.sl
         if state.trailing_active and index > entry_index:
             trail = trailing_stop_price(state, order.levels, series[index - 1].close, policy)
@@ -247,17 +261,22 @@ def _run_lifecycle(series: Sequence[BacktestBar], order: BacktestOrder, entry_in
             continue
         raw_price, reason = hit
         exit_price = _exit_price(bar, order.direction, raw_price, costs.slippage)
-        exit_execution_cost = _execution_cost(raw_price, exit_price, remaining, costs.point_value)
         if reason == "SL":
-            exit_cost_total += exit_execution_cost + costs.commission_per_volume * remaining
+            spread, slippage, commission = _cost_components(bar, remaining, costs)
+            spread_total += spread
+            slippage_total += slippage
+            commission_total += commission
             gross_total += _pnl(raw_entry, raw_price, order.direction, remaining, costs.point_value)
-            return index, exit_price, "SL", gross_total, entry_cost + exit_cost_total, remaining, tuple(events)
+            return index, exit_price, "SL", gross_total, spread_total, slippage_total, commission_total, remaining, tuple(events)
         fraction = (policy.tp1_fraction, policy.tp2_fraction, policy.tp3_fraction)[stage_index]
         close_volume = min(remaining, order.volume * fraction)
         if close_volume <= 0:
             raise ValueError("lifecycle stage has zero executable volume")
         gross_total += _pnl(raw_entry, raw_price, order.direction, close_volume, costs.point_value)
-        exit_cost_total += exit_execution_cost * (close_volume / remaining) + costs.commission_per_volume * close_volume
+        spread, slippage, commission = _cost_components(bar, close_volume, costs)
+        spread_total += spread
+        slippage_total += slippage
+        commission_total += commission
         remaining -= close_volume
         events.append(stages[stage_index][0])
         if stage_index == 0:
@@ -267,14 +286,16 @@ def _run_lifecycle(series: Sequence[BacktestBar], order: BacktestOrder, entry_in
             from core.position_lifecycle import after_tp2
             state = after_tp2(state, order.volume, order.levels, policy)
         else:
-            return index, exit_price, "TP3", gross_total, entry_cost + exit_cost_total, 0.0, tuple(events)
+            return index, exit_price, "TP3", gross_total, spread_total, slippage_total, commission_total, 0.0, tuple(events)
         stage_index += 1
         index += 1
     if remaining > 0 and force_close_at_end and series:
         bar = series[-1]
-        exit_price, gross, cost = _close_at_bar(bar, order.direction, raw_entry, remaining, costs, bar.close)
-        return len(series) - 1, exit_price, "EOD", gross_total + gross, entry_cost + exit_cost_total + cost, remaining, tuple(events)
-    return None, None, "", 0.0, 0.0, remaining, tuple(events)
+        exit_price, gross, spread, slippage, commission = _close_at_bar(bar, order.direction, raw_entry, remaining, costs, bar.close)
+        return (len(series) - 1, exit_price, "EOD", gross_total + gross,
+                spread_total + spread, slippage_total + slippage, commission_total + commission,
+                remaining, tuple(events))
+    return None, None, "", 0.0, 0.0, 0.0, 0.0, remaining, tuple(events)
 
 
 def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
@@ -342,7 +363,7 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
         if (order.direction == Direction.BUY and entry <= order.levels.sl) or (order.direction == Direction.SELL and entry >= order.levels.sl):
             continue
         if lifecycle_policy is not None:
-            exit_index, exit_price, reason, gross, cost, _remaining, events = _run_lifecycle(
+            exit_index, exit_price, reason, gross, spread_cost, slippage_cost, commission_cost, _remaining, events = _run_lifecycle(
                 series, order, entry_index, entry, costs, lifecycle_policy, trading_window,
                 force_close_at_end, intrabar_policy)
             if exit_index is None:
@@ -368,16 +389,18 @@ def run_backtest(bars: Iterable[BacktestBar], orders: Iterable[BacktestOrder],
                 exit_index = len(series) - 1
                 raw_exit = series[-1].close
                 reason = "EOD"
-            exit_price, gross, exit_cost = _close_at_bar(
+            exit_price, gross, exit_spread, exit_slippage, exit_commission = _close_at_bar(
                 series[exit_index], order.direction, entry_bar.open, order.volume, costs, raw_exit)
-            entry_cost = _execution_cost(entry_bar.open, entry, order.volume, costs.point_value)
-            entry_cost += costs.commission_per_volume * order.volume
-            cost = entry_cost + exit_cost
+            entry_spread, entry_slippage, entry_commission = _cost_components(entry_bar, order.volume, costs)
+            spread_cost = entry_spread + exit_spread
+            slippage_cost = entry_slippage + exit_slippage
+            commission_cost = entry_commission + exit_commission
             events = ()
+        cost = spread_cost + slippage_cost + commission_cost
         net = gross - cost
         trades.append(BacktestTrade(order.signal_time, entry_bar.timestamp, series[exit_index].timestamp,
                                     order.direction, entry, exit_price, order.volume, gross, cost, net,
-                                    reason, order.tag, events))
+                                    reason, order.tag, events, spread_cost, slippage_cost, commission_cost))
         equity.append(equity[-1] + net)
         occupied = exit_index
     return BacktestResult(tuple(trades), tuple(equity), _stats(starting_equity, equity, trades))
