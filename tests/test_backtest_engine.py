@@ -218,3 +218,44 @@ def test_backtest_rejects_out_of_order_orders_instead_of_repairing():
     ]
     with pytest.raises(ValueError, match="orders must be strictly chronological"):
         run_backtest(series, orders)
+
+
+def test_backtest_trade_exposes_reconcilable_execution_cost_components():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 103, 100, 102, 0.2),
+        (102, 103, 102, 103, 0.2),
+    ])
+    result = run_backtest(
+        series,
+        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
+        costs=CostModel(slippage=0.1, point_value=1.0, commission_per_volume=0.5),
+    )
+    trade = result.trades[0]
+    assert trade.spread_cost == pytest.approx(0.2)
+    assert trade.slippage_cost == pytest.approx(0.2)
+    assert trade.commission_cost == pytest.approx(1.0)
+    assert trade.costs == pytest.approx(
+        trade.spread_cost + trade.slippage_cost + trade.commission_cost
+    )
+
+
+def test_lifecycle_trade_cost_components_reconcile_across_partial_exits():
+    series = bars([
+        (100, 100, 100, 100, 0),
+        (100, 101.1, 100, 101, 0.2),
+        (101, 102.1, 100.9, 102, 0.2),
+        (102, 103.1, 101.9, 103, 0.2),
+    ])
+    policy = LifecyclePolicy(tp1_fraction=0.5, tp2_fraction=0.25, tp3_fraction=0.25)
+    result = run_backtest(
+        series,
+        [BacktestOrder(series[0].timestamp, Direction.BUY, levels())],
+        lifecycle_policy=policy,
+        costs=CostModel(slippage=0.1, point_value=1.0, commission_per_volume=2.0),
+    )
+    trade = result.trades[0]
+    assert trade.spread_cost == pytest.approx(0.2)
+    assert trade.slippage_cost == pytest.approx(0.2)
+    assert trade.commission_cost == pytest.approx(4.0)
+    assert trade.costs == pytest.approx(4.4)
