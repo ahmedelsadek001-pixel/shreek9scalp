@@ -106,6 +106,22 @@ different and should be reported separately after a tested implementation
 that preserves gross P&L, spread cost, slippage cost and commission per trade.
 Until then, retain the legacy shock and all certification failures.
 
+## Tested execution-cost component primitive
+
+The repository now contains `core.execution_cost_stress.stress_execution_costs`.
+It accepts four explicit, same-length per-trade sequences: gross P&L, spread
+cost, slippage cost and commission. It scales spread and slippage independently
+and leaves commission unchanged. Its tests cover cost arithmetic, baseline
+identity, cardinality mismatch, negative/non-finite costs, invalid multipliers,
+boolean inputs and aggregate overflow.
+
+This is a tested calculation primitive only. It is **not yet wired into
+BacktestTrade generation, WFO robustness evidence or the certification gate**.
+The existing official Monte Carlo shock remains unchanged and remains the
+conservative certification input. No promotion decision may use this helper
+until the backtest engine emits independently auditable cost components and
+the full evidence chain is updated and tested.
+
 ## Disposition
 
 - Keep V5.2 **not certified**.
