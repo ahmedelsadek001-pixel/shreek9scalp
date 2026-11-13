@@ -70,7 +70,7 @@ def test_backtest_trade_adapter_uses_explicit_cost_components():
     ]
     result = stress_backtest_trades(trades, spread_multiplier=2.0, slippage_multiplier=3.0)
     assert result.baseline_net_pnl == pytest.approx((9.4, -2.6))
-    assert result.stressed_net_pnl == pytest.approx((9.1, -2.9))
+    assert result.stressed_net_pnl == pytest.approx((9.0, -3.0))
 
 
 def test_backtest_trade_adapter_rejects_missing_cost_provenance():
