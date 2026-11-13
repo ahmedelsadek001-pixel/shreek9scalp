@@ -68,7 +68,7 @@ def require_v6_release(
     bundle: ReleaseEvidenceBundle,
     expected_commit_sha: str | None = None,
 ) -> None:
-    """Raise when trusted commit binding or any V6 prerequisite is absent."""
+    """Raise when commit binding, evidence authenticity or any V6 prerequisite is absent."""
     decision = evaluate_v6_release(bundle, expected_commit_sha)
     if not decision.release_ready:
         raise RuntimeError("V6 release blocked; " + "; ".join(decision.failures))
