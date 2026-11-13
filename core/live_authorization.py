@@ -1,7 +1,8 @@
-"""Final fail-closed authorization gate for SHREEK V6.0.
+"""Fail-closed V6.0 evidence-completeness helper.
 
-The gate only evaluates explicit evidence flags. It cannot connect to MT5,
-send orders, size positions, or override any earlier safety layer.
+Boolean claims can establish only that required fields are present and true.
+They cannot authenticate their producer and never grant final release/live
+authority. This module cannot connect to MT5 or send orders.
 """
 from __future__ import annotations
 
@@ -9,8 +10,6 @@ from dataclasses import dataclass
 from typing import Mapping
 
 
-# V5.1 release prerequisites plus the V6.0 broker/operator controls.
-# Keep this list explicit: missing evidence must never become an implicit pass.
 REQUIRED_EVIDENCE = (
     "ci_green",
     "tests_green",
@@ -31,10 +30,11 @@ REQUIRED_EVIDENCE = (
 class LiveAuthorization:
     authorized: bool
     missing: tuple[str, ...]
+    requirements_satisfied: bool = False
 
 
 def evaluate_live_authorization(evidence: Mapping[str, bool]) -> LiveAuthorization:
-    """Authorize only when every mandatory evidence item is explicitly True."""
+    """Evaluate claim completeness without granting final authorization."""
     if not isinstance(evidence, Mapping):
         raise TypeError("evidence must be a mapping")
 
@@ -43,11 +43,15 @@ def evaluate_live_authorization(evidence: Mapping[str, bool]) -> LiveAuthorizati
         value = evidence.get(key, False)
         if type(value) is not bool or value is not True:
             missing.append(key)
-    return LiveAuthorization(not missing, tuple(missing))
+    complete = not missing
+    return LiveAuthorization(False, tuple(missing), complete)
 
 
 def require_live_authorization(evidence: Mapping[str, bool]) -> None:
-    """Raise instead of allowing a caller to proceed with incomplete evidence."""
+    """Never authorize self-asserted flags without independent authenticity proof."""
     result = evaluate_live_authorization(evidence)
-    if not result.authorized:
+    if not result.requirements_satisfied:
         raise RuntimeError("live authorization blocked; missing evidence: " + ", ".join(result.missing))
+    raise RuntimeError(
+        "live authorization blocked; independent evidence authenticity verification is not implemented"
+    )
