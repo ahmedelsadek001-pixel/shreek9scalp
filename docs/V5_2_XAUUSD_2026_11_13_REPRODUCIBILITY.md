@@ -115,12 +115,21 @@ and leaves commission unchanged. Its tests cover cost arithmetic, baseline
 identity, cardinality mismatch, negative/non-finite costs, invalid multipliers,
 boolean inputs and aggregate overflow.
 
-This is a tested calculation primitive only. It is **not yet wired into
-BacktestTrade generation, WFO robustness evidence or the certification gate**.
-The existing official Monte Carlo shock remains unchanged and remains the
-conservative certification input. No promotion decision may use this helper
-until the backtest engine emits independently auditable cost components and
-the full evidence chain is updated and tested.
+The backtest engine now emits per-trade `spread_cost`,
+`slippage_cost` and `commission_cost` fields on `BacktestTrade`, including
+partial-exit lifecycle legs. The total `costs` field is constructed as the
+sum of these three components. Unit tests verify reconciliation for ordinary
+single-exit trades and TP1/TP2/TP3 partial exits. The
+`stress_backtest_trades` adapter consumes those explicit fields and rejects
+records that lack cost provenance.
+
+This integration is tested at the backtest-engine/unit-test level. It is **not
+yet wired into the official WFO robustness artifact generation or the
+certification gate**, and no new XAUUSD OOS study was run from these changed
+engine semantics. The existing official Monte Carlo shock remains unchanged.
+Do not use the diagnostic for promotion until the WFO pipeline emits and binds
+the per-trade cost ledger into the immutable research evidence and is tested
+end to end against independent broker cost observations.
 
 ## Disposition
 
