@@ -1,5 +1,6 @@
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
+from hashlib import sha256
 
 import pytest
 
@@ -8,6 +9,16 @@ from core.release_gate import ReleaseEvidence
 
 
 _COMMIT = "a" * 40
+
+
+class _FloatingTimezone(tzinfo):
+    """Carries tzinfo but no UTC offset, so it is still a naive timestamp."""
+
+    def utcoffset(self, dt):
+        return None
+
+    def dst(self, dt):
+        return None
 
 
 def _required() -> ReleaseEvidence:
@@ -32,9 +43,50 @@ def test_bundle_requires_nonempty_records():
         ReleaseEvidenceBundle.from_records(())
 
 
+@pytest.mark.parametrize("record", [None, {"name": "ci_green"}, "ci_green"])
+def test_release_evaluation_blocks_malformed_record_values(record):
+    original = _bundle()
+    tampered = replace(original, records=(record,) + original.records[1:])
+    with pytest.raises(TypeError, match="EvidenceRecord"):
+        tampered.validate()
+    decision = evaluate_evidence_bundle(tampered, _required())
+    assert not decision.ready
+    assert decision.failures == ("evidence bundle integrity validation failed",)
+
+
 def test_record_requires_provenance():
     with pytest.raises(ValueError):
         EvidenceRecord("ci_green", True, "", "run-1", datetime.now(timezone.utc), _COMMIT).validate()
+
+
+def test_record_rejects_tzinfo_without_utc_offset():
+    ambiguous = datetime(2026, 10, 2, tzinfo=_FloatingTimezone())
+    record = EvidenceRecord("ci_green", True, "test", "run-1", ambiguous, _COMMIT)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        record.validate()
+    with pytest.raises(ValueError, match="timezone-aware"):
+        ReleaseEvidenceBundle.from_records((record,))
+
+
+@pytest.mark.parametrize("utc_offset_hours", [-8, 3])
+def test_future_evidence_is_rejected_regardless_of_timezone(utc_offset_hours):
+    instant = datetime.now(timezone.utc) + timedelta(days=1)
+    local = instant.astimezone(timezone(timedelta(hours=utc_offset_hours)))
+    future = replace(_bundle().records[0], recorded_at=local)
+    with pytest.raises(ValueError, match="future"):
+        future.validate()
+    with pytest.raises(ValueError, match="future"):
+        ReleaseEvidenceBundle.from_records((future,))
+
+
+def test_v51_release_refuses_future_evidence_even_with_matching_bundle_digest():
+    original = _bundle()
+    future = replace(original.records[0], recorded_at=datetime.now(timezone.utc) + timedelta(days=1))
+    records = (future,) + original.records[1:]
+    digest = sha256(ReleaseEvidenceBundle._canonical(records).encode("utf-8")).hexdigest()
+    decision = evaluate_evidence_bundle(ReleaseEvidenceBundle(records, digest), _required())
+    assert not decision.ready
+    assert decision.failures == ("evidence bundle integrity validation failed",)
 
 
 def test_record_requires_valid_commit_sha():

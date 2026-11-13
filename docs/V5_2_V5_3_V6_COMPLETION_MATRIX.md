@@ -24,7 +24,7 @@ component can be implemented while its evidence gate remains open.
 1. Never interpret implementation as proof of profitability.
 2. Never promote from development to `main` while a mandatory gate is failing.
 3. Never enable broker order routing merely because CI is green.
-4. Treat missing, stale, malformed, or conflicting evidence as a failed gate.
+4. Treat missing, future-dated, stale, malformed, or conflicting evidence as a failed gate.
 5. Preserve chronological separation between training, validation, and test data.
 6. Keep research analytics free of broker transport and execution authority.
 
