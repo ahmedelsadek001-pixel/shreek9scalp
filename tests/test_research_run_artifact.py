@@ -585,3 +585,54 @@ def test_strategy_binding_rejects_rehashed_embedded_identity_tampering(field, va
             strategy_version="research-v1",
             code_revision=revision,
         )
+
+
+def test_artifact_embeds_reconciled_oos_execution_cost_ledger():
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    ledger = payload["execution_cost_evidence"]
+    assert ledger["schema"] == "shreek.oos-execution-cost-ledger.v1"
+    assert ledger["trade_count"] == payload["evidence"]["oos_trade_count"]
+    assert len(ledger["rows"]) == ledger["trade_count"]
+    assert len(ledger["ledger_sha256"]) == 64
+    assert ledger["stress"]["commission_unchanged"] is True
+    assert ledger["stress"]["totals"]["baseline_net_pnl"] == pytest.approx(
+        payload["evidence"]["oos_net_pnl"]
+    )
+
+
+def test_artifact_rejects_rehashed_execution_cost_component_tampering():
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    row = payload["execution_cost_evidence"]["rows"][0]
+    row["spread_cost"] += 1.0
+    canonical = json.dumps(
+        payload["execution_cost_evidence"]["rows"],
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    payload["execution_cost_evidence"]["ledger_sha256"] = hashlib.sha256(
+        canonical.encode("utf-8")
+    ).hexdigest()
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="total does not reconcile"):
+        tampered.validate()
+
+
+def test_artifact_rejects_rehashed_execution_cost_ledger_net_mismatch():
+    artifact = build_research_run_artifact(_statistical_result(), _provenance())
+    payload = json.loads(artifact.evidence_export)
+    payload["execution_cost_evidence"]["rows"][0]["net_pnl"] += 1.0
+    canonical = json.dumps(
+        payload["execution_cost_evidence"]["rows"],
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    payload["execution_cost_evidence"]["ledger_sha256"] = hashlib.sha256(
+        canonical.encode("utf-8")
+    ).hexdigest()
+    tampered = _rehash_artifact(artifact, payload)
+    with pytest.raises(ValueError, match="net P&L does not reconcile"):
+        tampered.validate()
