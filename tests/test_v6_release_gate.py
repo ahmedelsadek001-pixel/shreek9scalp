@@ -31,6 +31,7 @@ def test_v6_release_blocks_all_true_self_asserted_evidence():
     decision = evaluate_v6_release(full_bundle(), _COMMIT)
     assert decision.release_ready is False
     assert decision.live.authorized is False
+    assert decision.live.requirements_satisfied is True
     assert decision.live.missing == REQUIRED_EVIDENCE
     assert decision.failures == (
         "evidence claims are self-asserted; independent authenticity verification is not implemented",
