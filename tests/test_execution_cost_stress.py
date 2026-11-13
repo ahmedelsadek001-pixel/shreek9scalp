@@ -54,3 +54,7 @@ def test_cost_stress_rejects_boolean_as_numeric_input():
 def test_cost_stress_fails_closed_on_aggregate_overflow():
     with pytest.raises(ValueError, match="aggregate"):
         stress_execution_costs([1.0e308, 1.0e308], [0.0, 0.0], [0.0, 0.0], [0.0, 0.0])
+
+def test_cost_stress_rejects_integer_overflow_inputs():
+    with pytest.raises(ValueError, match="gross_pnl"):
+        stress_execution_costs([10 ** 10000], [0.1], [0.1], [0.1])
