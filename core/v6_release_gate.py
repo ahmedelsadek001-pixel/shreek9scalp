@@ -53,8 +53,8 @@ def evaluate_v6_release(
         )
         return V6ReleaseDecision(False, live, (failure,))
     live = evaluate_live_authorization(evidence)
-    if live.authorized:
-        blocked = LiveAuthorization(False, REQUIRED_EVIDENCE)
+    if live.requirements_satisfied:
+        blocked = LiveAuthorization(False, REQUIRED_EVIDENCE, True)
         return V6ReleaseDecision(
             False,
             blocked,
