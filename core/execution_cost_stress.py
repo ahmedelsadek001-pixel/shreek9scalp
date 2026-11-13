@@ -95,3 +95,26 @@ def stress_execution_costs(
     return ExecutionCostStressResult(
         tuple(baseline), tuple(stressed), *totals, spread_factor, slippage_factor
     )
+
+
+def stress_backtest_trades(
+    trades: Sequence[object],
+    *,
+    spread_multiplier: float = 1.0,
+    slippage_multiplier: float = 1.0,
+) -> ExecutionCostStressResult:
+    """Stress the auditable cost components emitted by BacktestTrade records."""
+    if not trades:
+        raise ValueError("at least one backtest trade is required")
+    try:
+        gross = [trade.gross_pnl for trade in trades]
+        spread = [trade.spread_cost for trade in trades]
+        slippage = [trade.slippage_cost for trade in trades]
+        commission = [trade.commission_cost for trade in trades]
+    except AttributeError as exc:
+        raise ValueError("each trade must expose gross_pnl and all three cost components") from exc
+    return stress_execution_costs(
+        gross, spread, slippage, commission,
+        spread_multiplier=spread_multiplier,
+        slippage_multiplier=slippage_multiplier,
+    )
